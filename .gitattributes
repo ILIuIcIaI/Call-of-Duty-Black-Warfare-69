@@ -1,0 +1,7 @@
+* text=auto
+*.bat text eol=crlf
+*.jpg binary
+# source archives contain the game only
+docs/ export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

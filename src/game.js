@@ -1,0 +1,745 @@
+import * as THREE from 'three';
+import { Engine } from './core/engine.js';
+import { Input } from './core/input.js';
+import { Events } from './core/events.js';
+import { Audio } from './core/audio.js';
+import { loadSettings, saveSettings } from './core/settings.js';
+import { TextureLib } from './world/textures.js';
+import { MapBuilder } from './world/mapBuilder.js';
+import { createEnvironment } from './world/environment.js';
+import { Player } from './player/player.js';
+import { Shake, DEG, clamp, damp, lerp, rand } from './core/math.js';
+import { MAPS } from './world/maps/index.js';
+import { Effects } from './fx/effects.js';
+import { HUD } from './ui/hud.js';
+import { PlayerWeapons } from './weapons/playerWeapons.js';
+import { damageAt } from './weapons/defs.js';
+import { Soldier, OUTFITS } from './characters/soldier.js';
+import { Menu } from './ui/menu.js';
+import { NavGraph } from './bots/nav.js';
+import { Match } from './game/match.js';
+import { Autopilot } from './dev/autopilot.js';
+
+const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _p = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
+
+// ray vs sphere / capsule (returns distance or -1)
+function raySphere(ro, rd, c, r) {
+  const ox = ro.x - c.x, oy = ro.y - c.y, oz = ro.z - c.z;
+  const b = ox * rd.x + oy * rd.y + oz * rd.z, cc = ox * ox + oy * oy + oz * oz - r * r;
+  const h = b * b - cc;
+  if (h < 0) return -1;
+  const t = -b - Math.sqrt(h);
+  return t >= 0 ? t : -1;
+}
+function rayCapsule(ro, rd, pa, pb, r) {
+  const bax = pb.x - pa.x, bay = pb.y - pa.y, baz = pb.z - pa.z;
+  const oax = ro.x - pa.x, oay = ro.y - pa.y, oaz = ro.z - pa.z;
+  const baba = bax * bax + bay * bay + baz * baz;
+  const bard = bax * rd.x + bay * rd.y + baz * rd.z;
+  const baoa = bax * oax + bay * oay + baz * oaz;
+  const rdoa = rd.x * oax + rd.y * oay + rd.z * oaz;
+  const oaoa = oax * oax + oay * oay + oaz * oaz;
+  const a = baba - bard * bard;
+  let b = baba * rdoa - baoa * bard;
+  let c = baba * oaoa - baoa * baoa - r * r * baba;
+  let h = b * b - a * c;
+  if (h >= 0 && Math.abs(a) > 1e-9) {
+    const t = (-b - Math.sqrt(h)) / a;
+    const y = baoa + t * bard;
+    if (y > 0 && y < baba) return t >= 0 ? t : -1;
+    const ocx = y <= 0 ? oax : ro.x - pb.x, ocy = y <= 0 ? oay : ro.y - pb.y, ocz = y <= 0 ? oaz : ro.z - pb.z;
+    b = rd.x * ocx + rd.y * ocy + rd.z * ocz; c = ocx * ocx + ocy * ocy + ocz * ocz - r * r;
+    h = b * b - c;
+    if (h > 0) { const t2 = -b - Math.sqrt(h); return t2 >= 0 ? t2 : -1; }
+  }
+  return -1;
+}
+
+export class Game {
+  constructor() {
+    this.settings = loadSettings();
+    this.params = new URLSearchParams(location.search);
+    this.dev = this.params.has('dev');
+    this.events = new Events();
+    this.engine = new Engine(document.getElementById('canvas-wrap'), this.settings);
+    this.input = new Input(this.engine.renderer.domElement);
+    this.input.hoverLook = this.dev;
+    this.audio = new Audio(this.settings);
+    this.scene = new THREE.Scene();
+    this.vmScene = new THREE.Scene();
+    this.time = 0;
+    this.state = 'loading';
+    this.shake = new Shake();
+    this.combatants = [];
+    this.bots = [];
+    this.player = new Player(this);
+    this.player.kills = 0; this.player.deaths = 0; this.player.score = 0; this.player.lastRadar = -99;
+    this.lookDX = 0; this.lookDY = 0;
+    this.sunDirCam = new THREE.Vector3(0, 1, 0);
+    this.playerInShadow = false;
+    this.hboxes = [];
+    window.__game = this;
+    this.bindEvents();
+  }
+
+  saveSettings() { saveSettings(this.settings); }
+
+  bindEvents() {
+    const unlockAudio = () => { this.audio.unlock(); };
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    this.engine.renderer.domElement.addEventListener('click', () => {
+      if (this.state === 'playing' && !this.input.locked && !this.dev) this.input.lock();
+    });
+    this.input.onLockFail = () => {
+      if (this._lockHinted) return; this._lockHinted = true;
+      this.hud.message('<span style="font-size:19px">Maus-Fang hier nicht möglich – die Kamera folgt einfach der Maus,<br>am Fensterrand dreht sie weiter. Perfekt: http://localhost:8069 in Chrome/Edge</span>', 6);
+    };
+    this.input.onLockChange = (locked) => {
+      if (!locked && this.state === 'playing' && !this.dev && this.onPause) this.onPause();
+    };
+    // Escape pauses even without pointer lock (embedded views); Escape / L close the pause menu again
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat || this.state !== 'playing') return;
+      if (this.paused) { if (e.code === 'Escape' || e.code === 'KeyL') this.resume(); return; }
+      if (e.code === 'Escape' && !this.input.locked && !this.dev) this.onPause();
+    });
+    // Ctrl is a game key now and browsers refuse to let a page block Ctrl+W: at least ask before leaving a match
+    window.addEventListener('beforeunload', (e) => {
+      if (this.state === 'playing' && !this.dev) { e.preventDefault(); e.returnValue = ''; }
+    });
+    // gameplay sound events
+    const E = this.events;
+    E.on('footstep', (e) => {
+      const ent = e.entity, own = ent === this.player;
+      const surf = this.surfaceUnder(ent);
+      this.audio.play('step_' + surf, own ? { vol: e.sprint ? 0.32 : 0.22 } : { pos: ent.pos, vol: e.sprint ? 1.0 : 0.6, ref: 3, rolloff: 1.4, maxDist: 45 });
+    });
+    E.on('jump', (e) => { if (e.entity === this.player) { this.audio.play('jump', { vol: 0.35 }); this.player._landVm = -0.9; } });
+    E.on('land', (e) => {
+      if (e.entity === this.player || !e.entity) { this.audio.play('land', { vol: 0.25 + e.strength * 0.5 }); this.player._landVm = -1.2 - e.strength * 3; this.shake.add(e.strength * 0.15); }
+    });
+    E.on('slide', (e) => { if (e.entity === this.player) this.audio.play('slide', { vol: 0.55 }); else this.audio.play('slide', { pos: e.entity.pos, vol: 0.8, maxDist: 35 }); });
+    E.on('dive', (e) => { if (e.entity === this.player) this.audio.play('dive', { vol: 0.5 }); });
+    E.on('mantle', (e) => { if (e.entity === this.player) this.audio.play('mantle', { vol: 0.5 }); });
+    E.on('mantleGrab', (e) => { if (e.entity === this.player) { this.audio.play('land', { vol: 0.28 * e.strength, rate: 1.5 }); this.audio.play('mantle', { vol: 0.3 * e.strength, rate: 1.15 }); this.shake.add(0.05 * e.strength); } });
+    E.on('proneRoll', (e) => { if (e.entity === this.player) this.audio.play('dive', { vol: 0.28, rate: 1.25 }); });
+    E.on('walljump', (e) => { if (e.entity === this.player) { this.audio.play('jump', { vol: 0.5, rate: 1.2 }); this.audio.play('step_concrete', { vol: 0.5 }); } });
+  }
+
+  surfaceUnder(ent) {
+    const h = this.col.raycast(ent.pos.x, ent.pos.y + 0.2, ent.pos.z, 0, -1, 0, 0.6, this._sh || (this._sh = {}));
+    const s = h ? h.surface : 'concrete';
+    return s === 'metal' ? 'metal' : s === 'dirt' || s === 'wood' ? 'dirt' : 'concrete';
+  }
+
+  async init() {
+    const msg = document.getElementById('load-msg'), fill = document.getElementById('load-fill');
+    this.tex = new TextureLib(this.engine);
+    await this.tex.generateAll((p, name) => { fill.style.width = (p * 100).toFixed(0) + '%'; msg.textContent = 'Generiere Texturen: ' + name; });
+    this.hud = new HUD(this);
+    this.weapons = new PlayerWeapons(this);
+    this.menu = new Menu(this);
+    document.getElementById('loading').classList.add('hidden');
+    this.lastT = performance.now();
+    requestAnimationFrame((t) => this.frame(t));
+    // Fallback ticker: some embedded/hidden views pause requestAnimationFrame entirely.
+    // (dev only, so hidden player tabs never burn GPU in the background)
+    if (this.dev) setInterval(() => { if (performance.now() - this.lastT > 250) this.frame(performance.now(), true); }, 100);
+    if (this.dev) this.startMatch({ ...this.settings.match, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
+    else { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
+  }
+
+  loadMenuMap(id) {
+    this.loadMap(id);
+    this.state = 'menu';
+    document.getElementById('hud').classList.add('hidden');
+  }
+
+  beginMatch() {
+    this.audio.unlock();
+    this.menu.hide();
+    this.startMatch({ ...this.settings.match });
+    this.input.lock();
+  }
+
+  onPause() {
+    if (this.state !== 'playing' || this.paused) return;
+    this.paused = true;
+    this.menu.show('controls', 'pause');
+  }
+
+  resume() {
+    this.menu.hide();
+    this.paused = false;
+    this.weapons.applyLoadout(this.settings.loadout);
+    this.input.pressedKeys.clear();
+    this.input.lock();
+  }
+
+  quitToMenu() {
+    this.paused = false;
+    if (this.clearBots) this.clearBots();
+    this.match = null;
+    document.getElementById('death-screen').classList.add('hidden');
+    this.loadMenuMap(this.settings.match.map);
+    this.menu.show('play');
+  }
+
+  isFriendly(a, b) {
+    if (a === b) return true;
+    if (!this.match || this.match.mode === 'ffa') return false;
+    return a.team === b.team;
+  }
+
+  loadMap(id) {
+    const def = MAPS[id] || MAPS.drydock;
+    this.scene.clear();
+    this.playerCorpse = null; // its meshes went away with the old scene
+    this.mapDef = def;
+    const b = new MapBuilder(this.engine, this.tex);
+    def.build(b);
+    this.col = b.finalize(this.scene);
+    this.mapRoot = b.root;
+    this.glassMeshes = b.glassMeshes;
+    this.glassByIdx = new Map(this.glassMeshes.map((m) => [m.userData.glassIdx, m]));
+    this.envObjs = createEnvironment(this.engine, this.scene, def.env, def.bounds);
+    this.engine.renderer.shadowMap.needsUpdate = true;
+    this.fx = new Effects(this);
+    this.muzzleLight = null;
+    if (this.engine.q.standard) { this.muzzleLight = new THREE.PointLight(0xffaa55, 0, 9, 2); this.scene.add(this.muzzleLight); }
+    if (this.playerBody) this.playerBody.dispose();
+    this.playerBody = new Soldier(this, OUTFITS.vanguard, { firstPerson: true });
+    this.audio.occlusionTest = (p) => {
+      const c = this.engine.camera.position;
+      return this.col.lineClear(c.x, c.y, c.z, p.x, p.y + 0.2, p.z);
+    };
+    const t0 = performance.now();
+    this.nav = new NavGraph(this.col, def.bounds).build();
+    console.log('nav graph: ' + this.nav.n + ' nodes in ' + (performance.now() - t0).toFixed(0) + 'ms');
+    this.hud.buildMinimap();
+    // PIP render target for magnified optics
+    if (!this.pipRT) {
+      const r = this.engine.q.pipRes;
+      this.pipRT = new THREE.WebGLRenderTarget(r, r, { samples: 0 });
+      this.pipRT.texture.colorSpace = THREE.SRGBColorSpace;
+      this.pipCam = new THREE.PerspectiveCamera(20, 1, 0.05, 400);
+    }
+  }
+
+  startMatch(cfg) {
+    this.cfg = cfg;
+    this.loadMap(cfg.map);
+    this.clearBots();
+    this.match = new Match(this, cfg);
+    this.player.team = cfg.mode === 'ffa' ? 1 : 0;
+    this.player.kills = 0; this.player.deaths = 0; this.player.score = 0;
+    this.combatants = [this.player];
+    this.bots = this.match.createBots();
+    for (const b of this.bots) { this.combatants.push(b); this.match.spawn(b); }
+    this.time = 0;
+    this.weapons.setLoadout(this.settings.loadout);
+    this.spawnPlayer();
+    this.state = 'playing';
+    document.getElementById('hud').classList.remove('hidden');
+    document.getElementById('sb-mode').textContent = cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
+    if (this.onMatchStart) this.onMatchStart(cfg);
+  }
+
+  clearBots() {
+    if (this.hud) this.hud.clearTags();
+    for (const b of this.bots) b.dispose();
+    this.bots = [];
+    this.combatants = [this.player];
+  }
+
+  spawnPlayer() {
+    const p = this.player;
+    p.alive = false;
+    if (this.params.has('autopilot') && !this.autopilot) this.autopilot = new Autopilot(this);
+    const sp = this.match.chooseSpawn(p);
+    p.reset();
+    p.pos.set(sp.x, sp.y, sp.z);
+    p.yaw = sp.yaw; p.pitch = 0;
+    p.alive = true;
+    this.weapons.applyLoadout(this.settings.loadout);
+    this.weapons.refillAll();
+    this.weapons.cur = 0;
+    this.weapons.equip(true);
+    document.getElementById('death-screen').classList.add('hidden');
+  }
+
+  // --------------------------------------------------------------- combat
+  // Fires one hitscan bullet. Returns hit info.
+  fireBullet(origin, dir, def, shooter, tracerFrom, first = true) {
+    const col = this.col;
+    let ox = origin.x, oy = origin.y, oz = origin.z;
+    let remaining = 300, dmgMul = 1, travelled = 0;
+    const isPlayer = shooter === this.player;
+    let endPoint = null;
+    for (let pen = 0; pen < 3; pen++) {
+      const hit = col.raycast(ox, oy, oz, dir.x, dir.y, dir.z, remaining, this._bh || (this._bh = {}), true);
+      const worldT = hit ? hit.t : remaining;
+      // ---- combatants
+      let best = null, bestT = worldT;
+      _o.set(ox, oy, oz);
+      for (const c of this.combatants) {
+        if (c === shooter || !c.alive) continue;
+        if (this.match && this.match.mode !== 'ffa' && c.team === shooter.team) continue;
+        // broad phase: distance from ray to body center
+        _t.set(c.pos.x - ox, c.pos.y + 0.9 - oy, c.pos.z - oz);
+        const along = _t.dot(dir);
+        if (along < -1 || along > bestT + 1) continue;
+        const perp = _t.lengthSq() - along * along;
+        if (perp > 2.0) continue;
+        const boxes = c.getHitboxes(this.hboxes);
+        for (const h of boxes) {
+          const t = h.type === 'sphere' ? raySphere(_o, dir, h.c, h.r) : rayCapsule(_o, dir, h.a, h.b, h.r);
+          if (t >= 0 && t < bestT) { bestT = t; best = { c, part: h.part }; }
+        }
+      }
+      if (best) {
+        const dist = travelled + bestT;
+        let dmg = damageAt(def, dist) * dmgMul;
+        const part = best.part;
+        if (part === 'head') dmg *= def.head; else if (part === 'limb') dmg *= def.limb; else if (part === 'chest') dmg *= def.chest || 1;
+        _p.set(ox + dir.x * bestT, oy + dir.y * bestT, oz + dir.z * bestT);
+        this.fx.impact(_p, _n.copy(dir).negate(), 'flesh');
+        if (!best.c.isPlayer) this.audio.play('imp_flesh', { pos: _p, vol: 0.7, maxDist: 40 });
+        this.applyDamage(best.c, dmg, shooter, { part, dir: dir.clone(), weapon: def, point: _p.clone() });
+        endPoint = _p.clone();
+        break;
+      }
+      if (!hit) { endPoint = new THREE.Vector3(ox + dir.x * remaining, oy + dir.y * remaining, oz + dir.z * remaining); break; }
+      // ---- world impact
+      _p.set(hit.x, hit.y, hit.z); _n.set(hit.nx, hit.ny, hit.nz);
+      if (hit.surface === 'glass' && this.glassByIdx.has(hit.index)) {
+        this.shatterGlass(hit.index);
+        ox = hit.x + dir.x * 0.05; oy = hit.y + dir.y * 0.05; oz = hit.z + dir.z * 0.05;
+        travelled += hit.t; remaining -= hit.t; continue;
+      }
+      const near = _p.distanceToSquared(this.engine.camera.position) < 60 * 60;
+      if (first || near) {
+        this.fx.impact(_p, _n, hit.surface, isPlayer ? 1 : 0.6);
+        if (hit.surface !== 'water') this.fx.decal(_p, _n, hit.surface === 'metal' ? 0.07 : 0.1);
+        if (Math.random() < (isPlayer ? 0.55 : 0.35)) this.audio.play('imp_' + (hit.surface === 'glass' ? 'metal' : hit.surface === 'water' ? 'dirt' : hit.surface), { pos: _p, vol: 0.55, maxDist: 50, occlude: false });
+      }
+      endPoint = _p.clone();
+      // ---- penetration through thin cover
+      const thick = col.exitDistance(hit.index, hit.x + dir.x * 0.01, hit.y + dir.y * 0.01, hit.z + dir.z * 0.01, dir.x, dir.y, dir.z);
+      const power = def.pen * (hit.pen || 0) * 0.6;
+      if (power > 0 && thick < power) {
+        dmgMul *= 0.55 * (1 - thick / power * 0.5);
+        const ex = hit.x + dir.x * (thick + 0.02), ey = hit.y + dir.y * (thick + 0.02), ez = hit.z + dir.z * (thick + 0.02);
+        this.fx.impact(_p.set(ex, ey, ez), _n.copy(dir), hit.surface, 0.5);
+        travelled += hit.t + thick; remaining -= hit.t + thick;
+        ox = ex; oy = ey; oz = ez;
+        continue;
+      }
+      break;
+    }
+    // tracer (not every bullet for automatics)
+    if (tracerFrom && endPoint) {
+      const tr = isPlayer ? (def.fire !== 'auto' || Math.random() < 0.6) : Math.random() < 0.8;
+      if (tr) this.fx.tracer(tracerFrom, endPoint, 380 + Math.random() * 120, isPlayer ? 0.018 : 0.03);
+    }
+    // bullet whiz past the player's head
+    if (!isPlayer && this.player.alive && endPoint) {
+      const e = this.engine.camera.position;
+      _t.copy(e).sub(origin);
+      const along = _t.dot(dir);
+      const len = endPoint.distanceTo(origin);
+      if (along > 2 && along < len) {
+        const perp = Math.sqrt(Math.max(0, _t.lengthSq() - along * along));
+        if (perp < 1.6 && perp > 0.25) this.audio.play('whiz', { pos: _p.copy(origin).addScaledVector(dir, along), vol: 0.9, occlude: false });
+      }
+    }
+    return endPoint;
+  }
+
+  shatterGlass(idx) {
+    const m = this.glassByIdx.get(idx);
+    if (!m || !m.visible) return;
+    m.visible = false;
+    this.col.disable(idx);
+    this.fx.glassShatter(m);
+    this.audio.play('glass', { pos: m.position, vol: 0.9 });
+  }
+
+  applyDamage(victim, dmg, attacker, info) {
+    if (!victim.alive) return;
+    victim.health -= dmg;
+    victim.lastDamage = this.time;
+    victim.lastAttacker = attacker;
+    if (victim.onDamaged) victim.onDamaged(dmg, attacker, info);
+    const killed = victim.health <= 0;
+    if (attacker === this.player) {
+      this.hud.hitmarker(killed ? 'kill' : info.part === 'head' ? 'head' : 'hit');
+      this.audio.play(killed ? 'kill' : info.part === 'head' ? 'hitHead' : 'hit', { vol: killed ? 0.7 : 0.5 });
+    }
+    if (victim === this.player) this.onPlayerDamaged(dmg, attacker, info);
+    if (killed) this.kill(victim, attacker, info);
+  }
+
+  onPlayerDamaged(dmg, attacker, info) {
+    const p = this.player;
+    p.lastDamage = this.time;
+    if (attacker && attacker !== p) {
+      const ang = Math.atan2(-(attacker.pos.x - p.pos.x), -(attacker.pos.z - p.pos.z));
+      this.hud.damageFrom(ang, dmg);
+    }
+    this.shake.add(0.18);
+    p.pitchKick.impulse(0.6 + Math.random() * 0.4);
+    this.audio.play('hurt', { vol: 0.5 });
+    void info;
+  }
+
+  kill(victim, killer, info) {
+    victim.alive = false;
+    victim.health = 0;
+    victim.deaths = (victim.deaths || 0) + 1;
+    const head = info && info.part === 'head';
+    if (killer && killer !== victim) {
+      killer.kills = (killer.kills || 0) + 1;
+      killer.score = (killer.score || 0) + 100 + (head ? 25 : 0);
+    }
+    this.hud.killfeed(killer || victim, victim, info && info.weapon ? info.weapon.name : '', head);
+    if (killer === this.player) {
+      this.hud.popup('+' + (100 + (head ? 25 : 0)), head ? 'KOPFSCHUSS' : 'GEGNER GETÖTET', head);
+    }
+    if (victim.onKilled) victim.onKilled(killer, info);
+    if (this.match && this.match.onKill) this.match.onKill(killer, victim);
+    if (victim === this.player) this.onPlayerKilled(killer, info);
+  }
+
+  spawnPlayerCorpse(info) {
+    const p = this.player;
+    if (!this.playerCorpse) this.playerCorpse = new Soldier(this, OUTFITS.vanguard);
+    const c = this.playerCorpse;
+    c.resetPose();
+    c.setVisible(true);
+    if (c.weaponDrop) { this.scene.remove(c.weaponDrop.obj); c.weaponDrop = null; }
+    const w = this.weapons.w;
+    c.setWeapon(w.def, w.optic);
+    // pose it like the player was standing / crouching / sliding right now
+    const st = {
+      yaw: p.bodyYaw, pitch: p.pitch, speed: p.speedH, moveAngle: 0, crouch: p.stance === 'crouch' && p.mode === 'normal', slide: p.mode === 'slide',
+      dive: p.mode === 'dive', prone: p.stance === 'prone', supine: p.supine, proneSpin: p.proneSpin, air: !p.onGround, tac: p.tac, sprint: p.sprinting, floorY: p.pos.y,
+    };
+    // lying down the hull center sits at the neck
+    const by = p.bodyYaw, cp = p.pos.clone().add(new THREE.Vector3(Math.sin(by) * 0.58 * p.proneW, 0, Math.cos(by) * 0.58 * p.proneW));
+    for (let i = 0; i < 6; i++) c.update(0.05, st, cp);
+    const dir = info && info.dir ? info.dir.clone() : new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+    const wdef = info && info.weapon;
+    let strength = wdef ? Math.min(7, 2.2 + (wdef.damage[0] * (wdef.pellets || 1)) / 40) : 3;
+    if (info && info.part === 'head') strength *= 1.15;
+    c.die(dir, { part: info && info.part, point: info && info.point, strength, vel: p.vel.clone() });
+  }
+
+  onPlayerKilled(killer, info) {
+    this.spawnPlayerCorpse(info);
+    this.lastKiller = killer && killer !== this.player ? killer : null;
+    this.deathCamT = 0;
+    const ds = document.getElementById('death-screen');
+    ds.classList.remove('hidden');
+    document.getElementById('death-by').textContent = killer && killer !== this.player ? 'von ' + killer.name : '';
+    this.respawnT = 3.5;
+    this.weapons.vm.root.visible = false;
+    this.audio.setMuffle(0);
+  }
+
+  onBotShot(bot) {
+    this.recentAction = { pos: bot.pos.clone(), t: this.time };
+    for (const b of this.bots) if (b !== bot) b.hear(bot.pos, bot);
+  }
+
+  onMatchEnd(won) {
+    this.state = 'ended';
+    this.input.unlock();
+    const res = won === true ? 'SIEG' : won === false ? 'NIEDERLAGE' : 'UNENTSCHIEDEN';
+    const el = document.getElementById('menu');
+    this.hud.showScoreboard(true);
+    const board = document.getElementById('scoreboard').innerHTML;
+    this.hud.showScoreboard(false);
+    const col = won ? 'var(--accent)' : won === false ? 'var(--enemy)' : '#fff';
+    el.innerHTML = '<div class="menu-bg"></div><div class="menu-inner" style="align-items:center;justify-content:center">' +
+      '<div class="logo" style="text-align:center;color:' + col + '">' + res + '</div>' +
+      '<div id="end-board" style="margin:20px 0;min-width:640px;background:rgba(8,10,10,.86);padding:18px 22px">' + board + '</div>' +
+      '<button class="btn" id="end-btn">WEITER</button></div>';
+    el.querySelector('#end-btn').addEventListener('click', () => { this.audio.play('uiClick', { vol: 0.4 }); this.quitToMenu(); });
+  }
+
+  onPlayerShot(def) {
+    this.recentAction = { pos: this.player.pos.clone(), t: this.time };
+    for (const b of this.bots) b.hear(this.player.pos, this.player);
+    if (this.muzzleLight) {
+      const c = this.engine.camera;
+      c.getWorldDirection(_d);
+      this.muzzleLight.position.copy(c.position).addScaledVector(_d, 0.9);
+      this.muzzleLight.intensity = def.id === 'shotgun' || def.id === 'sniper' ? 26 : 16;
+    }
+    this.player.lastRadar = this.time;
+    this.events.emit('shot', { shooter: this.player, def, pos: this.player.pos });
+  }
+
+  // push overlapping combatants apart (XZ circles)
+  separate(ent) {
+    for (const c of this.combatants) {
+      if (c === ent || !c.alive) continue;
+      const dx = ent.pos.x - c.pos.x, dz = ent.pos.z - c.pos.z;
+      if (Math.abs(ent.pos.y - c.pos.y) > 1.6) continue;
+      const d2 = dx * dx + dz * dz, R = 0.62;
+      if (d2 < R * R && d2 > 1e-6) {
+        const d = Math.sqrt(d2), push = (R - d) * 0.5;
+        const nx = dx / d, nz = dz / d;
+        ent.pos.x += nx * push; ent.pos.z += nz * push;
+      }
+    }
+  }
+
+  // --------------------------------------------------------------- loop
+  frame(now, fallback) {
+    if (!fallback) requestAnimationFrame((t) => this.frame(t));
+    if (this.debugManual) { this.lastT = now; return; } // dev tooling drives frames by hand
+    let dt = (now - this.lastT) / 1000;
+    this.lastT = now;
+    if (dt > 0.1) dt = 0.1;
+    if (dt <= 0) return;
+    if (!fallback) this.engine.trackFrame(dt);
+    try { this.update(dt); } catch (e) { console.error(e); }
+    this.input.endFrame();
+  }
+
+  update(dt) {
+    this.input.capture = this.state === 'playing' && !this.paused;
+    if (this.state === 'playing' || this.state === 'ended') this.updatePlaying(dt);
+    else this.renderMenuBackdrop(dt);
+  }
+
+  updatePlaying(dt) {
+    if (this.state === 'ended') { this.engine.render(this.scene, this.vmScene); return; } // freeze the world on the end screen
+    this.time += dt;
+    this.frameId = (this.frameId || 0) + 1;
+    const inp = this.input, p = this.player, W = this.weapons;
+    if (this.autopilot && !this.paused) this.autopilot.tick(dt);
+    const paused = this.paused;
+    // ---- look
+    const zoom = this.currentZoom || 1;
+    const adsK = W.adsAmount > 0.5 ? this.settings.adsSens / zoom : 1;
+    const sens = this.settings.sensitivity * 0.022 * DEG * (paused ? 0 : 1);
+    if (p.alive) p.look(inp.dx * sens * adsK, inp.dy * sens * adsK * (this.settings.invertY ? -1 : 1));
+    // hover-look fallback: keep turning while the cursor rests at a window edge
+    const edge = inp.edgeTurn(this._edge || (this._edge = {}));
+    if (p.alive && !paused && (edge.x || edge.y)) {
+      const rate = 2.6 * (this.settings.sensitivity / 3) * adsK;
+      p.look(edge.x * Math.abs(edge.x) * rate * dt, edge.y * Math.abs(edge.y) * rate * dt * (this.settings.invertY ? -1 : 1));
+    }
+    document.body.classList.toggle('hoverlook', inp.hoverLook && !inp.locked && !paused && this.state === 'playing');
+    this.lookDX = damp(this.lookDX, inp.dx * adsK, 20, dt); this.lookDY = damp(this.lookDY, inp.dy * adsK, 20, dt);
+
+    // ---- simulate
+    if (paused) { this.engine.render(this.scene, this.vmScene); this.renderLoadoutPreview(); return; }
+    if (p.alive) {
+      const steps = Math.ceil(dt / (1 / 120));
+      const h = dt / steps;
+      for (let i = 0; i < steps; i++) {
+        p.update(h, inp, W);
+        inp.suppress = true; // edge-triggered inputs only count once per frame
+      }
+      inp.suppress = false;
+      W.update(dt, inp, p);
+    } else if (!p.alive) {
+      this.respawnT -= dt;
+      document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
+      if (this.respawnT <= 0 && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
+    }
+    for (const b of this.bots) b.update(dt);
+    if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
+    if (inp.pressed('loadout')) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
+    if (this.match) {
+      this.match.update(dt);
+      const sc = this.match.scores();
+      this.hud.setScores(sc.f, sc.e, this.match.mode, sc.f, sc.e);
+      this.hud.setTimer(Math.max(0, this.match.timeLeft));
+    }
+
+    // ---- camera
+    this.shake.update(dt);
+    const cam = this.engine.camera;
+    const optic = W.vm.model && W.vm.model.optic;
+    const adsE = W.adsAmount * W.adsAmount * (3 - 2 * W.adsAmount);
+    const wz = W.vm.model ? W.vm.model.zoom : 1.2;
+    const targetZoom = 1 + (wz - 1) * adsE;
+    this.currentZoom = targetZoom;
+    let baseV = this.engine.hfovToV(this.settings.fov);
+    // FOV kick when tac sprinting / sliding
+    this.fovKick = damp(this.fovKick || 0, (p.tac ? 6 : p.sprinting ? 2 : 0) + (p.mode === 'slide' ? 4 : 0), 6, dt);
+    baseV += this.fovKick * (1 - adsE);
+    cam.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / targetZoom) / DEG + W.fovPunch.x;
+    cam.updateProjectionMatrix();
+    const punch = W.punch;
+    if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
+    else this.deathCam(dt);
+    // sniper scope sway + overlay
+    const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
+    document.getElementById('scope-overlay').classList.toggle('hidden', !scoped);
+    W.vm.root.visible = p.alive && !scoped;
+    if (scoped) {
+      const t = this.time;
+      cam.rotation.x += Math.sin(t * 0.9) * 0.0018 + Math.sin(t * 2.3) * 0.0006;
+      cam.rotation.y += Math.cos(t * 0.7) * 0.0018;
+    }
+    cam.updateMatrixWorld();
+    // viewmodel camera FOV (narrower when aiming for a bigger sight picture)
+    const vmc = this.engine.vmCamera;
+    vmc.fov = lerp(58, 48, adsE); vmc.updateProjectionMatrix();
+    if (p.alive) W.vm.updateLedgeHands(cam);
+
+    // ---- sun direction in camera space, shadow check for the viewmodel light
+    const sd = this.envObjs.sunDir;
+    this.sunDirCam.copy(sd).applyQuaternion(_q.copy(cam.quaternion).invert());
+    this._shT = (this._shT || 0) - dt;
+    if (this._shT <= 0) {
+      this._shT = 0.12;
+      const e = cam.position;
+      this.playerInShadow = !!this.col.raycast(e.x, e.y, e.z, sd.x, sd.y, sd.z, 80, this._sh2 || (this._sh2 = {}));
+    }
+
+    // ---- first person body
+    if (this.playerBody) {
+      const fb = this.playerBody;
+      fb.setVisible(p.alive);
+      const pw = p.proneW * (0.58 - 0.13 * fb.anim.supine), by = p.bodyYaw; // (on the back: chest just under the view)
+      const back = p.mode === 'slide' ? 0.05 : 0.16 * (1 - p.proneW);
+      // slide / on the back: body slightly left so the legs show beside the gun
+      const sideOff = p.mode === 'slide' ? -0.12 : -0.15 * fb.anim.supine;
+      // lying down the neck is under the camera, the body stretches away along its own axis
+      // (pulling up on a ledge the eye sits low over the hull: the legs hang below it, not around the camera)
+      const fy = p.mode === 'mantle' ? Math.min(p.pos.y, p.pos.y + p.eyeH - 1.3) : p.pos.y;
+      _t.set(p.pos.x + Math.sin(p.yaw) * back + Math.cos(p.yaw) * sideOff + Math.sin(by) * pw, fy, p.pos.z + Math.cos(p.yaw) * back - Math.sin(p.yaw) * sideOff + Math.cos(by) * pw);
+      const fwd = p.moveInput.y, side = p.moveInput.x;
+      fb.update(dt, {
+        yaw: by, pitch: 0, speed: p.speedH, moveAngle: Math.atan2(side, fwd || (side ? 0 : 1)),
+        crouch: p.stance === 'crouch' && p.mode === 'normal', slide: p.mode === 'slide', dive: p.mode === 'dive',
+        prone: p.stance === 'prone' && p.mode === 'normal', supine: p.supine, proneSpin: p.proneSpin, air: !p.onGround && p.mode === 'normal', mantle: p.mode === 'mantle',
+        tac: p.tac, sprint: p.sprinting, floorY: p.pos.y,
+      }, _t);
+    }
+
+    // ---- effects, audio listener, hud
+    this.fx.setPixelScale(window.innerHeight * this.engine.renderer.getPixelRatio() / (window.devicePixelRatio || 1), cam.fov);
+    this.fx.update(dt, cam);
+    if (this.muzzleLight && this.muzzleLight.intensity > 0) this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 400);
+    cam.getWorldDirection(_d);
+    this.audio.setListener(cam.position, _d, _t.set(0, 1, 0));
+    const lowHp = p.alive ? clamp((0.45 - p.health / p.maxHealth) / 0.35, 0, 1) : 0;
+    this.audio.setMuffle(lowHp * 0.7);
+    this.hud.update(dt);
+    this.hud.showScoreboard(inp.down('scoreboard'));
+
+    // ---- render (PIP scope first)
+    if (optic && optic.lens && W.adsAmount > 0.02 && p.alive) {
+      const pc = this.pipCam;
+      pc.position.copy(cam.position); pc.quaternion.copy(cam.quaternion);
+      pc.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG;
+      pc.updateProjectionMatrix();
+      const r = this.engine.renderer;
+      W.vm.root.visible = false;
+      r.setRenderTarget(this.pipRT); r.clear(); r.render(this.scene, pc); r.setRenderTarget(null);
+      W.vm.root.visible = true;
+      optic.pipMat.map = this.pipRT.texture; optic.pipMat.needsUpdate = optic.pipMat.map !== optic._lastMap; optic._lastMap = optic.pipMat.map;
+    }
+    this.engine.render(this.scene, this.vmScene);
+    this.updateDebug(dt);
+  }
+
+  deathCam(dt) {
+    // fly out of your head into a third-person view of your own ragdoll,
+    // slowly orbiting it; then turn toward whoever killed you
+    const cam = this.engine.camera, p = this.player;
+    this.deathCamT = (this.deathCamT || 0) + dt;
+    const t = this.deathCamT;
+    const corpse = this.playerCorpse && this.playerCorpse.ragdoll;
+    const target = _p.copy(corpse ? corpse.center : p.pos);
+    target.y += 0.35;
+    const k = this.lastKiller;
+    let yaw = p.yaw + Math.PI + t * 0.18;
+    if (k && t > 2.2) {
+      const toK = Math.atan2(-(k.pos.x - target.x), -(k.pos.z - target.z));
+      yaw = toK + Math.PI + 0.35;
+    }
+    // prefer an orbit direction with free space around the body (walls nearby)
+    const dist = 4.4, height = 2.7;
+    const freeAt = (yw) => {
+      const ddx = -Math.sin(yw) * dist, ddz = -Math.cos(yw) * dist, L0 = Math.hypot(ddx, height, ddz);
+      const h0 = this.col.raycast(target.x, target.y, target.z, ddx / L0, height / L0, ddz / L0, L0, this._dch2 || (this._dch2 = {}));
+      return h0 ? h0.t / L0 : 1;
+    };
+    if (freeAt(yaw) < 0.75) {
+      let bestY = yaw, bestF = -1;
+      for (let i = 1; i <= 8; i++) for (const sgn of [1, -1]) {
+        const yw = yaw + sgn * i * 0.39, fr = freeAt(yw);
+        if (fr > bestF + 0.05) { bestF = fr; bestY = yw; }
+        if (fr >= 0.95) break;
+      }
+      yaw = bestY;
+    }
+    this._dcYaw = this._dcYaw === undefined || t < dt * 1.5 ? p.yaw + Math.PI : this._dcYaw + ((((yaw - this._dcYaw) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 2.2);
+    const want = _o.set(target.x - Math.sin(this._dcYaw) * dist, target.y + height, target.z - Math.cos(this._dcYaw) * dist);
+    // keep the camera out of walls
+    const dx = want.x - target.x, dy = want.y - target.y, dz = want.z - target.z, L = Math.hypot(dx, dy, dz);
+    const hit = this.col.raycast(target.x, target.y, target.z, dx / L, dy / L, dz / L, L, this._dch || (this._dch = {}));
+    if (hit) want.set(target.x + dx / L * Math.max(0.6, hit.t - 0.3), target.y + dy / L * Math.max(0.6, hit.t - 0.3), target.z + dz / L * Math.max(0.6, hit.t - 0.3));
+    // blend from the eye position over the first half second
+    const f = Math.min(1, t / 0.5), e = f * f * (3 - 2 * f);
+    if (!this._dcStart || t < dt * 1.5) this._dcStart = cam.position.clone();
+    cam.position.lerpVectors(this._dcStart, want, e);
+    cam.lookAt(target);
+    if (k) document.getElementById('death-by').textContent = 'von ' + k.name + (k.wdef ? '  [' + k.wdef.name + ']' : '');
+  }
+
+  renderMenuBackdrop(dt) {
+    if (!this.mapRoot) return;
+    this.time += dt;
+    const cam = this.engine.camera;
+    const a = this.time * 0.04;
+    const b = this.mapDef.bounds;
+    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2, R = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.55;
+    cam.position.set(cx + Math.cos(a) * R, 26, cz + Math.sin(a) * R * 0.8);
+    cam.fov = 60; cam.updateProjectionMatrix();
+    cam.lookAt(cx, 0, cz);
+    this.engine.render(this.scene, null);
+    this.renderLoadoutPreview();
+  }
+
+  // loadout: rotating 3D weapon preview on the right side (main menu and pause menu)
+  renderLoadoutPreview() {
+    const pv = this.menuPreview;
+    if (pv) {
+      const r = this.engine.renderer, W = window.innerWidth, H = window.innerHeight;
+      const vw = Math.floor(W * 0.4), vh = Math.floor(H * 0.5);
+      pv.cam.aspect = vw / vh; pv.cam.updateProjectionMatrix();
+      pv.cam.position.set(0, 0.12, 1.75); pv.cam.lookAt(0, 0.0, 0);
+      pv.holder.rotation.y = Math.PI / 2 + Math.sin(this.time * 0.4) * 0.6;
+      pv.holder.rotation.x = Math.sin(this.time * 0.3) * 0.08;
+      r.clearDepth();
+      r.setScissorTest(true);
+      r.setViewport(W - vw - W * 0.01, H * 0.3, vw, vh); r.setScissor(W - vw - W * 0.01, H * 0.3, vw, vh);
+      r.render(pv.scene, pv.cam);
+      r.setScissorTest(false);
+      r.setViewport(0, 0, W, H);
+    }
+  }
+
+  updateDebug(dt) {
+    if (!this.settings.showFps) { document.getElementById('fps').textContent = ''; return; }
+    this._fpsAcc = (this._fpsAcc || 0) + dt; this._fpsN = (this._fpsN || 0) + 1;
+    if (this._fpsAcc > 0.5) {
+      const info = this.engine.renderer.info.render;
+      document.getElementById('fps').textContent = `${Math.round(this._fpsN / this._fpsAcc)} FPS · ${info.calls} DC · ${(this.engine.scale * 100).toFixed(0)}%`;
+      this._fpsAcc = 0; this._fpsN = 0;
+    }
+  }
+}
+const _q = new THREE.Quaternion();
+export { rand };

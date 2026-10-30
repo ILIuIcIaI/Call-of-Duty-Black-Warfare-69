@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# local tools and work files, not part of the game
+.claude/
+/screenshots/
+src/dev/vmsheet.js
+src/dev/simsheet.js
+src/dev/mantletest.js
+src/dev/fuzz.js
+dist/
+
+# system files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

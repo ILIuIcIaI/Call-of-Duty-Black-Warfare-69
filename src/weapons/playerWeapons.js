@@ -1,0 +1,338 @@
+import * as THREE from 'three';
+import { WEAPONS } from './defs.js';
+import { Viewmodel } from './viewmodel.js';
+import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise } from './anim.js';
+import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
+
+// =============================================================================
+// Player weapon logic: firing modes, ammo, reload state machine, ADS, recoil,
+// sprint-to-fire, weapon swapping. Drives the viewmodel and asks the game to
+// trace bullets.
+// =============================================================================
+const _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _v = new THREE.Vector3();
+
+export class PlayerWeapons {
+  constructor(game) {
+    this.game = game;
+    this.vm = new Viewmodel(game);
+    this.vm.onEvent = (name, clip) => this.onAnimEvent(name, clip);
+    this.slots = [null, null];
+    this.cur = 0;
+    this.state = 'idle';
+    this.adsAmount = 0; this.wantsAds = false;
+    this.nextShot = 0; this.lastShotT = -9;
+    this.firingRecently = false;
+    this.recoilIndex = 0;
+    this.punchP = new Spring(220, 17); this.punchY = new Spring(220, 17); this.punchR = new Spring(260, 16); this.fovPunch = new Spring(300, 18);
+    this.bloom = 0;
+    this.raiseT = 0;
+    this.pendingSlot = -1;
+    this.fireBuffer = 0;
+    this.shellLoop = false;
+    this.needsChamber = false;
+  }
+
+  get w() { return this.slots[this.cur]; }
+  get def() { return this.w.def; }
+  get busy() { return this.state !== 'idle'; }
+
+  setLoadout(lo) {
+    const mk = (id, optic) => {
+      const def = WEAPONS[id];
+      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
+    };
+    this.slots = [mk(lo.primary, lo.primaryOptic), mk(lo.secondary, 'iron')];
+    this.cur = 0;
+    this.equip(true);
+  }
+
+  // Loadout changed during a match: swap whatever differs right away and pull out the new gun
+  applyLoadout(lo) {
+    const slot = (id, optic) => {
+      const def = WEAPONS[id];
+      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
+    };
+    const P = slot(lo.primary, lo.primaryOptic), S = slot(lo.secondary, 'iron');
+    const cur = this.slots;
+    const chP = !cur[0] || cur[0].def !== P.def || cur[0].optic !== P.optic, chS = !cur[1] || cur[1].def !== S.def;
+    if (!chP && !chS) return false;
+    if (chP) cur[0] = P;
+    if (chS) cur[1] = S;
+    this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1;
+    this.cur = chP ? 0 : 1;
+    this.equip(false);
+    return true;
+  }
+
+  refillAll() {
+    for (const s of this.slots) { s.mag = s.def.mag; s.reserve = s.def.reserve; s.chambered = true; }
+  }
+
+  equip(first) {
+    const w = this.w;
+    this.vm.setWeapon(w.def, w.optic);
+    this.adsAmount = 0;
+    this.state = 'draw';
+    const quick = w.def.slot === 'secondary';
+    if (first && !quick) this.vm.play(firstRaise(1.0, !!this.vm.model.parts.charge && w.def.reloadStyle === 'mag'));
+    else this.vm.play(drawClip(quick ? 0.32 : 0.45));
+    if (w.def.reloadStyle === 'pistol' && w.mag === 0) this.vm.persist.slide = 1;
+  }
+
+  // --------------------------------------------------------------- update
+  update(dt, input, player) {
+    const g = this.game, t = g.time;
+    const w = this.w, def = w.def;
+    if (!player.alive) return;
+
+    // ---- weapon switching
+    let want = -1;
+    if (input.pressed('weapon1')) want = 0;
+    if (input.pressed('weapon2')) want = 1;
+    if (input.pressed('swap') || input.wheel !== 0) want = 1 - this.cur;
+    if (want >= 0 && want !== this.cur && this.state !== 'holster') {
+      this.cancelReload();
+      this.state = 'holster'; this.pendingSlot = want;
+      this.vm.play(holsterClip(0.2));
+    }
+
+    // ---- sprint / movement restrictions
+    const sprinting = player.sprinting;
+    // can't aim or shoot with no free hands, in the middle of rolling over, or while swapping
+    const lowered = player.mode === 'mantle' || player.proneRollT > 0 || this.state === 'holster';
+    if (sprinting) this.raiseT = player.tac ? def.tacToFire : def.sprintToFire;
+    else if (player.mode === 'slide') this.raiseT = Math.min(this.raiseT, 0.08);
+    else this.raiseT = Math.max(0, this.raiseT - dt);
+    if (lowered) this.raiseT = Math.max(this.raiseT, player.mantle && player.mantle.high ? 0.28 : 0.15);
+
+    // ---- ADS
+    if (this.state === 'inspect' && input.ads) { this.vm.stop(); this.state = 'idle'; }
+    // aiming during a reload: wait for the magazine, then it cuts the rest of the animation short
+    let reloading = this.state === 'reload' && def.reloadStyle !== 'shell';
+    if (reloading && this.refilled && input.ads && !sprinting && !lowered) { this.vm.stop(); this.state = 'idle'; reloading = false; }
+    this.wantsAds = input.ads && !sprinting && !lowered && !reloading && this.state !== 'inspect';
+    const adsRate = 1 / def.ads * (this.raiseT > 0 ? 0.75 : 1);
+    this.adsAmount = clamp(this.adsAmount + (this.wantsAds ? adsRate : -adsRate * 1.3) * dt, 0, 1);
+
+    // ---- fire input
+    if (input.firePressed) this.fireBuffer = 0.15; else this.fireBuffer -= dt;
+    this.firingRecently = input.fire && this.state !== 'holster' && this.state !== 'draw';
+    const triggerHeld = input.fire;
+    const canShootState = this.state === 'idle' || (this.state === 'reload' && def.reloadStyle === 'shell' && w.mag > 0);
+    if ((this.fireBuffer > 0 || (triggerHeld && def.fire === 'auto')) && canShootState && this.raiseT <= 0 && !lowered && t >= this.nextShot) {
+      if (w.mag <= 0) {
+        if (this.fireBuffer > 0) { g.audio.play('dryfire', { vol: 0.6 }); this.fireBuffer = 0; this.tryReload(); }
+      } else if (def.fire === 'auto' || this.fireBuffer > 0) {
+        if (this.state === 'reload') { this.shellLoop = false; this.vm.stop(); this.state = 'idle'; }
+        if (def.fire !== 'bolt' || w.chambered) this.shoot(player);
+        this.fireBuffer = 0;
+      }
+    }
+    if (t - this.lastShotT > 0.22) this.recoilIndex = 0;
+
+    // ---- reload / inspect input
+    if (input.pressed('reload')) this.tryReload();
+    if (input.pressed('inspect') && this.state === 'idle' && this.adsAmount < 0.1) { this.state = 'inspect'; this.vm.play(inspectClip(3.0)); }
+    if (this.state === 'inspect' && (triggerHeld || sprinting)) { this.vm.stop(); this.state = 'idle'; }
+    // tac sprint cancels an unfinished reload
+    if (this.state === 'reload' && player.tac && !this.refilled) this.cancelReload();
+
+    // ---- spread bloom recovery
+    this.bloom = Math.max(0, this.bloom - dt * 6);
+    this.punchP.update(dt); this.punchY.update(dt); this.punchR.update(dt); this.fovPunch.update(dt);
+
+    // ---- viewmodel
+    const corner = this.cornerProbe(player);
+    this.vm.update(dt, {
+      ads: this.adsAmount, firing: this.firingRecently, mantleHigh: !!(player.mantle && player.mantle.high), ledge: player.mantle,
+      sprint: sprinting, tac: player.tac, slide: player.mode === 'slide', dive: player.mode === 'dive', mantle: player.mode === 'mantle',
+      crawl: player.stance === 'prone' && player.speedH > 0.3 && t - this.lastShotT > 0.5 && !this.firingRecently, crouch: player.stance === 'crouch', lower: player.proneRollT > 0,
+      bobPhase: player.bobPhase, bobAmt: player.bobAmt * (player.onGround ? 1 : 0),
+      lookDX: g.lookDX, lookDY: g.lookDY, vy: player.vel.y, strafe: player.moveInput.x,
+      landImpulse: player._landVm || 0, corner, mantleK: player.mantle ? Math.min(1, player.mantle.t / player.mantle.dur) : 0,
+      sunDirCam: g.sunDirCam, inShadow: g.playerInShadow,
+    });
+    player._landVm = 0;
+  }
+
+  // cosmetic corner slicing: tilt toward the open side when hugging a wall corner
+  cornerProbe(player) {
+    if (this.adsAmount > 0.5 || player.sprinting) return 0;
+    this._cornerT = (this._cornerT || 0) - 1;
+    if (this._cornerT > 0) return this._corner || 0;
+    this._cornerT = 6;
+    const col = this.game.col, e = this.game.engine.camera.position;
+    const f = player.forwardVec(_v), r = player.rightVec(new THREE.Vector3());
+    const L = 1.2;
+    const hitL = !col.lineClear(e.x, e.y, e.z, e.x + (f.x - r.x) * L, e.y, e.z + (f.z - r.z) * L);
+    const hitR = !col.lineClear(e.x, e.y, e.z, e.x + (f.x + r.x) * L, e.y, e.z + (f.z + r.z) * L);
+    this._corner = hitL && !hitR ? -1 : hitR && !hitL ? 1 : 0;
+    return this._corner;
+  }
+
+  currentSpread(player) {
+    const def = this.def;
+    const moveF = clamp(player.speedH / 7, 0, 1);
+    let hip = def.hip + def.moveSpread * moveF + this.bloom;
+    if (!player.onGround && player.mode !== 'dive') hip += 3.5;
+    if (player.mode === 'slide' || player.mode === 'dive') hip += 1.5;
+    if (player.stance === 'crouch') hip *= 0.85; else if (player.stance === 'prone') hip *= 0.7;
+    const adsS = def.adsSpread + (player.onGround ? 0 : 1.5) + moveF * 0.15;
+    const a = Math.pow(this.adsAmount, 1.5);
+    return hip + (adsS - hip) * a;
+  }
+
+  shoot(player) {
+    const g = this.game, w = this.w, def = w.def;
+    w.mag--;
+    this.lastShotT = g.time;
+    this.nextShot = g.time + 60 / def.rpm;
+    const cam = g.engine.camera;
+    cam.getWorldDirection(_dir);
+    _right.setFromMatrixColumn(cam.matrixWorld, 0);
+    _up.setFromMatrixColumn(cam.matrixWorld, 1);
+    const spread = this.currentSpread(player) * DEG;
+    const pellets = def.pellets || 1;
+    // muzzle position in world (approximate from viewmodel camera space)
+    const vm = this.vm;
+    const muzzle = _v.copy(vm.model.anchors.muzzle);
+    vm.model.root.localToWorld(muzzle); // camera space
+    muzzle.applyMatrix4(cam.matrixWorld);
+    const muzzleW = muzzle.clone();
+    const scoped = vm.model.optic && vm.model.optic.overlay && this.adsAmount > 0.9;
+    for (let i = 0; i < pellets; i++) {
+      // uniform disc sample in the spread cone
+      const r = Math.sqrt(Math.random()) * (pellets > 1 ? def.pelletSpread * DEG * (1 - this.adsAmount * 0.25) : spread) * 0.5;
+      const a = Math.random() * Math.PI * 2;
+      const d = _dir.clone().addScaledVector(_right, Math.cos(a) * Math.tan(r)).addScaledVector(_up, Math.sin(a) * Math.tan(r)).normalize();
+      g.fireBullet(cam.position, d, def, player, scoped ? null : muzzleW, i === 0);
+    }
+    // ---- recoil: mostly permanent camera climb (pull down to compensate) + a returning punch
+    const rc = def.recoil, k = this.recoilIndex;
+    const ramp = k === 0 ? 0.75 : Math.min(1.15, 0.85 + k * 0.06);
+    const adsM = this.adsAmount > 0.5 ? 1 : 1.2;
+    const stanceM = player.stance === 'crouch' ? 0.85 : player.stance === 'prone' ? 0.65 : 1;
+    const up = rc.up * ramp * adsM * stanceM;
+    const side = (Math.sin(k * 1.9 + this.cur * 3) * 0.55 + (Math.random() * 2 - 1) * 0.45) * rc.side * adsM + rc.bias * 0.3;
+    player.pitch = clamp(player.pitch + up * 0.72 * DEG, -88 * DEG, 88 * DEG);
+    player.yaw -= side * 0.72 * DEG;
+    // camera punch (returns by itself): pitch, yaw, roll and a quick FOV kick
+    const adsP = this.adsAmount > 0.5 ? 0.75 : 1;
+    this.punchP.impulse(up * DEG * 26 * adsP);
+    this.punchY.impulse(-side * DEG * 18 * adsP);
+    this.punchR.impulse((Math.random() * 2 - 1) * rc.kick * DEG * 30);
+    this.fovPunch.impulse(rc.kick * 9 * (this.adsAmount > 0.5 ? 0.5 : 1));
+    this.recoilIndex++;
+    this.bloom = Math.min(def.hip * 0.8, this.bloom + def.hip * 0.12);
+    vm.onShot(def, this.adsAmount > 0.5);
+    g.shake.add(rc.kick * (this.adsAmount > 0.5 ? 0.05 : 0.08));
+    g.audio.gunshot(def.sound);
+    g.onPlayerShot(def);
+    if (def.fire !== 'bolt' && def.fire !== 'pump' && !this.vm.model.revolver) {
+      vm.ejectCasing();
+      if (Math.random() < 0.5) g.audio.play('casing', { vol: 0.25, delay: 0.25 + Math.random() * 0.15 });
+    }
+    if (def.reloadStyle === 'pistol' && w.mag === 0) vm.persist.slide = 1;
+    // follow-up actions
+    if (def.fire === 'bolt') { w.chambered = false; this.state = 'bolt'; this._boltDelay = setTimeout(() => { if (this.state === 'bolt' && this.w === w) this.vm.play(boltCycle(def.boltTime)); }, 140); }
+    if (def.fire === 'pump') { this.state = 'pump'; this.vm.play(pumpCycle(def.pumpTime)); }
+    if (w.mag === 0 && w.reserve > 0 && def.fire !== 'pump' && def.fire !== 'bolt') setTimeout(() => { if (this.w === w && this.state === 'idle' && w.mag === 0) this.tryReload(); }, 180);
+  }
+
+  tryReload() {
+    const w = this.w, def = w.def;
+    if (this.state !== 'idle' || w.mag >= def.mag || w.reserve <= 0) return;
+    const empty = w.mag === 0;
+    this.state = 'reload'; this.refilled = false;
+    this.reloadEmpty = empty;
+    const style = def.reloadStyle;
+    if (style === 'mag' || style === 'bolt') this.vm.play(magReload(empty ? def.reloadEmpty : def.reload, empty && style === 'mag', def.id === 'smg' || def.id === 'dmr' ? 'charge' : 'bolt'));
+    else if (style === 'box') this.vm.play(boxReload(def.reload));
+    else if (style === 'pistol') this.vm.play(pistolReload(empty ? def.reloadEmpty : def.reload, empty));
+    else if (style === 'revolver') this.vm.play(revolverReload(def.reload));
+    else if (style === 'shell') { this.shellLoop = true; this.vm.play(shotgunStart(0.36)); }
+    this.game.events.emit('reload', { entity: this.game.player });
+  }
+
+  cancelReload() {
+    if (this.state === 'reload' || this.state === 'inspect') {
+      this.vm.stop();
+      this.state = 'idle';
+      this.shellLoop = false;
+    }
+  }
+
+  onAnimEvent(name, clip) {
+    const g = this.game, w = this.w, def = w.def;
+    const sfx = { magOut: 0.5, magIn: 0.7, magTouch: 0.25, chargeBack: 0.55, chargeFwd: 0.6, boltUp: 0.5, boltBack: 0.6, boltFwd: 0.6, boltDown: 0.5,
+      pumpBack: 0.7, pumpFwd: 0.7, shellIn: 0.5, coverOpen: 0.5, coverClose: 0.6, slideFwd: 0.6, cylOpen: 0.5, cylClose: 0.6, loaderIn: 0.6,
+      hammer: 0.5, draw: 0.35, holster: 0.3, inspect1: 0.3, inspect2: 0.35, ejectAll: 0.4, magGrab: 0.2, magKnock: 0.45, pouch: 0.3 };
+    if (sfx[name] !== undefined) g.audio.play(name === 'magGrab' ? 'magTouch' : name, { vol: sfx[name] });
+    // physical jolts that sell the weight of each mechanical action
+    const J = this.vm;
+    if (name === 'magOut') { J.jolt(0, -0.22, 0.05, -1.4, 0.3, 0.8); g.shake.add(0.015); }
+    else if (name === 'magIn') { J.jolt(0.02, 0.36, 0.14, 3.0, -0.35, 1.0); g.shake.add(0.03); }
+    else if (name === 'magKnock') J.jolt(0.02, 0.06, 0, 0.6, 0, -0.4);
+    else if (name === 'magTug') { J.jolt(0, -0.14, 0, -0.9, 0, 0.25); g.audio.play('magTouch', { vol: 0.3, rate: 0.85 }); }
+    else if (name === 'toss') { J.jolt(-0.03, 0.04, 0, 0.3, 0.2, -0.3); g.audio.play('magDrop', { vol: 0.4, delay: 0.42 }); }
+    else if (name === 'chargeBack') J.jolt(0, -0.05, 0.15, -0.7, 0.1, 0.4);
+    else if (name === 'chargeFwd') J.jolt(0, 0.12, -0.2, 1.5, -0.2, -0.8);
+    else if (name === 'magTap') { J.jolt(0, 0.26, 0.05, 1.9, 0, 0.5); g.audio.play('magIn', { vol: 0.4, rate: 1.15 }); g.shake.add(0.015); }
+    else if (name === 'boltRelease') { J.jolt(0.06, 0.24, -0.28, 2.6, -0.35, -1.3); g.audio.play('chargeFwd', { vol: 0.75, rate: 1.05 }); g.shake.add(0.05); }
+    else if (name === 'boltBack') J.jolt(0, 0, 0.12, -0.5, 0, 0.5);
+    else if (name === 'boltFwd') J.jolt(0, 0.05, -0.15, 0.7, 0, -0.5);
+    else if (name === 'pumpBack') J.jolt(0, -0.04, 0.22, -0.8, 0, 0.3);
+    else if (name === 'pumpFwd') J.jolt(0, 0.06, -0.22, 0.9, 0, -0.3);
+    else if (name === 'shellIn') J.jolt(0, 0.1, -0.06, 0.8, 0, 0.3);
+    else if (name === 'slideFwd') J.jolt(0, 0.16, -0.1, 1.8, 0, -0.6);
+    else if (name === 'coverClose') J.jolt(0, -0.22, 0.02, -1.6, 0, 0.3);
+    else if (name === 'coverOpen') J.jolt(0, 0.08, 0, 0.6, 0, -0.2);
+    else if (name === 'cylOpen') J.jolt(-0.05, 0.05, 0, 0.6, 0, 1.4);
+    else if (name === 'cylClose') J.jolt(0.06, 0.08, 0, 0.8, 0, -2.2);
+    else if (name === 'loaderIn') J.jolt(0, -0.1, 0.06, -0.8, 0, 0.2);
+    if (name === 'refill') {
+      const n = Math.min(def.mag - w.mag, w.reserve);
+      w.mag += n; w.reserve -= n; this.refilled = true;
+      if (def.reloadStyle === 'pistol') this.vm.persist.slide = this.reloadEmpty ? 1 : 0;
+    }
+    if (name === 'slideFwd') this.vm.persist.slide = 0;
+    if (name === 'eject') {
+      this.vm.ejectCasing();
+      g.audio.play(def.fire === 'pump' ? 'casingShotgun' : 'casing', { vol: 0.25, delay: 0.3 });
+    }
+    if (name === 'ejectAll') for (let i = 0; i < 6; i++) this.vm.ejectCasing();
+    if (name === 'shellIn') { w.mag++; w.reserve--; }
+    if (name !== 'end') return;
+    // ---- clip finished: advance state machines
+    const c = clip.name;
+    if (c === 'holster') {
+      this.cur = this.pendingSlot; this.pendingSlot = -1;
+      this.equip(false);
+      return;
+    }
+    if (c === 'draw' || c === 'raise') { this.state = 'idle'; return; }
+    if (c === 'inspect') { this.state = 'idle'; return; }
+    if (c === 'pump') { this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
+    if (c === 'bolt') { w.chambered = true; this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
+    if (c === 'rstart') { this.vm.play(shotgunShell(def.reload)); return; }
+    if (c === 'rshell') {
+      if (this.shellLoop && w.mag < def.mag && w.reserve > 0) this.vm.play(shotgunShell(def.reload));
+      else this.vm.play(shotgunEnd(0.34));
+      return;
+    }
+    if (c === 'rend') {
+      this.state = 'idle';
+      if (this.reloadEmpty) { this.state = 'pump'; this.vm.play(pumpCycle(def.pumpTime)); }
+      return;
+    }
+    if (c === 'reload') {
+      this.state = 'idle';
+      if (def.fire === 'bolt' && !w.chambered) { this.state = 'bolt'; this.vm.play(boltCycle(def.boltTime)); }
+    }
+  }
+
+  // extra camera rotation from the recoil punch (+ the little camera ride of reloads)
+  get punch() { const c = this.vm.cam; return { pitch: this.punchP.x + c.x, yaw: this.punchY.x + c.y, roll: this.punchR.x + c.z }; }
+}
+
+export { smooth, damp };

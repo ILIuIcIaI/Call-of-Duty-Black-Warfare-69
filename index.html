@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Black Warfare 69</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./src/ui/styles.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./node_modules/three/build/three.module.js",
+  "three/addons/": "./node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap"></div>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div id="vignette-dmg"></div>
+    <div id="vignette-low"></div>
+    <div id="scope-overlay" class="hidden"><div class="scope-ring"></div><div class="scope-cross"></div></div>
+    <div id="crosshair">
+      <div class="ch ch-t"></div><div class="ch ch-b"></div><div class="ch ch-l"></div><div class="ch ch-r"></div>
+      <div class="ch-dot"></div>
+    </div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="dmg-indicators"></div>
+    <div id="minimap-wrap"><canvas id="minimap" width="220" height="220"></canvas></div>
+    <div id="scorebar">
+      <div class="sb-team sb-friendly"><span id="sb-friendly">0</span></div>
+      <div class="sb-mid"><div id="sb-timer">10:00</div><div id="sb-mode">TEAM DEATHMATCH</div></div>
+      <div class="sb-team sb-enemy"><span id="sb-enemy">0</span></div>
+    </div>
+    <div id="killfeed"></div>
+    <div id="ammo">
+      <div id="ammo-weapon">AR-77 VALKYR</div>
+      <div id="ammo-count"><span id="ammo-mag">30</span><span id="ammo-res">/ 120</span></div>
+      <div id="ammo-bar"></div>
+      <div id="ammo-hint"></div>
+    </div>
+    <div id="movement-hud"><div id="tac-bar"><div id="tac-fill"></div></div><div id="move-state"></div></div>
+    <div id="center-msg"></div>
+    <div id="score-popups"></div>
+    <div id="enemy-name"></div>
+    <div id="fps"></div>
+    <div id="scoreboard" class="hidden"></div>
+  </div>
+
+  <!-- ============ Death screen ============ -->
+  <div id="death-screen" class="hidden">
+    <div class="death-title">GETÖTET</div>
+    <div id="death-by"></div>
+    <div id="death-timer"></div>
+    <div class="death-hint">[L] Loadout ändern</div>
+  </div>
+
+  <!-- ============ Menus ============ -->
+  <div id="menu"></div>
+  <div id="loading"><div class="load-title">BLACK WARFARE <b>69</b></div><div id="load-msg">Lade...</div><div class="load-bar"><div id="load-fill"></div></div></div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
