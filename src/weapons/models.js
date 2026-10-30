@@ -30,6 +30,10 @@ export function weaponMaterials(texLib) {
     brass: lam({ color: 0xdcb464, map: gm }),
     shell: lam({ color: 0xb8301f }),
     lens: lam({ color: 0x24384a, transparent: true, opacity: 0.55 }),
+    window: lam({ color: 0x5a7c8a, transparent: true, opacity: 0.2, depthWrite: false }),
+    lensClear: lam({ color: 0x7f9fb4, transparent: true, opacity: 0.15 }),
+    germanium: lam({ color: 0x2b1c3d, transparent: true, opacity: 0.92 }),
+    tubeIn: lam({ color: 0x1b1c1f, side: THREE.DoubleSide }),
     glove: lam({ color: 0x625e52, map: fab }),
     glovePad: lam({ color: 0x302f2c, map: fab }),
     sleeve: lam({ color: 0xffffff, map: camo }),
@@ -143,6 +147,11 @@ function reticleTexture(kind) {
   } else if (kind === 'chevron') {
     glow('#ff3010', 6); x.fillStyle = '#ff5030';
     x.beginPath(); x.moveTo(0, -4); x.lineTo(14, 20); x.lineTo(8, 20); x.lineTo(0, 6); x.lineTo(-8, 20); x.lineTo(-14, 20); x.closePath(); x.fill();
+  } else if (kind === 'kobra') {
+    // green winkel, its tip is the aim point, with three range ticks around it
+    glow('#20ff70', 7); x.fillStyle = '#58ff98';
+    x.beginPath(); x.moveTo(0, 0); x.lineTo(17, 26); x.lineTo(10, 26); x.lineTo(0, 11); x.lineTo(-10, 26); x.lineTo(-17, 26); x.closePath(); x.fill();
+    x.fillRect(-46, -2, 16, 4); x.fillRect(30, -2, 16, 4); x.fillRect(-2, 36, 4, 16);
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -154,17 +163,67 @@ function reticleMat(kind) {
 }
 
 // scope lens overlay: reticle + dark vignette edge drawn over the PIP image
-function scopeOverlayTexture() {
+const OVER = {};
+function scopeOverlayTexture(kind = 'acog') {
+  if (OVER[kind]) return OVER[kind];
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const x = c.getContext('2d');
   const g = x.createRadialGradient(128, 128, 70, 128, 128, 128);
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.72, 'rgba(0,0,0,0.15)'); g.addColorStop(1, 'rgba(0,0,0,1)');
   x.fillStyle = g; x.fillRect(0, 0, 256, 256);
-  x.strokeStyle = 'rgba(0,0,0,0.9)'; x.lineWidth = 2;
-  x.beginPath(); x.moveTo(128, 150); x.lineTo(128, 256); x.moveTo(0, 128); x.lineTo(100, 128); x.moveTo(156, 128); x.lineTo(256, 128); x.stroke();
-  x.fillStyle = '#ff3a20'; x.shadowColor = '#ff2010'; x.shadowBlur = 6;
-  x.beginPath(); x.moveTo(128, 122); x.lineTo(138, 140); x.lineTo(133, 140); x.lineTo(128, 131); x.lineTo(123, 140); x.lineTo(118, 140); x.closePath(); x.fill();
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  if (kind === 'acog') {
+    x.strokeStyle = 'rgba(0,0,0,0.9)'; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(128, 150); x.lineTo(128, 256); x.moveTo(0, 128); x.lineTo(100, 128); x.moveTo(156, 128); x.lineTo(256, 128); x.stroke();
+    x.fillStyle = '#ff3a20'; x.shadowColor = '#ff2010'; x.shadowBlur = 6;
+    x.beginPath(); x.moveTo(128, 122); x.lineTo(138, 140); x.lineTo(133, 140); x.lineTo(128, 131); x.lineTo(123, 140); x.lineTo(118, 140); x.closePath(); x.fill();
+  } else if (kind === 'prism') {
+    // amber circle with a center dot, thin black posts from the edge
+    x.strokeStyle = 'rgba(0,0,0,0.85)'; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(128, 186); x.lineTo(128, 256); x.moveTo(0, 128); x.lineTo(70, 128); x.moveTo(186, 128); x.lineTo(256, 128); x.stroke();
+    x.strokeStyle = '#ffb030'; x.fillStyle = '#ffb030'; x.shadowColor = '#ff9010'; x.shadowBlur = 6; x.lineWidth = 3;
+    x.beginPath(); x.arc(128, 128, 42, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.arc(128, 128, 3.5, 0, Math.PI * 2); x.fill();
+  } else if (kind === 'thermal') {
+    // sensor picture: scan lines, white cross with an open center, corner marks
+    x.fillStyle = 'rgba(0,0,0,0.14)';
+    for (let y = 0; y < 256; y += 3) x.fillRect(0, y, 256, 1);
+    x.strokeStyle = 'rgba(255,255,255,0.92)'; x.lineWidth = 1.5;
+    x.beginPath(); x.moveTo(128, 30); x.lineTo(128, 112); x.moveTo(128, 144); x.lineTo(128, 226); x.moveTo(30, 128); x.lineTo(112, 128); x.moveTo(144, 128); x.lineTo(226, 128); x.stroke();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      x.beginPath(); x.moveTo(128 + sx * 48, 128 + sy * 34); x.lineTo(128 + sx * 48, 128 + sy * 48); x.lineTo(128 + sx * 34, 128 + sy * 48); x.stroke();
+    }
+    x.fillStyle = '#fff'; x.fillRect(127, 127, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; OVER[kind] = t; return t;
+}
+
+// tube scope: rings, tube, objective bell, eyepiece, turrets. Returns the height of its axis.
+function riflescope(g, m, railY, z, o) {
+  const sy = railY + o.lift, b = o.body || m.poly;
+  for (const dz of [-o.ring, o.ring]) {
+    box(g, m.metal, 0.024, o.lift - 0.02, 0.022, 0, railY + 0.005 + (o.lift - 0.02) / 2, z + dz, 0, 0, 0, 0.003);
+    cyl(g, m.metal, o.r + 0.005, o.r + 0.005, 0.024, 0, sy, z + dz);
+  }
+  const front = z - o.len / 2;
+  cyl(g, b, o.r, o.r, o.len, 0, sy, z);
+  cyl(g, b, o.r, o.obj, 0.06, 0, sy, front - 0.03);
+  cyl(g, b, o.obj, o.obj, o.objLen, 0, sy, front - 0.06 - o.objLen / 2);
+  cyl(g, b, o.eye, o.r, 0.04, 0, sy, z + o.len / 2 + 0.02);
+  cyl(g, m.rubber, o.eye + 0.001, o.eye + 0.001, 0.03, 0, sy, z + o.len / 2 + 0.055);
+  cyl(g, m.metal, o.tur, o.tur, o.turH, 0, sy + o.r + o.turH / 2 - 0.002, z - 0.01, 'y', 12);
+  cyl(g, m.metal, o.tur, o.tur, o.turH, o.r + o.turH / 2 - 0.002, sy, z - 0.01, 'x', 12);
+  const lf = M(new THREE.CircleGeometry(o.obj - 0.002, 20), m.lens); place(lf, 0, sy, front - 0.061 - o.objLen); lf.rotation.y = Math.PI; g.add(lf);
+  const lb = M(new THREE.CircleGeometry(o.eye - 0.001, 20), m.lens); place(lb, 0, sy, z + o.len / 2 + 0.071); g.add(lb);
+  return sy;
+}
+
+// PIP lens + its reticle picture on the eye side of an optic
+function pipLens(g, sy, lensZ, radius, kind) {
+  const pipMat = new THREE.MeshBasicMaterial({ color: 0x0c1116, toneMapped: false });
+  const lens = M(new THREE.CircleGeometry(radius, 28), pipMat); place(lens, 0, sy, lensZ); lens.userData.keep = true; g.add(lens);
+  const over = M(new THREE.CircleGeometry(radius + 0.0001, 28), new THREE.MeshBasicMaterial({ map: scopeOverlayTexture(kind), transparent: true, depthWrite: false, toneMapped: false }));
+  place(over, 0, sy, lensZ + 0.0003); over.userData.keep = true; over.renderOrder = 6; g.add(over);
+  return { lens, pipMat };
 }
 
 // Returns { group, sightY (absolute, above rail base), zoom, kind, lens(optional) }
@@ -180,9 +239,9 @@ export function buildOptic(kind, mats, railY, z) {
     for (const sx of [-1, 1]) box(g, m.metal, 0.0045, wh, 0.014, sx * (ww / 2), wy + wh / 2, wz, -0.12, 0, 0, 0.0015);
     box(g, m.metal, ww + 0.0045, 0.005, 0.014, 0, wy + wh + 0.001, wz - 0.004, -0.12, 0, 0, 0.0015);
     box(g, m.steel, 0.006, 0.008, 0.008, 0.019, railY + 0.012, z + 0.006);
-    const lens = M(new THREE.PlaneGeometry(ww - 0.004, wh - 0.002), m.lens); place(lens, 0, wy + wh / 2, wz - 0.001, -0.12); g.add(lens);
+    const lens = M(new THREE.PlaneGeometry(ww - 0.004, wh - 0.002), m.window); place(lens, 0, wy + wh / 2, wz - 0.001, -0.12); g.add(lens);
     const sy = wy + wh / 2;
-    const ret = M(new THREE.PlaneGeometry(0.0034, 0.0034), reticleMat('dot')); place(ret, 0, sy, wz); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
+    const ret = M(new THREE.PlaneGeometry(0.011, 0.011), reticleMat('dot')); place(ret, 0, sy, wz); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
     return { group: g, sightY: sy, zoom: 1.28, kind, reticle: ret };
   }
   if (kind === 'holo') {
@@ -193,8 +252,7 @@ export function buildOptic(kind, mats, railY, z) {
     box(g, m.metal, 0.005, 0.038, 0.05, 0.0185, railY + 0.044, z - 0.014, 0, 0, 0, 0.002);
     box(g, m.metal, 0.005, 0.038, 0.05, -0.0185, railY + 0.044, z - 0.014, 0, 0, 0, 0.002);
     box(g, m.steel, 0.012, 0.01, 0.014, 0.019, railY + 0.02, z + 0.025);
-    const lens = M(new THREE.PlaneGeometry(0.032, 0.034), m.lens); place(lens, 0, railY + 0.044, z - 0.03); g.add(lens);
-    const lens2 = M(new THREE.PlaneGeometry(0.032, 0.034), m.lens); place(lens2, 0, railY + 0.044, z + 0.008); g.add(lens2);
+    const lens = M(new THREE.PlaneGeometry(0.032, 0.034), m.window); place(lens, 0, railY + 0.044, z - 0.03); g.add(lens);
     const ret = M(new THREE.PlaneGeometry(0.012, 0.012), reticleMat('holo')); place(ret, 0, railY + 0.044, z - 0.029); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
     return { group: g, sightY: railY + 0.044, zoom: 1.3, kind, reticle: ret };
   }
@@ -210,25 +268,117 @@ export function buildOptic(kind, mats, railY, z) {
     box(g, m.metal, 0.012, 0.012, 0.016, 0, sy + 0.022, z - 0.005, 0, 0, 0, 0.002);
     box(g, m.metal, 0.012, 0.012, 0.016, 0.022, sy, z - 0.005, 0, 0, 0, 0.002);
     const lensFront = M(new THREE.CircleGeometry(0.022, 20), m.lens); place(lensFront, 0, sy, z - 0.083); lensFront.rotation.y = Math.PI; g.add(lensFront);
-    const pipMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-    const lens = M(new THREE.CircleGeometry(0.0185, 28), pipMat); place(lens, 0, sy, z + 0.0835); lens.userData.keep = true; g.add(lens);
-    const over = M(new THREE.CircleGeometry(0.0186, 28), new THREE.MeshBasicMaterial({ map: scopeOverlayTexture(), transparent: true, depthWrite: false, toneMapped: false }));
-    place(over, 0, sy, z + 0.0838); over.userData.keep = true; over.renderOrder = 6; g.add(over);
-    return { group: g, sightY: sy, zoom: 1.5, pipZoom: 3.2, kind, lens, pipMat, eyeRelief: 0.11, lensZ: z + 0.0835 };
+    const pip = pipLens(g, sy, z + 0.0835, 0.0185, 'acog');
+    return { group: g, sightY: sy, zoom: 1.5, pipZoom: 3.2, kind, ...pip, lensDist: 0.0965, lensZ: z + 0.0835 };
+  }
+  if (kind === 'micro') {
+    // tiny open red dot, small enough for a pistol slide
+    const wy = railY + 0.008, ww = 0.026, wh = 0.021, wz = z - 0.004, sy = wy + wh / 2;
+    box(g, m.metal, 0.024, 0.008, 0.044, 0, railY + 0.004, z, 0, 0, 0, 0.002);
+    box(g, m.metal, 0.013, 0.01, 0.014, 0, railY + 0.012, z + 0.015, 0, 0, 0, 0.003);
+    for (const sx of [-1, 1]) box(g, m.metal, 0.0032, wh, 0.011, sx * (ww / 2), sy, wz, -0.14, 0, 0, 0.001);
+    box(g, m.metal, ww + 0.0032, 0.0036, 0.011, 0, wy + wh + 0.0005, wz - 0.003, -0.14, 0, 0, 0.001);
+    box(g, m.steel, 0.004, 0.005, 0.006, 0.014, railY + 0.008, z + 0.01);
+    const lens = M(new THREE.PlaneGeometry(ww - 0.003, wh - 0.002), m.lensClear); place(lens, 0, sy, wz - 0.001, -0.14); g.add(lens);
+    const ret = M(new THREE.PlaneGeometry(0.011, 0.011), reticleMat('dot')); place(ret, 0, sy, wz); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
+    return { group: g, sightY: sy, zoom: 1.2, kind, reticle: ret };
+  }
+  if (kind === 'reddot') {
+    // closed tube: you look through a dark ring at a fine dot
+    const sy = railY + 0.034, tz = z - 0.004;
+    box(g, m.metal, 0.03, 0.01, 0.05, 0, railY + 0.005, tz, 0, 0, 0, 0.002);
+    box(g, m.metal, 0.018, 0.012, 0.034, 0, railY + 0.015, tz, 0, 0, 0, 0.002);
+    cyl(g, m.tubeIn, 0.0175, 0.0175, 0.066, 0, sy, tz, 'z', 22, true);
+    cyl(g, m.metal, 0.0195, 0.0195, 0.03, 0, sy, tz, 'z', 22, true);
+    for (const dz of [-0.033, 0.033]) { const tr = M(new THREE.TorusGeometry(0.0178, 0.0026, 6, 24), m.metal); place(tr, 0, sy, tz + dz); g.add(tr); }
+    cyl(g, m.metal, 0.0065, 0.0065, 0.012, 0, sy + 0.024, tz, 'y', 10);
+    cyl(g, m.metal, 0.0065, 0.0065, 0.012, 0.024, sy, tz, 'x', 10);
+    const lens = M(new THREE.CircleGeometry(0.0172, 22), m.lensClear); place(lens, 0, sy, tz - 0.03); g.add(lens);
+    const ret = M(new THREE.PlaneGeometry(0.009, 0.009), reticleMat('dot')); place(ret, 0, sy, tz - 0.029); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
+    return { group: g, sightY: sy, zoom: 1.32, kind, reticle: ret, lensDist: 0.2, lensZ: tz + 0.033 };
+  }
+  if (kind === 'chevron') {
+    // tall window between two side plates with a green chevron
+    const ww = 0.042, wh = 0.046, wy = railY + 0.013, wz = z - 0.012, sy = wy + wh * 0.5;
+    box(g, m.poly, 0.036, 0.012, 0.09, 0, railY + 0.006, z, 0, 0, 0, 0.003);
+    box(g, m.od, 0.02, 0.012, 0.03, 0, railY + 0.018, z + 0.028, 0, 0, 0, 0.003);
+    for (const sx of [-1, 1]) box(g, m.poly, 0.005, wh + 0.004, 0.044, sx * (ww / 2), sy, wz, 0, 0, 0, 0.0015);
+    box(g, m.poly, ww + 0.005, 0.0055, 0.044, 0, wy + wh + 0.0015, wz, 0, 0, 0, 0.0015);
+    box(g, m.steel, 0.008, 0.014, 0.012, 0.027, railY + 0.02, z + 0.014, 0, 0, 0, 0.002);
+    const lens = M(new THREE.PlaneGeometry(ww - 0.004, wh - 0.002), m.lensClear); place(lens, 0, sy, wz - 0.016); g.add(lens);
+    const ret = M(new THREE.PlaneGeometry(0.02, 0.02), reticleMat('kobra')); place(ret, 0, sy, wz - 0.015); ret.userData.keep = true; ret.renderOrder = 5; g.add(ret);
+    return { group: g, sightY: sy, zoom: 1.3, kind, reticle: ret, lensDist: 0.28, lensZ: wz + 0.022 };
+  }
+  if (kind === 'prism') {
+    // compact 2x prism sight: boxy body, short eyepiece
+    const sy = railY + 0.04, tz = z - 0.005, lensZ = tz + 0.0428;
+    box(g, m.metal, 0.028, 0.012, 0.06, 0, railY + 0.006, tz, 0, 0, 0, 0.003);
+    box(g, m.metal, 0.036, 0.04, 0.085, 0, sy, tz, 0, 0, 0, 0.006);
+    cyl(g, m.metal, 0.0205, 0.0205, 0.012, 0, sy, tz - 0.048);
+    cyl(g, m.rubber, 0.022, 0.021, 0.018, 0, sy, tz + 0.05, 'z', 18, true);
+    box(g, m.steel, 0.009, 0.006, 0.02, 0, sy + 0.023, tz + 0.012, 0, 0, 0, 0.002);
+    const lf = M(new THREE.CircleGeometry(0.0195, 20), m.lens); place(lf, 0, sy, tz - 0.0545); lf.rotation.y = Math.PI; g.add(lf);
+    const pip = pipLens(g, sy, lensZ, 0.0175, 'prism');
+    return { group: g, sightY: sy, zoom: 1.38, pipZoom: 2.1, kind, ...pip, lensDist: 0.105, lensZ };
+  }
+  if (kind === 'thermal') {
+    // bulky thermal module: box housing, big germanium objective, rubber eyepiece
+    const sy = railY + 0.046, tz = z - 0.01, lensZ = tz + 0.063;
+    box(g, m.metal, 0.03, 0.014, 0.07, 0, railY + 0.007, tz, 0, 0, 0, 0.003);
+    box(g, m.poly, 0.044, 0.05, 0.125, 0, sy, tz, 0, 0, 0, 0.008);
+    for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) box(g, m.dark, 0.002, 0.03, 0.006, sx * 0.0222, sy, tz - 0.035 + i * 0.016);
+    cyl(g, m.metal, 0.024, 0.028, 0.03, 0, sy, tz - 0.075);
+    cyl(g, m.rubber, 0.024, 0.021, 0.03, 0, sy, tz + 0.075, 'z', 18, true);
+    box(g, m.od, 0.012, 0.022, 0.05, 0.029, sy + 0.004, tz + 0.01, 0, 0, 0, 0.003);
+    box(g, m.steel, 0.01, 0.006, 0.01, 0, sy + 0.028, tz + 0.03, 0, 0, 0, 0.002);
+    const lf = M(new THREE.CircleGeometry(0.026, 22), m.germanium); place(lf, 0, sy, tz - 0.0905); lf.rotation.y = Math.PI; g.add(lf);
+    const pip = pipLens(g, sy, lensZ, 0.0205, 'thermal');
+    return { group: g, sightY: sy, zoom: 1.5, pipZoom: 4.2, kind, ...pip, lensDist: 0.108, lensZ, thermal: true };
+  }
+  if (kind === 'hunter') {
+    const sy = riflescope(g, m, railY, z, { lift: 0.042, r: 0.0125, len: 0.17, ring: 0.05, obj: 0.021, objLen: 0.035, eye: 0.018, tur: 0.009, turH: 0.018, body: m.dark });
+    cyl(g, m.brass, 0.0137, 0.0137, 0.004, 0, sy, z + 0.074);
+    return { group: g, sightY: sy, zoom: 4.0, kind, overlay: 'hunter', sway: 0.75 };
   }
   if (kind === 'sniper') {
-    const sy = railY + 0.05;
-    for (const dz of [-0.06, 0.06]) { box(g, m.metal, 0.024, 0.03, 0.022, 0, railY + 0.02, z + dz, 0, 0, 0, 0.003); cyl(g, m.metal, 0.021, 0.021, 0.024, 0, sy, z + dz); }
-    cyl(g, m.poly, 0.016, 0.016, 0.24, 0, sy, z);
-    cyl(g, m.poly, 0.027, 0.016, 0.06, 0, sy, z - 0.15);
-    cyl(g, m.poly, 0.027, 0.027, 0.06, 0, sy, z - 0.2);
-    cyl(g, m.poly, 0.021, 0.016, 0.04, 0, sy, z + 0.13);
-    cyl(g, m.rubber, 0.022, 0.022, 0.03, 0, sy, z + 0.16);
-    cyl(g, m.metal, 0.012, 0.012, 0.03, 0, sy + 0.025, z - 0.01, 'y', 12);
-    cyl(g, m.metal, 0.012, 0.012, 0.03, 0.025, sy, z - 0.01, 'x', 12);
-    const lensFront = M(new THREE.CircleGeometry(0.025, 20), m.lens); place(lensFront, 0, sy, z - 0.231); lensFront.rotation.y = Math.PI; g.add(lensFront);
-    const back = M(new THREE.CircleGeometry(0.02, 20), m.lens); place(back, 0, sy, z + 0.176); g.add(back);
-    return { group: g, sightY: sy, zoom: 6.5, kind, overlay: true };
+    const sy = riflescope(g, m, railY, z, { lift: 0.05, r: 0.016, len: 0.24, ring: 0.06, obj: 0.027, objLen: 0.06, eye: 0.021, tur: 0.012, turH: 0.03 });
+    return { group: g, sightY: sy, zoom: 6.5, kind, overlay: 'duplex' };
+  }
+  if (kind === 'mildot') {
+    // long, heavy target scope with tall turrets and a sunshade
+    const sy = riflescope(g, m, railY, z, { lift: 0.06, r: 0.019, len: 0.3, ring: 0.075, obj: 0.034, objLen: 0.09, eye: 0.023, tur: 0.015, turH: 0.036 });
+    cyl(g, m.poly, 0.036, 0.036, 0.05, 0, sy, z - 0.15 - 0.06 - 0.09 - 0.025, 'z', 20, true);
+    cyl(g, m.tan, 0.0155, 0.0155, 0.006, 0, sy + 0.019 + 0.035, z - 0.01, 'y', 12);
+    cyl(g, m.tan, 0.0155, 0.0155, 0.006, 0.019 + 0.035, sy, z - 0.01, 'x', 12);
+    cyl(g, m.metal, 0.011, 0.011, 0.024, -0.03, sy, z - 0.01, 'x', 12);
+    return { group: g, sightY: sy, zoom: 10.5, kind, overlay: 'mildot', sway: 1.3 };
+  }
+  if (kind === 'digital') {
+    // boxy electronic scope with a rangefinder module on top
+    const sy = railY + 0.052;
+    for (const dz of [-0.06, 0.06]) box(g, m.metal, 0.03, 0.03, 0.03, 0, railY + 0.015, z + dz, 0, 0, 0, 0.003);
+    box(g, m.poly, 0.05, 0.056, 0.2, 0, sy, z, 0, 0, 0, 0.008);
+    cyl(g, m.metal, 0.028, 0.034, 0.05, 0, sy, z - 0.125);
+    cyl(g, m.rubber, 0.03, 0.026, 0.035, 0, sy, z + 0.118, 'z', 18, true);
+    box(g, m.dark, 0.026, 0.018, 0.07, 0, sy + 0.037, z - 0.03, 0, 0, 0, 0.004);
+    for (let i = 0; i < 3; i++) box(g, m.steel, 0.002, 0.008, 0.012, 0.026, sy + 0.012 - i * 0.012, z + 0.05, 0, 0, 0, 0.001);
+    box(g, m.od, 0.012, 0.03, 0.05, -0.031, sy, z - 0.01, 0, 0, 0, 0.003);
+    const lf = M(new THREE.CircleGeometry(0.032, 22), m.lens); place(lf, 0, sy, z - 0.151); lf.rotation.y = Math.PI; g.add(lf);
+    const rf = M(new THREE.CircleGeometry(0.008, 12), m.lens); place(rf, 0, sy + 0.037, z - 0.0655); rf.rotation.y = Math.PI; g.add(rf);
+    const screen = M(new THREE.CircleGeometry(0.024, 20), new THREE.MeshBasicMaterial({ color: 0x072b22 })); place(screen, 0, sy, z + 0.101); g.add(screen);
+    return { group: g, sightY: sy, zoom: 8.5, kind, overlay: 'digital', sway: 0.55 };
+  }
+  if (kind === 'thermalscope') {
+    // sniper-sized thermal: long housing, wide germanium lens
+    const sy = railY + 0.054;
+    for (const dz of [-0.07, 0.07]) box(g, m.metal, 0.03, 0.032, 0.03, 0, railY + 0.016, z + dz, 0, 0, 0, 0.003);
+    box(g, m.poly, 0.054, 0.06, 0.24, 0, sy, z, 0, 0, 0, 0.01);
+    for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) box(g, m.dark, 0.002, 0.036, 0.007, sx * 0.0272, sy, z - 0.08 + i * 0.024);
+    cyl(g, m.metal, 0.032, 0.04, 0.05, 0, sy, z - 0.145);
+    cyl(g, m.rubber, 0.03, 0.026, 0.04, 0, sy, z + 0.14, 'z', 18, true);
+    box(g, m.od, 0.014, 0.03, 0.07, 0.034, sy + 0.004, z + 0.01, 0, 0, 0, 0.003);
+    const lf = M(new THREE.CircleGeometry(0.038, 24), m.germanium); place(lf, 0, sy, z - 0.171); lf.rotation.y = Math.PI; g.add(lf);
+    return { group: g, sightY: sy, zoom: 6.5, kind, overlay: 'thermal', thermal: true, sway: 0.85 };
   }
   return null;
 }
@@ -672,7 +822,7 @@ function buildDMR(m, opt) {
   };
 }
 
-function buildSniper(m) {
+function buildSniper(m, opt) {
   const root = new THREE.Group(), P = {};
   // chassis (tan) with thumbhole stock
   prof(root, m.tan, [[0.46, 0.06], [0.28, 0.05], [0.2, 0.0], [0.12, 0.0], [0.1, -0.02], [-0.36, -0.02], [-0.36, 0.035], [0.12, 0.045], [0.3, 0.072], [0.46, 0.075]], 0.05, 0, 0.006);
@@ -705,15 +855,19 @@ function buildSniper(m) {
   for (const z of [0.3, 0.37]) cyl(root, m.steel, 0.007, 0.007, 0.004, 0.024, 0.06, z, 'x', 10);
   for (const dz of [-0.06, 0.06]) for (const sx of [-1, 1]) box(root, m.steel, 0.004, 0.006, 0.006, sx * 0.0125, 0.073, dz, 0, 0, 0, 0.001);
   box(root, m.metal, 0.03, 0.006, 0.07, 0, -0.054, -0.03, 0, 0, 0, 0.002);
+  if (opt === 'iron') { // a found rifle can come without any scope
+    box(root, m.metal, 0.02, 0.016, 0.012, 0, 0.094, 0.07); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.099, 0.07);
+    box(root, m.metal, 0.004, 0.05, 0.006, 0, 0.078, -0.82);
+  }
 
   return {
-    root, parts: P, ironY: 0.1, railY: 0.0855, opticZ: 0.0,
+    root, parts: P, ironY: 0.103, railY: 0.0855, opticZ: 0.0,
     anchors: {
       rhand: rhandGrip(0, -0.055, 0.11, 0.25), lhand: lhandRail(0, 0.01, -0.28, 0.6),
       muzzle: new THREE.Vector3(0, 0.055, -0.93), eject: new THREE.Vector3(0.03, 0.06, 0.0),
       magGrab: new THREE.Vector3(0, -0.06, 0), charge: new THREE.Vector3(0.062, 0.043, 0.105),
     },
-    casing: 'big', sightZ: 0.12, eyeRelief: 0.15, fixedOptic: 'sniper',
+    casing: 'big', sightZ: 0.12, eyeRelief: 0.15,
   };
 }
 
@@ -815,8 +969,9 @@ function buildPistol(m, opt, variant) {
   };
 }
 
-function buildRevolver(m) {
+function buildRevolver(m, opt) {
   const root = new THREE.Group(), P = {};
+  if (opt !== 'iron') box(root, m.steel, 0.02, 0.012, 0.07, 0, 0.066, -0.01, 0, 0, 0, 0.002); // sight mount over the frame
   prof(root, m.steel, [[0.05, 0.0], [-0.04, 0.0], [-0.05, 0.02], [-0.05, 0.06], [0.03, 0.065], [0.05, 0.05]], 0.032, 0, 0.004);
   prof(root, m.wood, [[0.012, 0.0], [0.05, 0.0], [0.082, -0.1], [0.07, -0.11], [0.035, -0.108], [0.018, -0.01]], 0.034, 0, 0.006);
   cyl(root, m.steel, 0.011, 0.011, 0.18, 0, 0.05, -0.14, 'z', 12);
@@ -856,28 +1011,282 @@ function buildRevolver(m) {
   };
 }
 
+function buildBurst(m, opt) {
+  const root = new THREE.Group(), P = {};
+  // ---- angular one-piece shell with dark side inserts
+  prof(root, m.od, [[0.14, 0.012], [0.1, -0.012], [-0.125, -0.012], [-0.15, 0.012], [-0.15, 0.074], [0.12, 0.074], [0.14, 0.058]], 0.05, 0, 0.004);
+  prof(root, m.od, [[-0.028, -0.012], [-0.112, -0.012], [-0.118, -0.04], [-0.026, -0.04]], 0.05, 0, 0.003);
+  for (const s of [-1, 1]) box(root, m.poly, 0.002, 0.026, 0.16, s * 0.0252, 0.046, 0.0, 0, 0, 0, 0.0008);
+  box(root, m.dark, 0.003, 0.016, 0.05, 0.0258, 0.056, -0.04, 0, 0, 0, 0.001);
+  box(root, m.metal, 0.03, 0.007, 0.27, 0, 0.0775, -0.015, 0, 0, 0, 0.0015);
+  rail(root, m.metal, -0.145, 0.11, 0.081);
+  cyl(root, m.steel, 0.0055, 0.0055, 0.004, -0.0262, 0.012, 0.06, 'x', 12);
+  box(root, m.steel, 0.003, 0.004, 0.02, -0.0285, 0.012, 0.054, -0.5);
+  pins(root, m.steel, [[0.012, -0.11], [0.04, 0.1]], 0.003, 0.0255);
+  // ---- tapered handguard with big vents
+  prof(root, m.od, [[-0.15, 0.074], [-0.37, 0.07], [-0.395, 0.056], [-0.395, 0.02], [-0.37, 0.006], [-0.15, 0.0]], 0.05, 0, 0.004);
+  for (const s of [-1, 1]) slotRow(root, m.dark, 5, s * 0.0252, 0.038, -0.185, 0.04, 0.003, 0.018, 0.026);
+  rail(root, m.metal, -0.385, -0.15, 0.072, 0.018);
+  // ---- barrel + slotted flash hider
+  cyl(root, m.metal, 0.009, 0.009, 0.12, 0, 0.04, -0.455, 'z', 14);
+  cyl(root, m.metal, 0.0135, 0.0135, 0.05, 0, 0.04, -0.535, 'z', 14);
+  for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + Math.PI / 2; box(root, m.dark, 0.005, 0.005, 0.032, Math.cos(a) * 0.0132, 0.04 + Math.sin(a) * 0.0132, -0.545, 0, 0, a); }
+  // ---- grip + trigger
+  prof(root, m.poly, [[0.04, -0.008], [0.094, -0.008], [0.122, -0.122], [0.106, -0.134], [0.072, -0.128], [0.05, -0.03]], 0.033, 0, 0.005);
+  box(root, m.poly, 0.011, 0.004, 0.066, 0, -0.046, 0.004, 0, 0, 0, 0.0015);
+  box(root, m.poly, 0.011, 0.034, 0.005, 0, -0.03, -0.029, 0, 0, 0, 0.0015);
+  box(root, m.steel, 0.005, 0.02, 0.004, 0, -0.025, 0.008, 0.3, 0, 0, 0.001);
+  // ---- fixed skeleton stock
+  prof(root, m.od, [[0.14, 0.058], [0.37, 0.06], [0.385, -0.085], [0.355, -0.09], [0.29, -0.02], [0.2, -0.002], [0.14, 0.012]], 0.044, 0, 0.005);
+  box(root, m.dark, 0.045, 0.026, 0.08, 0, 0.022, 0.285, 0, 0, 0, 0.004);
+  box(root, m.poly, 0.05, 0.012, 0.13, 0, 0.066, 0.29, 0, 0, 0, 0.004);
+  box(root, m.rubber, 0.046, 0.155, 0.016, 0, -0.012, 0.388, 0, 0, 0, 0.004);
+  // ---- animated parts
+  P.charge = group(root, 'charge', 0, 0.074, 0.122);
+  box(P.charge, m.metal, 0.05, 0.008, 0.016, 0, 0, 0, 0, 0, 0, 0.002);
+  box(P.charge, m.metal, 0.01, 0.006, 0.04, 0, 0, -0.02);
+  P.bolt = group(root, 'bolt', 0, 0, 0);
+  box(P.bolt, m.steel, 0.006, 0.012, 0.03, 0.0258, 0.056, -0.04);
+  P.mag = group(root, 'mag', 0, -0.03, -0.07);
+  profCurve(P.mag, m.metal, [[0.034, 0.02], [-0.034, 0.02], ['q', -0.04, -0.08, -0.058, -0.16], [-0.004, -0.172], ['q', 0.018, -0.09, 0.034, 0.02]], 0.026, 0, 0.003);
+  for (const s of [-1, 1]) ribsAlongMag(P.mag, m.poly, [[0.02, 0.0], [0.012, -0.07], [0.0, -0.15]], s * 0.0135);
+  box(P.mag, m.poly, 0.03, 0.012, 0.062, 0, -0.168, -0.032, 0.25, 0, 0, 0.003);
+  box(P.mag, m.brass, 0.009, 0.005, 0.03, 0, 0.022, 0.0, 0, 0, 0, 0.002);
+  if (opt === 'iron') {
+    box(root, m.metal, 0.02, 0.012, 0.03, 0, 0.094, 0.07, 0, 0, 0, 0.002);
+    box(root, m.metal, 0.02, 0.022, 0.008, 0, 0.11, 0.075);
+    const ring = M(new THREE.TorusGeometry(0.0055, 0.0022, 6, 14), m.metal); place(ring, 0, 0.112, 0.07); root.add(ring);
+    box(root, m.metal, 0.012, 0.02, 0.012, 0, 0.09, -0.36);
+    box(root, m.metal, 0.003, 0.018, 0.003, 0, 0.103, -0.36);
+    box(root, m.metal, 0.003, 0.022, 0.008, 0.008, 0.102, -0.36); box(root, m.metal, 0.003, 0.022, 0.008, -0.008, 0.102, -0.36);
+  }
+  return {
+    root, parts: P, ironY: 0.112, railY: 0.0895, opticZ: 0.0,
+    anchors: {
+      rhand: rhandGrip(0, -0.05, 0.072, 0.32), lhand: lhandRail(0, 0.018, -0.285, 0.5),
+      muzzle: new THREE.Vector3(0, 0.04, -0.565), eject: new THREE.Vector3(0.03, 0.056, -0.04),
+      magGrab: new THREE.Vector3(0, -0.12, -0.03), charge: new THREE.Vector3(0, 0.074, 0.13),
+    },
+    casing: 'rifle', sightZ: 0.07, eyeRelief: 0.27,
+  };
+}
+
+function buildPDW(m, opt) {
+  const root = new THREE.Group(), P = {};
+  // ---- short tan shell with a dark spine
+  prof(root, m.tan, [[0.125, 0.01], [0.09, -0.008], [-0.165, -0.008], [-0.19, 0.012], [-0.19, 0.068], [0.095, 0.07], [0.125, 0.05]], 0.05, 0, 0.005);
+  box(root, m.metal, 0.034, 0.008, 0.27, 0, 0.073, -0.045, 0, 0, 0, 0.002);
+  rail(root, m.metal, -0.18, 0.085, 0.077, 0.02);
+  box(root, m.dark, 0.003, 0.015, 0.036, 0.0258, 0.052, -0.03, 0, 0, 0, 0.001);
+  for (let i = 0; i < 4; i++) for (const s of [-1, 1]) box(root, m.dark, 0.003, 0.02, 0.012, s * 0.0252, 0.036, -0.1 - i * 0.02, 0.35);
+  pins(root, m.steel, [[0.02, -0.17], [0.03, 0.09]], 0.003, 0.0258);
+  // ---- shrouded short barrel + muzzle can
+  cyl(root, m.poly, 0.0165, 0.0165, 0.06, 0, 0.04, -0.215, 'z', 10);
+  for (let i = 0; i < 3; i++) cyl(root, m.dark, 0.017, 0.017, 0.004, 0, 0.04, -0.2 - i * 0.017, 'z', 10);
+  cyl(root, m.metal, 0.012, 0.012, 0.035, 0, 0.04, -0.262, 'z', 14);
+  cyl(root, m.steel, 0.0125, 0.0125, 0.006, 0, 0.04, -0.281, 'z', 14);
+  // ---- grip, trigger, angled fore grip
+  prof(root, m.poly, [[0.04, -0.006], [0.092, -0.006], [0.116, -0.115], [0.1, -0.126], [0.068, -0.12], [0.05, -0.024]], 0.033, 0, 0.005);
+  box(root, m.poly, 0.011, 0.004, 0.062, 0, -0.042, 0.006, 0, 0, 0, 0.0015);
+  box(root, m.poly, 0.011, 0.03, 0.005, 0, -0.026, -0.025, 0, 0, 0, 0.0015);
+  box(root, m.steel, 0.005, 0.018, 0.004, 0, -0.022, 0.01, 0.3, 0, 0, 0.001);
+  prof(root, m.poly, [[-0.105, -0.006], [-0.175, -0.006], [-0.168, -0.03], [-0.125, -0.058], [-0.108, -0.045]], 0.03, 0, 0.004);
+  // ---- collapsed wire stock
+  box(root, m.metal, 0.048, 0.03, 0.02, 0, 0.034, 0.13, 0, 0, 0, 0.004);
+  for (const s of [-1, 1]) cyl(root, m.steel, 0.005, 0.005, 0.16, s * 0.018, 0.03, 0.2);
+  box(root, m.rubber, 0.052, 0.09, 0.014, 0, 0.012, 0.285, 0, 0, 0, 0.004);
+  // ---- animated parts
+  P.charge = group(root, 'charge', -0.03, 0.056, -0.11);
+  box(P.charge, m.steel, 0.016, 0.009, 0.012, 0, 0, 0, 0, 0, 0, 0.002);
+  P.bolt = group(root, 'bolt', 0, 0, 0);
+  box(P.bolt, m.steel, 0.005, 0.012, 0.024, 0.0258, 0.052, -0.03);
+  P.mag = group(root, 'mag', 0, -0.005, -0.065);
+  prof(P.mag, m.metal, [[0.024, 0.0], [-0.024, 0.0], [-0.036, -0.15], [0.012, -0.155]], 0.024, 0, 0.003);
+  box(P.mag, m.poly, 0.028, 0.01, 0.052, 0, -0.158, -0.012, 0.08, 0, 0, 0.003);
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) cyl(P.mag, m.dark, 0.0028, 0.0028, 0.002, s * 0.0122, -0.03 - i * 0.03, -0.008 - i * 0.002, 'x', 8);
+  if (opt === 'iron') {
+    box(root, m.metal, 0.02, 0.014, 0.012, 0, 0.094, 0.07); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.099, 0.07);
+    box(root, m.metal, 0.004, 0.018, 0.006, 0, 0.092, -0.17); box(root, m.metal, 0.02, 0.006, 0.01, 0, 0.086, -0.17);
+  }
+  return {
+    root, parts: P, ironY: 0.101, railY: 0.0855, opticZ: -0.03,
+    anchors: {
+      rhand: rhandGrip(0, -0.045, 0.078, 0.33), lhand: lhandRail(0, -0.028, -0.145, 0.1),
+      muzzle: new THREE.Vector3(0, 0.04, -0.285), eject: new THREE.Vector3(0.03, 0.052, -0.03),
+      magGrab: new THREE.Vector3(0, -0.1, -0.01), charge: new THREE.Vector3(-0.04, 0.056, -0.11),
+    },
+    casing: 'pistol', sightZ: 0.07, eyeRelief: 0.23,
+  };
+}
+
+function buildAMR(m, opt) {
+  const root = new THREE.Group(), P = {};
+  // ---- big boxy receiver and perforated handguard
+  prof(root, m.metal, [[0.18, 0.012], [0.14, -0.012], [-0.2, -0.012], [-0.22, 0.01], [-0.22, 0.07], [0.16, 0.076], [0.18, 0.05]], 0.058, 0, 0.005);
+  box(root, m.metal, 0.034, 0.006, 0.36, 0, 0.0785, -0.03, 0, 0, 0, 0.0015);
+  rail(root, m.metal, -0.2, 0.14, 0.081, 0.024);
+  box(root, m.dark, 0.003, 0.024, 0.08, 0.0296, 0.05, -0.04, 0, 0, 0, 0.001);
+  pins(root, m.steel, [[0.012, -0.18], [0.012, 0.11], [0.06, 0.11], [0.06, -0.18]], 0.0042, 0.0296);
+  prof(root, m.poly, [[-0.22, 0.07], [-0.52, 0.066], [-0.535, 0.05], [-0.535, 0.018], [-0.52, 0.006], [-0.22, 0.004]], 0.056, 0, 0.004);
+  for (const s of [-1, 1]) slotRow(root, m.dark, 6, s * 0.0282, 0.038, -0.255, 0.045, 0.003, 0.03, 0.03);
+  // ---- heavy barrel, gas block, huge two-chamber muzzle brake
+  cyl(root, m.metal, 0.0165, 0.0165, 0.4, 0, 0.042, -0.72, 'z', 14);
+  box(root, m.metal, 0.05, 0.04, 0.045, 0, 0.042, -0.945, 0, 0, 0, 0.004);
+  box(root, m.metal, 0.05, 0.04, 0.045, 0, 0.042, -1.015, 0, 0, 0, 0.004);
+  box(root, m.metal, 0.024, 0.024, 0.03, 0, 0.042, -0.98, 0, 0, 0, 0.002);
+  for (const s of [-1, 1]) for (const z of [-0.945, -1.015]) box(root, m.dark, 0.004, 0.026, 0.026, s * 0.0242, 0.042, z);
+  // ---- folded bipod along the barrel
+  for (const s of [-1, 1]) {
+    cyl(root, m.metal, 0.0055, 0.0055, 0.3, s * 0.02, 0.012, -0.69, 'z', 8);
+    box(root, m.rubber, 0.014, 0.008, 0.024, s * 0.02, 0.012, -0.85, 0, 0, 0, 0.002);
+  }
+  box(root, m.metal, 0.05, 0.016, 0.03, 0, 0.018, -0.545, 0, 0, 0, 0.003);
+  // ---- grip + trigger
+  prof(root, m.poly, [[0.06, -0.01], [0.118, -0.01], [0.15, -0.13], [0.132, -0.142], [0.094, -0.134], [0.072, -0.032]], 0.036, 0, 0.005);
+  box(root, m.metal, 0.012, 0.005, 0.07, 0, -0.05, 0.03, 0, 0, 0, 0.002);
+  box(root, m.metal, 0.012, 0.038, 0.005, 0, -0.032, -0.004, 0, 0, 0, 0.002);
+  box(root, m.steel, 0.006, 0.022, 0.005, 0, -0.026, 0.034, 0.3, 0, 0, 0.001);
+  // ---- stock with cheek rest, thick recoil pad and a rear monopod
+  prof(root, m.metal, [[0.18, 0.05], [0.44, 0.06], [0.46, -0.095], [0.42, -0.1], [0.34, -0.03], [0.24, -0.012], [0.18, 0.012]], 0.05, 0, 0.006);
+  box(root, m.poly, 0.056, 0.016, 0.16, 0, 0.068, 0.33, 0, 0, 0, 0.005);
+  box(root, m.rubber, 0.052, 0.17, 0.034, 0, -0.02, 0.472, 0, 0, 0, 0.006);
+  cyl(root, m.metal, 0.007, 0.007, 0.06, 0, -0.085, 0.4, 'y', 10);
+  box(root, m.rubber, 0.022, 0.008, 0.022, 0, -0.118, 0.4, 0, 0, 0, 0.002);
+  // ---- animated parts
+  P.charge = group(root, 'charge', 0.038, 0.05, 0.0);
+  box(P.charge, m.steel, 0.024, 0.014, 0.018, 0, 0, 0, 0, 0, 0, 0.003);
+  P.bolt = group(root, 'bolt', 0, 0, 0);
+  box(P.bolt, m.steel, 0.006, 0.018, 0.05, 0.0296, 0.05, -0.04);
+  P.mag = group(root, 'mag', 0, -0.012, -0.095);
+  box(P.mag, m.metal, 0.05, 0.13, 0.105, 0, -0.06, 0, 0, 0, 0, 0.005);
+  box(P.mag, m.poly, 0.054, 0.014, 0.112, 0, -0.13, 0, 0, 0, 0, 0.004);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) box(P.mag, m.dark, 0.002, 0.09, 0.008, s * 0.0255, -0.06, -0.03 + i * 0.03);
+  box(P.mag, m.brass, 0.018, 0.008, 0.08, 0, 0.008, 0, 0, 0, 0, 0.003);
+  if (opt === 'iron') {
+    box(root, m.metal, 0.024, 0.016, 0.012, 0, 0.098, 0.09); box(root, m.dark, 0.008, 0.008, 0.013, 0, 0.103, 0.09);
+    box(root, m.metal, 0.005, 0.076, 0.006, 0, 0.07, -0.9);
+  }
+  return {
+    root, parts: P, ironY: 0.107, railY: 0.0895, opticZ: -0.02,
+    anchors: {
+      rhand: rhandGrip(0, -0.06, 0.112, 0.28), lhand: lhandRail(0, 0.002, -0.38, 0.5),
+      muzzle: new THREE.Vector3(0, 0.042, -1.04), eject: new THREE.Vector3(0.034, 0.05, -0.04),
+      magGrab: new THREE.Vector3(0, -0.08, 0.0), charge: new THREE.Vector3(0.05, 0.05, 0.0),
+    },
+    casing: 'big', sightZ: 0.12, eyeRelief: 0.15,
+  };
+}
+
+function buildAutoshot(m, opt) {
+  const root = new THREE.Group(), P = {};
+  // ---- tall boxy receiver, in line with the stock
+  prof(root, m.poly, [[0.14, 0.012], [0.1, -0.012], [-0.2, -0.012], [-0.22, 0.008], [-0.22, 0.07], [0.12, 0.08], [0.14, 0.06]], 0.056, 0, 0.005);
+  box(root, m.metal, 0.032, 0.006, 0.3, 0, 0.0795, -0.05, 0, 0, 0, 0.0015);
+  rail(root, m.metal, -0.2, 0.09, 0.082, 0.021);
+  box(root, m.dark, 0.003, 0.03, 0.08, 0.0286, 0.046, -0.055, 0, 0, 0, 0.001);
+  pins(root, m.steel, [[0.012, -0.16], [0.012, 0.09], [0.06, 0.09]], 0.0036, 0.0286);
+  // ---- ribbed fore end, ventilated barrel shroud, breacher choke
+  prof(root, m.od, [[-0.22, 0.04], [-0.36, 0.04], [-0.37, 0.022], [-0.37, -0.012], [-0.34, -0.028], [-0.22, -0.028]], 0.052, 0, 0.004);
+  for (let i = 0; i < 6; i++) box(root, m.dark, 0.053, 0.004, 0.008, 0, -0.018, -0.24 - i * 0.02);
+  cyl(root, m.metal, 0.021, 0.021, 0.14, 0, 0.056, -0.3, 'z', 12);
+  for (let i = 0; i < 5; i++) for (const s of [-1, 1]) box(root, m.dark, 0.003, 0.012, 0.016, s * 0.0205, 0.056, -0.25 - i * 0.026);
+  cyl(root, m.metal, 0.015, 0.015, 0.08, 0, 0.056, -0.41, 'z', 12);
+  cyl(root, m.steel, 0.02, 0.02, 0.05, 0, 0.056, -0.47, 'z', 12);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; box(root, m.steel, 0.007, 0.007, 0.012, Math.cos(a) * 0.017, 0.056 + Math.sin(a) * 0.017, -0.5); }
+  // ---- grip + trigger
+  prof(root, m.poly, [[0.042, -0.01], [0.098, -0.01], [0.126, -0.124], [0.11, -0.136], [0.074, -0.13], [0.052, -0.032]], 0.034, 0, 0.005);
+  box(root, m.metal, 0.012, 0.004, 0.066, 0, -0.048, 0.006, 0, 0, 0, 0.0015);
+  box(root, m.metal, 0.012, 0.034, 0.005, 0, -0.032, -0.027, 0, 0, 0, 0.0015);
+  box(root, m.steel, 0.005, 0.02, 0.004, 0, -0.026, 0.01, 0.3, 0, 0, 0.001);
+  // ---- straight stock with a thick pad
+  prof(root, m.poly, [[0.14, 0.06], [0.38, 0.06], [0.395, -0.09], [0.36, -0.095], [0.27, -0.02], [0.14, 0.0]], 0.046, 0, 0.005);
+  box(root, m.dark, 0.047, 0.03, 0.075, 0, 0.018, 0.27, 0, 0, 0, 0.004);
+  box(root, m.rubber, 0.048, 0.16, 0.022, 0, -0.016, 0.398, 0, 0, 0, 0.005);
+  // ---- animated parts
+  P.charge = group(root, 'charge', -0.034, 0.056, -0.13);
+  box(P.charge, m.steel, 0.018, 0.012, 0.016, 0, 0, 0, 0, 0, 0, 0.002);
+  P.bolt = group(root, 'bolt', 0, 0, 0);
+  box(P.bolt, m.steel, 0.005, 0.024, 0.05, 0.0286, 0.046, -0.055);
+  P.mag = group(root, 'mag', 0, -0.012, -0.08);
+  box(P.mag, m.metal, 0.05, 0.125, 0.09, 0, -0.055, 0, 0, 0, 0, 0.005);
+  box(P.mag, m.poly, 0.054, 0.014, 0.096, 0, -0.122, 0, 0, 0, 0, 0.004);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) box(P.mag, m.dark, 0.002, 0.086, 0.008, s * 0.0255, -0.055, -0.025 + i * 0.025);
+  cyl(P.mag, m.shell, 0.0095, 0.0095, 0.05, 0, 0.012, -0.002, 'z', 10);
+  if (opt === 'iron') {
+    box(root, m.metal, 0.02, 0.012, 0.012, 0, 0.096, 0.05); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.1, 0.05);
+    box(root, m.metal, 0.004, 0.024, 0.006, 0, 0.09, -0.36); box(root, m.metal, 0.02, 0.008, 0.012, 0, 0.082, -0.36);
+  }
+  return {
+    root, parts: P, ironY: 0.102, railY: 0.0905, opticZ: -0.05,
+    anchors: {
+      rhand: rhandGrip(0, -0.052, 0.076, 0.32), lhand: lhandRail(0, 0.002, -0.3, 0.3),
+      muzzle: new THREE.Vector3(0, 0.056, -0.51), eject: new THREE.Vector3(0.032, 0.046, -0.055),
+      magGrab: new THREE.Vector3(0, -0.08, 0.0), charge: new THREE.Vector3(-0.045, 0.056, -0.13),
+    },
+    casing: 'shotgun', sightZ: 0.05, eyeRelief: 0.28,
+  };
+}
+
+function buildHandcannon(m, opt) {
+  const root = new THREE.Group(), P = {};
+  // ---- big frame, thick rubber grip
+  prof(root, m.metal, [[0.05, 0.0], [-0.13, 0.0], [-0.145, 0.018], [0.06, 0.018]], 0.034, 0, 0.003);
+  prof(root, m.rubber, [[0.0, 0.0], [0.056, 0.0], [0.08, -0.11], [0.066, -0.118], [0.03, -0.116], [0.012, -0.012]], 0.036, 0, 0.005);
+  for (let i = 0; i < 4; i++) box(root, m.dark, 0.0365, 0.003, 0.04, 0, -0.03 - i * 0.02, 0.052 + i * 0.005, 0.2);
+  box(root, m.metal, 0.012, 0.004, 0.05, 0, -0.022, -0.02);
+  box(root, m.metal, 0.012, 0.022, 0.004, 0, -0.01, -0.044);
+  box(root, m.steel, 0.006, 0.018, 0.005, 0, -0.008, -0.012, 0.2);
+  box(root, m.steel, 0.003, 0.008, 0.03, -0.018, 0.012, -0.02, 0, 0, 0, 0.001);
+  // ---- long slide with a triangular nose (animated)
+  P.slide = group(root, 'slide', 0, 0, 0);
+  prof(P.slide, m.steel, [[0.065, 0.018], [-0.16, 0.018], [-0.16, 0.044], [-0.1, 0.06], [0.065, 0.06]], 0.034, 0, 0.003);
+  for (let i = 0; i < 7; i++) box(P.slide, m.dark, 0.0345, 0.026, 0.0028, 0, 0.038, 0.02 + i * 0.006);
+  for (let i = 0; i < 3; i++) for (const s of [-1, 1]) box(P.slide, m.dark, 0.002, 0.012, 0.018, s * 0.0171, 0.034, -0.09 - i * 0.024);
+  box(P.slide, m.dark, 0.003, 0.016, 0.034, 0.0172, 0.045, -0.03);
+  box(P.slide, m.metal, 0.016, 0.008, 0.008, 0, 0.064, 0.055);
+  box(P.slide, m.dark, 0.005, 0.007, 0.0085, 0, 0.0655, 0.055);
+  box(P.slide, m.metal, 0.004, 0.01, 0.008, 0, 0.0635, -0.115);
+  const dot = M(new THREE.SphereGeometry(0.0018, 6, 4), m.emissiveRed); place(dot, 0, 0.0675, -0.112); P.slide.add(dot);
+  cyl(root, m.dark, 0.0095, 0.0095, 0.012, 0, 0.034, -0.162);
+  P.mag = group(root, 'mag', 0, 0, 0.032);
+  prof(P.mag, m.metal, [[-0.018, 0.0], [0.018, 0.0], [0.04, -0.108], [0.004, -0.108]], 0.028, 0, 0.002);
+  box(P.mag, m.poly, 0.032, 0.012, 0.044, 0, -0.112, 0.022, 0.2, 0, 0, 0.003);
+  void opt;
+  return {
+    root, parts: P, ironY: 0.0695, railY: 0.06, opticZ: 0.005,
+    anchors: {
+      rhand: rhandGrip(0, -0.042, 0.036, 0.32), lhand: null,
+      muzzle: new THREE.Vector3(0, 0.034, -0.172), eject: new THREE.Vector3(0.022, 0.05, -0.03),
+      magGrab: new THREE.Vector3(0, -0.06, 0.02), charge: new THREE.Vector3(0.0, 0.052, 0.04),
+    },
+    casing: 'pistol', sightZ: 0.055, eyeRelief: 0.3, pistol: true,
+  };
+}
+
 const BUILDERS = {
   ar: buildAR, smg: buildSMG, lmg: buildLMG, dmr: buildDMR, sniper: buildSniper, shotgun: buildShotgun,
   pistol: (m, o) => buildPistol(m, o), mpistol: (m, o) => buildPistol(m, o, 'auto'), revolver: buildRevolver,
+  burst: buildBurst, pdw: buildPDW, amr: buildAMR, autoshot: buildAutoshot, handcannon: buildHandcannon,
 };
 
 // Build a complete weapon model with optic. Returns model description.
 export function buildWeapon(modelId, optic, mats, { merge = true } = {}) {
   const w = BUILDERS[modelId](mats, optic || 'iron');
-  const opt = w.fixedOptic || optic;
+  const opt = optic;
   w.sightY = w.ironY;
   w.zoom = w.pistol ? 1.15 : 1.2;
   w.optic = null;
   if (opt && opt !== 'iron') {
     const o = buildOptic(opt, mats, w.railY, w.opticZ);
     if (o) {
-      w.root.add(o.group);
+      (w.parts.slide || w.root).add(o.group); // on a pistol the sight rides on the slide
       w.optic = o;
       w.sightY = o.sightY;
       w.zoom = o.zoom;
-      if (o.eyeRelief) w.eyeRelief = o.eyeRelief;
       // keep the optic's z so the eye sits behind the glass
       w.sightZ = Math.max(w.sightZ, w.opticZ + 0.05);
+      // magnified lenses: same eye distance (and so the same size on screen) on every gun
+      if (o.lensDist && (o.lens || !w.pistol)) w.eyeRelief = o.lensDist + o.lensZ - w.sightZ;
     }
   }
   w.casingModel = shellCasing(mats, w.casing);

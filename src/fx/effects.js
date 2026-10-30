@@ -193,6 +193,64 @@ export class Effects {
     }
   }
 
+  // a wet burst in direction d: heavy drops that fall and a fine cloud that hangs in the air
+  bloodBurst(p, d, power = 1) {
+    const q = this.q.particles, k = Math.sqrt(power);
+    for (let i = 0; i < 44 * power * q; i++) {
+      const s = rand(0.8, 4.8) * k;
+      this.dust.spawn(p.x, p.y, p.z, d.x * s + rand(-0.8, 0.8), d.y * s + rand(-0.4, 1.3), d.z * s + rand(-0.8, 0.8), rand(0.3, 0.7), rand(0.02, 0.055), 0.56, 0.015, 0.02, 1, 9.8, 0.6, 0);
+    }
+    for (let i = 0; i < 14 * power * q; i++) {
+      const s = rand(0.2, 1.2);
+      this.dust.spawn(p.x, p.y, p.z, d.x * s + rand(-0.3, 0.3), d.y * s + rand(-0.1, 0.4), d.z * s + rand(-0.3, 0.3), rand(0.22, 0.5), rand(0.05, 0.13) * k, 0.46, 0.02, 0.025, 0.5, 0.35, 2.6, 1.1);
+    }
+  }
+
+  // blood that spreads on the ground under someone
+  pool(p, r = 0.8) {
+    if (!this.pools) {
+      this.pools = [];
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const x = c.getContext('2d');
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * 6.28, q = i < 8 ? rand(0, 12) : rand(14, 42), R = i < 8 ? rand(18, 28) : rand(3, 12), X = 64 + Math.cos(a) * q, Y = 64 + Math.sin(a) * q;
+        const g = x.createRadialGradient(X, Y, 0, X, Y, R);
+        g.addColorStop(0, 'rgba(92,6,8,0.95)'); g.addColorStop(0.75, 'rgba(82,5,7,0.85)'); g.addColorStop(1, 'rgba(70,4,6,0)');
+        x.fillStyle = g; x.fillRect(X - R, Y - R, R * 2, R * 2);
+      }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      this.poolMat = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+      this.poolGeo = new THREE.PlaneGeometry(1, 1);
+    }
+    let o = this.pools.length >= 12 ? this.pools.shift() : null;
+    if (!o) { o = { m: new THREE.Mesh(this.poolGeo, this.poolMat) }; o.m.rotation.x = -Math.PI / 2; o.m.renderOrder = 1; this.game.scene.add(o.m); }
+    o.t = 0; o.r = r * 2.2; o.m.rotation.z = Math.random() * 6.28;
+    o.m.position.set(p.x, p.y + 0.03, p.z); o.m.scale.setScalar(0.01);
+    this.pools.push(o);
+  }
+
+  // a grenade going off
+  explosion(p) {
+    const q = this.q.particles;
+    this.muzzleWorld(p, 12);
+    for (let i = 0; i < 60 * q; i++) {
+      const a = Math.random() * 6.28, u = rand(-0.2, 1), s = rand(2, 9), h = Math.sqrt(1 - u * u);
+      this.sparks.spawn(p.x, p.y, p.z, Math.cos(a) * h * s, u * s, Math.sin(a) * h * s, rand(0.22, 0.6), rand(0.4, 1.5), 1, rand(0.5, 0.72), 0.18, 1, -0.5, 4, 1.4);
+    }
+    for (let i = 0; i < 50 * q; i++) {
+      const a = Math.random() * 6.28, u = rand(0.1, 1), s = rand(8, 20), h = Math.sqrt(1 - u * u);
+      this.sparks.spawn(p.x, p.y, p.z, Math.cos(a) * h * s, u * s, Math.sin(a) * h * s, rand(0.3, 0.9), rand(0.03, 0.07), 1, 0.8, 0.4, 1, 9.8, 0.6, 0);
+    }
+    for (let i = 0; i < 46 * q; i++) {
+      const a = Math.random() * 6.28, s = rand(0.6, 3.6);
+      this.dust.spawn(p.x + Math.cos(a) * 0.5, p.y, p.z + Math.sin(a) * 0.5, Math.cos(a) * s, rand(0.5, 3.4), Math.sin(a) * s, rand(1.6, 3.6), rand(0.9, 2.2), 0.16, 0.15, 0.14, 0.72, -0.3, 1.1, 1.4);
+    }
+    for (let i = 0; i < 26 * q; i++) {
+      const a = Math.random() * 6.28, s = rand(3, 10);
+      this.dust.spawn(p.x, p.y, p.z, Math.cos(a) * s, rand(2, 9), Math.sin(a) * s, rand(0.6, 1.3), rand(0.04, 0.1), 0.3, 0.25, 0.2, 1, 9.8, 0.3, 0);
+    }
+  }
+
   decal(p, n, size = 0.09) {
     const i = this.decalNext; this.decalNext = (this.decalNext + 1) % this.decalMax;
     this.decalMesh.count = Math.max(this.decalMesh.count, i + 1);
@@ -217,6 +275,7 @@ export class Effects {
 
   update(dt, camera) {
     this.dust.update(dt); this.sparks.update(dt);
+    if (this.pools) for (const o of this.pools) if (o.t < 2.4) { o.t += dt; o.m.scale.setScalar(o.r * Math.max(0.03, Math.sqrt(Math.min(1, o.t / 2.4)))); }
     // tracers
     const m = this._m, qq = this._q, v = this._v, sc = this._s;
     let n = 0;

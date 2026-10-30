@@ -258,6 +258,33 @@ export function drawClip(dur) {
 export function holsterClip(dur) {
   return { name: 'holster', dur, W: [[0, ...Z6], [1, 0.03, -0.24, 0.06, -1.0, 0.3, -0.5]], S: {}, E: [[0.05, 'holster']] };
 }
+// armor plate: the gun dips away, the left hand goes to the vest and shoves the plate in
+export function plateClip(dur) {
+  return {
+    name: 'plate', dur,
+    W: [[0, ...Z6], [0.16, 0.01, -0.1, 0.04, -0.42, 0.16, 0.26], [0.72, 0.01, -0.11, 0.04, -0.44, 0.18, 0.28], [0.9, 0, -0.02, 0.01, -0.06, 0.02, 0.04], [1, ...Z6]],
+    L: [H(0, 'home'), H(0.2, 'vest', 0, 0.02, -0.02), H(0.42, 'vest', 0, 0.14, -0.05), H(0.62, 'vest', 0, 0.1, -0.03, 0.3), H(0.85, 'home'), H(1, 'home')],
+    S: {}, E: [[0.14, 'pouch'], [0.55, 'magKnock']],
+  };
+}
+// knife: the gun drops down to the right, the knife comes across the screen from the upper left.
+// K = the knife hand in camera space [t, x,y,z, twist of the blade around the forearm]
+export function meleeClip(dur = 0.62) {
+  return {
+    name: 'melee', dur,
+    W: [[0, ...Z6], [0.14, 0.05, -0.13, 0.03, -0.5, -0.22, -0.5], [0.42, 0.075, -0.17, 0.04, -0.62, -0.3, -0.62], [0.74, 0.03, -0.1, 0.02, -0.34, -0.12, -0.3], [1, ...Z6]],
+    K: [
+      [0, -0.42, -0.46, -0.24, 0.8],
+      [0.13, -0.3, -0.02, -0.42, 0.75],     // cocked up at the left shoulder
+      [0.21, -0.13, -0.04, -0.52, 0.2],     // starts across
+      [0.3, 0.06, -0.1, -0.56, -0.7],       // through the middle: this is the hit
+      [0.4, 0.27, -0.2, -0.48, -1.3],
+      [0.58, 0.46, -0.52, -0.26, -1.6],     // out of the frame, lower right
+      [1, 0.46, -0.6, -0.26, -1.6],
+    ],
+    S: {}, E: [[0.05, 'swing'], [0.27, 'meleeHit']],
+  };
+}
 export function inspectClip(dur = 3.2) {
   return {
     name: 'inspect', dur,

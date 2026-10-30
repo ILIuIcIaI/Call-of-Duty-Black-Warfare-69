@@ -85,6 +85,8 @@ export class Player {
     this.speedH = 0;
     this.sprintBlockT = 0;
     this.slideCancelT = -1;
+    this.mount = null; this.lean = 0; this.leanRoll = 0; this.peekUp = 0; this.mountProbeT = 0; this.downed = false;
+    this.peek = new THREE.Vector3(); // where the head is relative to the hull while leaning out
   }
 
   get height() { return this.mode === 'slide' ? H.slide : this.mode === 'dive' ? H.dive : H[this.stance]; }
@@ -107,6 +109,8 @@ export class Player {
     if (input.down('back')) fz -= 1;
     if (input.down('right')) fx += 1;
     if (input.down('left')) fx -= 1;
+    this.updateMount(dt, input, weapon);
+    if (this.mount && fz > 0) fz = 0; // pressed against the cover, no need to push on
     this.moveInput.set(fx, fz);
     const hasMove = fx !== 0 || fz !== 0;
     const fwd = this.forwardVec(_v1), right = this.rightVec(_v2);
@@ -138,7 +142,8 @@ export class Player {
       this._lastSprintPress = t;
     }
     if (this.game.settings.autoSprint && sprintAllowed && forwardish && this.mode === 'normal' && this.onGround && !this.sprinting && this.groundTime > 0.15) this.sprinting = true;
-    if (this.sprinting && (!hasMove || ads || firing || this.stance === 'prone')) { this.sprinting = false; this.tac = false; }
+    // the aim button ends a sprint, whichever way you are running (the weapon doesn't aim while sprinting, so it can't be the one to end it)
+    if (this.sprinting && (!hasMove || ads || input.ads || firing || this.stance === 'prone')) { this.sprinting = false; this.tac = false; }
     if (this.tac && (!forwardish || this.tacCharge <= 0)) this.tac = false;
     // tac sprint fuel
     if (this.tac && this.onGround) { this.tacCharge -= dt; this.tacIdle = 0; }
@@ -253,6 +258,7 @@ export class Player {
         target = (this.tac ? MOVE.tac : MOVE.sprint) * dirMul;
       } else target = MOVE.walk;
       if (weapon) target *= weapon.def.mobility * (ads ? weapon.def.adsMoveMul : 1);
+      if (this.mount) target *= 0.6;
       if (!hasMove) target = 0;
       if (this.getUpT > 0) { this.getUpT -= dt; target *= 0.65; } // the first steps out of prone
 
@@ -343,6 +349,67 @@ export class Player {
   }
 
   canStand(st) { return hullFits(this.game.col, this.pos.x, this.pos.y, this.pos.z, MOVE.radius, H[st]); }
+
+  // ---------------------------------------------------------------- weapon mount ("Andocken")
+  // What is right in front of us? A ledge to rest the gun on, or a corner to lean out of. side: preferred side (-1, 0, 1).
+  probeMount(side = 0) {
+    const col = this.game.col, f = this.forwardVec(_v1), r = this.rightVec(_v2), x = this.pos.x, z = this.pos.z;
+    const eye = this.pos.y + this.eyeH, reach = 0.85, h = _mh;
+    const ahead = (ox, oz, y) => col.raycast(ox, y, oz, f.x, 0, f.z, reach, h);
+    const chest = ahead(x, z, eye - 0.32) || ahead(x, z, eye - 0.72), atEye = ahead(x, z, eye + 0.04);
+    if (chest && !atEye) {
+      // something to rest the gun on: find its top
+      const top = col.floorBelow(x + f.x * (chest.t + 0.12), z + f.z * (chest.t + 0.12), 0.05, eye + 0.04, eye - 0.9);
+      return isFinite(top) ? { kind: 'top', side: 0, top } : null;
+    }
+    if (!atEye) return null;
+    // a wall right in front: only a corner with free space beside it is worth anything
+    const order = side ? [side, -side] : [1, -1];
+    for (const s of order) {
+      const sx = x + r.x * s * 0.62, sz = z + r.z * s * 0.62;
+      if (col.raycast(x, eye, z, r.x * s, 0, r.z * s, 0.62, h)) continue;
+      if (!ahead(sx, sz, eye)) return { kind: s < 0 ? 'left' : 'right', side: s };
+    }
+    return null;
+  }
+
+  updateMount(dt, input, weapon) {
+    const aimHeld = input.ads, aiming = weapon && weapon.adsAmount > 0.3, toggle = input.pressed('mount');
+    const free = this.mode === 'normal' && this.onGround && !this.sprinting && this.stance !== 'prone' && !this.gliding;
+    const sideWish = input.down('left') ? -1 : input.down('right') ? 1 : 0;
+    let m = this.mount;
+    if (m) {
+      m.t += dt;
+      let off = (!aimHeld && !m.held) || !free || input.down('back') || input.pressed('sprint') || input.pressed('jump') || Math.abs(angleDiff(this.yaw, m.yaw)) > 1.35 || (toggle && m.t > 0.15);
+      if (!off && (this.mountProbeT -= dt) <= 0) {
+        this.mountProbeT = 0.08;
+        const k = this.probeMount(m.side || sideWish);
+        if (!k) { if ((m.lost = (m.lost || 0) + 0.08) > 0.16) off = true; }
+        else { m.lost = 0; m.kind = k.kind; m.side = k.side; m.top = k.top; }
+      }
+      if (off) { this.mount = m = null; this.game.audio.play('magTouch', { vol: 0.25, rate: 0.8 }); }
+    } else if (free && (toggle || (aiming && aimHeld && input.down('forward')))) {
+      const k = this.probeMount(sideWish);
+      if (k) {
+        this.mount = m = { ...k, t: 0, yaw: this.yaw, held: toggle };
+        this.mountProbeT = 0.08;
+        this.game.audio.play('magKnock', { vol: 0.45, rate: 0.75 });
+        if (weapon) weapon.vm.jolt(0, -0.05, 0.05, -0.5, 0, 0.1 * (k.side || 0));
+      }
+    }
+    // ---- lean out, limited by what is beside us
+    let leanT = 0, upT = 0;
+    if (m && m.side) {
+      const r = this.rightVec(_v2), hit = this.game.col.raycast(this.pos.x, this.pos.y + this.eyeH, this.pos.z, r.x * m.side, 0, r.z * m.side, 0.62, _mh);
+      leanT = m.side * Math.min(0.46, hit ? Math.max(0, hit.t - 0.16) : 0.46);
+    }
+    if (m && m.kind === 'top') upT = clamp(m.top + 0.24 - (this.pos.y + this.eyeH), 0, 0.42);
+    this.lean = damp(this.lean, leanT, 13, dt);
+    this.peekUp = damp(this.peekUp, upT, 13, dt);
+    this.leanRoll = damp(this.leanRoll, m && m.side ? -m.side * 0.13 : 0, 11, dt);
+    const r = this.rightVec(_v2);
+    this.peek.set(r.x * this.lean, this.peekUp, r.z * this.lean);
+  }
 
   doJump() {
     if (this.mode === 'slide') {
@@ -673,8 +740,9 @@ export class Player {
       hb.l.a.set(x - f.x * 1.1, yy - 0.05, z - f.z * 1.1); hb.l.b.set(x - f.x * 0.3, yy - 0.05, z - f.z * 0.3);
     } else {
       const e = this.eyeH;
-      hb.h.c.set(x, y + e + 0.04, z);
-      hb.c.a.set(x, y + e * 0.66, z); hb.c.b.set(x, y + e - 0.2, z);
+      const px = this.peek.x, pz = this.peek.z, pu = this.peekUp;
+      hb.h.c.set(x + px, y + e + 0.04 + pu, z + pz);
+      hb.c.a.set(x + px * 0.4, y + e * 0.66, z + pz * 0.4); hb.c.b.set(x + px * 0.9, y + e - 0.2 + pu, z + pz * 0.9);
       hb.s.a.set(x, y + e * 0.48, z); hb.s.b.set(x, y + e * 0.66, z);
       hb.l.a.set(x, y + 0.12, z); hb.l.b.set(x, y + e * 0.48, z);
     }
@@ -698,16 +766,16 @@ export class Player {
       bobX = Math.sin(this.bobPhase) * 0.014 * this.bobAmt;
     }
     const r = this.rightVec(_v7);
-    cam.position.set(this.pos.x + r.x * bobX, eye + bobY, this.pos.z + r.z * bobX);
+    cam.position.set(this.pos.x + r.x * bobX + this.peek.x, eye + bobY + this.peekUp, this.pos.z + r.z * bobX + this.peek.z);
     const pitch = this.pitch + this.mantleP + (recoil ? recoil.pitch : 0) + this.pitchKick.x + this.landSpring.x * 0.012 + (shake ? shake.sample(1) * 0.025 : 0);
     const yaw = this.yaw + (recoil ? recoil.yaw : 0) + (shake ? shake.sample(2) * 0.025 : 0);
-    const roll = this.rollSpring.x * DEG + this.mantleR + (shake ? shake.sample(3) * 0.03 : 0);
+    const roll = this.rollSpring.x * DEG + this.mantleR + this.leanRoll + (shake ? shake.sample(3) * 0.03 : 0);
     cam.rotation.set(pitch, yaw, roll, 'YXZ');
   }
 }
 
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3(), _v7 = new THREE.Vector3();
-const _wall = {}, _ledgeHit = {}, _ledgeH = [];
+const _wall = {}, _ledgeHit = {}, _ledgeH = [], _mh = {};
 const MANTLE_OFFS = [0, 0.2, -0.2];            // across the body
 const MANTLE_LAND = [0.1, 0.02, -0.08, -0.18]; // how far the hull ends up past the edge
 export { H as HULL, EYE };

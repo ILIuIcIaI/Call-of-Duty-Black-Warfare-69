@@ -2,6 +2,7 @@
 // with Quake-style step-up for stairs and ground snapping for walking down steps.
 export const STEP_HEIGHT = 0.46;
 const EPS = 1e-4;
+const MAX_SLOPE = 1.35; // rise over run a character can still walk up on open ground (~53 degrees)
 const hmin = [0, 0, 0], hmax = [0, 0, 0];
 
 function setHull(p, r, h) {
@@ -50,6 +51,16 @@ export function moveCharacter(col, pos, vel, dt, r, h, wasGrounded) {
   if (bx) { vel.x = 0; info.blockedX = true; info.hitWall = true; }
   if (bz) { vel.z = 0; info.blockedZ = true; info.hitWall = true; }
 
+  // ---- open ground: cliffs too steep to walk up act like walls
+  const T = col.terrain;
+  if (T && wasGrounded && !info.stepUp) {
+    const th0 = T.heightAt(sx, sz), th1 = T.heightAt(pos.x, pos.z), run = Math.hypot(pos.x - sx, pos.z - sz);
+    if (run > 1e-5 && pos.y <= th1 && (th1 - th0) / run > MAX_SLOPE) {
+      pos.x = sx; pos.z = sz; setHull(pos, r, h);
+      vel.x = 0; vel.z = 0; info.hitWall = true;
+    }
+  }
+
   // ---- vertical
   const ay = col.sweepAxis(1, hmin, hmax, dy);
   pos.y += ay; setHull(pos, r, h);
@@ -60,6 +71,17 @@ export function moveCharacter(col, pos, vel, dt, r, h, wasGrounded) {
   if (!info.ground && wasGrounded && vel.y <= 0.01) {
     const sd = col.sweepAxis(1, hmin, hmax, -STEP_HEIGHT);
     if (sd > -STEP_HEIGHT + EPS) { pos.y += sd; info.ground = true; vel.y = 0; info.stepUp = sd; }
+  }
+
+  // ---- open ground: follows the slope without steps, so walking stays smooth
+  if (T) {
+    const th = T.heightAt(pos.x, pos.z);
+    if (pos.y <= th + EPS) {
+      pos.y = th;
+      if (vel.y <= 0) { vel.y = 0; info.ground = true; }
+    } else if (!info.ground && wasGrounded && vel.y <= 0.01 && pos.y - th <= STEP_HEIGHT) {
+      pos.y = th; vel.y = 0; info.ground = true;
+    }
   }
   return info;
 }

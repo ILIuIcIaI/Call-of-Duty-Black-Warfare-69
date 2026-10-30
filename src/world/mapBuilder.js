@@ -70,9 +70,37 @@ export const MATERIALS = {
   hazardStripe: { tex: 'hazard', scale: 1, color: 0xffffff, surface: 'metal' },
   paintWhite: { tex: 'paint', scale: 2, color: 0xe8e6de, surface: 'concrete' },
   paintYellow: { tex: 'paint', scale: 2, color: 0xe0b830, surface: 'concrete' },
+  // rooms and fronts of the island's houses
+  wallGreen: { tex: 'plaster', color: 0x7a9a7a, scale: 3, surface: 'concrete' },
+  wallBlue: { tex: 'plaster', color: 0x7a96b4, scale: 3, surface: 'concrete' },
+  wallWine: { tex: 'plaster', color: 0x96545a, scale: 3, surface: 'concrete' },
+  wallMint: { tex: 'plaster', color: 0xc0e0d0, scale: 3, surface: 'concrete' },
+  wallCream: { tex: 'plaster', color: 0xf6ecd0, scale: 3, surface: 'concrete' },
+  wallNavy: { tex: 'plaster', color: 0x465878, scale: 3, surface: 'concrete' },
+  parquet: { tex: 'wood', color: 0xd0a070, scale: 0.9, surface: 'wood', pen: 0.7 },
+  carpetRed: { tex: 'fabric', color: 0x96383a, scale: 0.8, surface: 'wood', pen: 0.7 },
+  carpetBlue: { tex: 'fabric', color: 0x405a80, scale: 0.8, surface: 'wood', pen: 0.7 },
+  carpetGrey: { tex: 'fabric', color: 0x787c82, scale: 0.8, surface: 'wood', pen: 0.7 },
+  carpetBeige: { tex: 'fabric', color: 0xc0b090, scale: 0.8, surface: 'wood', pen: 0.7 },
+  tilesWhite: { tex: 'tiles', color: 0xf6f4ee, scale: 0.6, surface: 'concrete' },
+  tilesBlue: { tex: 'tiles', color: 0x7ea8c8, scale: 0.6, surface: 'concrete' },
+  tilesGreen: { tex: 'tiles', color: 0x8cbc9c, scale: 0.6, surface: 'concrete' },
+  tilesCheck: { tex: 'tiles', color: 0xa0a09c, scale: 1.0, surface: 'concrete' },
+  brickYellow: { tex: 'brick', color: 0xe6d29c, scale: 1.6, surface: 'concrete' },
+  woodSiding: { tex: 'wood', color: 0xd4cab6, scale: 1.1, surface: 'wood', pen: 0.7 },
+  woodBlue: { tex: 'wood', color: 0x7090a8, scale: 1.1, surface: 'wood', pen: 0.7 },
+  woodRed: { tex: 'wood', color: 0xa85040, scale: 1.1, surface: 'wood', pen: 0.7 },
+  roofSlate: { tex: 'rooftile', color: 0x78808a, scale: 2, surface: 'concrete' },
+  roofGreen: { tex: 'rooftile', color: 0x789a8a, scale: 2, surface: 'concrete' },
+  roofBrown: { tex: 'rooftile', color: 0xa87c60, scale: 2, surface: 'concrete' },
+  metalWhite: { tex: 'metal', color: 0xe4e6e6, scale: 2, surface: 'metal', pen: 0.5 },
+  fabricWhite: { tex: 'fabric', color: 0xece8de, scale: 1, surface: 'wood', pen: 1 },
+  fabricDark: { tex: 'fabric', color: 0x404246, scale: 1, surface: 'wood', pen: 1 },
+  hay: { tex: 'fabric', color: 0xd8bc64, scale: 0.8, surface: 'dirt', pen: 1 },
+  chalk: { tex: 'paint', color: 0x2e4c3e, scale: 2, surface: 'concrete' },
+  shutterRed: { tex: 'wood', color: 0x9a4a3c, scale: 0.8, surface: 'wood', pen: 0.8 },
+  signs: { tex: 'signs', color: 0xffffff, scale: 1, surface: 'metal' },
 };
-
-const CHUNK = 40;
 
 export class MapBuilder {
   constructor(engine, texLib) {
@@ -84,26 +112,47 @@ export class MapBuilder {
     this.transparentParts = new Map();
     this.skirts = [];
     this.materials = {};
+    this.tints = {};
     this.boxesForAO = [];
     this.glass = [];
     this.lights = [];
     this.root = new THREE.Group();
     this.root.name = 'map';
+    this.chunk = 40; // meters per merged mesh
+  }
+
+  // Everything with the same texture shares a mesh per chunk: the tint goes into the vertices, not into a draw call of its own
+  group(key) {
+    const d = MATERIALS[key];
+    if (!d) throw new Error('Unknown material ' + key);
+    return d.tex && !d.emissive ? '~' + d.tex : key;
+  }
+
+  tint(g, key) {
+    const d = MATERIALS[key];
+    if (!d.tex || d.emissive) return g;
+    const c = this.tints[key] || (this.tints[key] = new THREE.Color(d.color)), a = g.attributes.color.array;
+    for (let i = 0; i < a.length; i += 3) { a[i] *= c.r; a[i + 1] *= c.g; a[i + 2] *= c.b; }
+    return g;
   }
 
   material(key) {
     if (this.materials[key]) return this.materials[key];
-    const d = MATERIALS[key];
-    if (!d) throw new Error('Unknown material ' + key);
-    const t = d.tex ? this.tex.generate(d.tex) : null;
-    const m = new THREE.MeshLambertMaterial({ color: d.color, map: t ? t.map : null, vertexColors: true });
-    if (d.emissive) { m.emissive = new THREE.Color(d.emissive); m.emissiveIntensity = d.emissiveIntensity || 1; }
+    let m;
+    if (key[0] === '~') m = new THREE.MeshLambertMaterial({ color: 0xffffff, map: this.tex.generate(key.slice(1)).map, vertexColors: true });
+    else {
+      const d = MATERIALS[key];
+      if (!d) throw new Error('Unknown material ' + key);
+      const t = d.tex ? this.tex.generate(d.tex) : null;
+      m = new THREE.MeshLambertMaterial({ color: d.color, map: t ? t.map : null, vertexColors: true });
+      if (d.emissive) { m.emissive = new THREE.Color(d.emissive); m.emissiveIntensity = d.emissiveIntensity || 1; }
+    }
     this.materials[key] = m;
     return m;
   }
 
   _bucket(map, key, x, z) {
-    const k = key + '|' + Math.floor(x / CHUNK) + '|' + Math.floor(z / CHUNK);
+    const k = key + '|' + Math.floor(x / this.chunk) + '|' + Math.floor(z / this.chunk);
     let arr = map.get(k);
     if (!arr) { arr = []; map.set(k, arr); }
     return arr;
@@ -120,7 +169,7 @@ export class MapBuilder {
     }
     if (opts.visual !== false) {
       const g = boxGeometry(x0, y0, z0, x1, y1, z1, opts.uvScale || d.scale || 2, opts.ao !== false, opts.faces);
-      this._bucket(this.parts, mat, (x0 + x1) / 2, (z0 + z1) / 2).push(g);
+      this._bucket(this.parts, this.group(mat), (x0 + x1) / 2, (z0 + z1) / 2).push(this.tint(g, mat));
       if (opts.ao !== false && opts.skirt !== false && (y1 - y0) > 0.25) this.boxesForAO.push([x0, y0, z0, x1, y1, z1]);
     }
     return this;
@@ -141,7 +190,8 @@ export class MapBuilder {
     for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k);
     g.computeBoundingBox();
     const c = g.boundingBox.getCenter(new THREE.Vector3());
-    this._bucket(opts.transparent ? this.transparentParts : this.parts, mat, c.x, c.z).push(g);
+    if (opts.transparent) this._bucket(this.transparentParts, mat, c.x, c.z).push(g);
+    else this._bucket(this.parts, this.group(mat), c.x, c.z).push(this.tint(g, mat));
     return this;
   }
 
@@ -187,11 +237,11 @@ export class MapBuilder {
     const skirtGeo = this.buildSkirts();
     for (const [k, list] of this.parts) {
       const [mat] = k.split('|');
-      const geo = mergeGeometries(list, false);
+      const geo = list.length === 1 ? list[0] : mergeGeometries(list, false);
       if (!geo) continue;
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, this.material(mat));
-      mesh.castShadow = this.q.shadows > 0 && !MATERIALS[mat].emissive;
+      mesh.castShadow = this.q.shadows > 0 && (mat[0] === '~' || !MATERIALS[mat].emissive);
       mesh.receiveShadow = this.q.shadows > 0;
       mesh.matrixAutoUpdate = false;
       this.root.add(mesh);

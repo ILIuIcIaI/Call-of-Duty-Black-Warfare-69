@@ -8,7 +8,7 @@ import { PRIMARIES } from '../weapons/defs.js';
 // lines), respawns, scoring, time/score limits and the end screen.
 // =============================================================================
 const NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal'];
-const WEAPON_WEIGHTS = { ar: 30, smg: 26, shotgun: 12, lmg: 10, dmr: 12, sniper: 10 };
+const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
 
 function pickWeapon() {
   const total = PRIMARIES.reduce((s, id) => s + (WEAPON_WEIGHTS[id] || 5), 0);

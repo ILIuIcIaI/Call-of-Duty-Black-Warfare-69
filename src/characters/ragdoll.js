@@ -8,12 +8,12 @@ import * as THREE from 'three';
 // every frame, so the skinned soldier follows the simulation.
 // =============================================================================
 const P = { pelvis: 0, chest: 1, neck: 2, head: 3, lHip: 4, rHip: 5, lKnee: 6, rKnee: 7, lFoot: 8, rFoot: 9, lSh: 10, rSh: 11, lElb: 12, rElb: 13, lHand: 14, rHand: 15 };
-const STICKS = [
+export const STICKS = [
   [0, 1], [1, 2], [2, 3],
   [4, 5], [10, 11], [10, 2], [11, 2], [10, 1], [11, 1], [4, 0], [5, 0], [10, 4], [11, 5], [10, 5], [11, 4], [1, 4], [1, 5], [3, 1], [3, 10], [3, 11],
   [4, 6], [6, 8], [5, 7], [7, 9], [10, 12], [12, 14], [11, 13], [13, 15],
 ];
-const RADIUS = [0.14, 0.15, 0.08, 0.13, 0.09, 0.09, 0.07, 0.07, 0.07, 0.07, 0.08, 0.08, 0.06, 0.06, 0.06, 0.06];
+export const RADIUS = [0.14, 0.15, 0.08, 0.13, 0.09, 0.09, 0.07, 0.07, 0.07, 0.07, 0.08, 0.08, 0.06, 0.06, 0.06, 0.06];
 const INV_MASS = [0.6, 0.6, 1, 1, 0.9, 0.9, 1, 1, 1.2, 1.2, 1, 1, 1.2, 1.2, 1.4, 1.4];
 const DOWN = new THREE.Vector3(0, -1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4();

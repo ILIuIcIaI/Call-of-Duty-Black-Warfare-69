@@ -79,5 +79,36 @@ export class Engine {
     if (extraBefore) extraBefore();
     r.render(scene, this.camera);
     if (vmScene) { r.clearDepth(); r.render(vmScene, this.vmCamera); }
+    if (this.film > 0) this.filmPass(); else this.filmOld = false;
+  }
+
+  // Film: every frame keeps a little of the one before, the way a film camera's shutter smears anything fast.
+  // this.film is how much, only a finisher ever sets it.
+  filmPass() {
+    const r = this.renderer, w = r.domElement.width, h = r.domElement.height;
+    if (!this.filmTex || this.filmTex.image.width !== w || this.filmTex.image.height !== h) {
+      if (this.filmTex) this.filmTex.dispose();
+      this.filmTex = new THREE.FramebufferTexture(w, h);
+      this.filmOld = false;
+    }
+    if (!this.filmQuad) {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { map: { value: null }, k: { value: 0 } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: 'uniform sampler2D map; uniform float k; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, k); }',
+        transparent: true, depthTest: false, depthWrite: false, toneMapped: false,
+      });
+      this.filmQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+      this.filmQuad.frustumCulled = false;
+      this.filmScene = new THREE.Scene(); this.filmScene.add(this.filmQuad);
+      this.filmCam = new THREE.Camera();
+    }
+    if (this.filmOld) {
+      const u = this.filmQuad.material.uniforms;
+      u.map.value = this.filmTex; u.k.value = this.film;
+      r.render(this.filmScene, this.filmCam);
+    }
+    r.copyFramebufferToTexture(this.filmTex);
+    this.filmOld = true;
   }
 }

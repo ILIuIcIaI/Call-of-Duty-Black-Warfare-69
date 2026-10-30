@@ -1,12 +1,14 @@
 // Static collision world made of axis-aligned boxes with a uniform XZ grid broadphase.
 // Used for character movement (swept AABB hulls), bullets and line-of-sight checks.
 const EPS = 1e-4;
+const _tn = { x: 0, y: 1, z: 0 };
 
 export class CollisionWorld {
   constructor() {
     this.raw = [];
     this.n = 0;
     this.cell = 4;
+    this.terrain = null; // optional smooth ground under the boxes (large outdoor maps)
   }
 
   // surface: 'concrete' | 'metal' | 'wood' | 'dirt' | 'glass' | 'flesh' ...
@@ -89,6 +91,7 @@ export class CollisionWorld {
 
   // Does an AABB intersect any static box (strictly)?
   overlaps(minx, miny, minz, maxx, maxy, maxz) {
+    if (this.terrain && this.terrain.heightAt((minx + maxx) / 2, (minz + maxz) / 2) > miny + 0.06) return true;
     const n = this.gather(minx, miny, minz, maxx, maxy, maxz);
     const B = this.B;
     for (let k = 0; k < n; k++) {
@@ -130,6 +133,10 @@ export class CollisionWorld {
       const b = this.cand[k] * 6;
       const top = B[b + 4];
       if (top <= maxY + EPS && top > best && B[b] < x + r && B[b + 3] > x - r && B[b + 2] < z + r && B[b + 5] > z - r) best = top;
+    }
+    if (this.terrain) {
+      const th = this.terrain.heightAt(x, z);
+      if (th <= maxY + EPS && th > best && th >= minY) best = th;
     }
     return best;
   }
@@ -215,6 +222,17 @@ export class CollisionWorld {
       if (tMaxX < tMaxZ) { tMaxX += tDX; cx += stepX; } else { tMaxZ += tDZ; cz += stepZ; }
       if ((cx < -1 && stepX < 0) || (cz < -1 && stepZ < 0) || (cx > this.gw && stepX > 0) || (cz > this.gh && stepZ > 0)) break;
     }
+    if (this.terrain) {
+      const tt = this.terrain.raycast(ox, oy, oz, dx, dy, dz, best);
+      if (tt >= 0) {
+        out.t = tt; out.index = -1;
+        out.x = ox + dx * tt; out.y = oy + dy * tt; out.z = oz + dz * tt;
+        const nn = this.terrain.normalAt(out.x, out.z, _tn);
+        out.nx = nn.x; out.ny = nn.y; out.nz = nn.z;
+        out.surface = 'dirt'; out.pen = 0;
+        return out;
+      }
+    }
     if (bestI < 0) return null;
     out.t = best; out.index = bestI;
     out.x = ox + dx * best; out.y = oy + dy * best; out.z = oz + dz * best;
@@ -227,6 +245,7 @@ export class CollisionWorld {
 
   // Exit distance of a ray that starts inside box i (for wall penetration)
   exitDistance(i, ox, oy, oz, dx, dy, dz) {
+    if (i < 0) return Infinity; // the ground has no far side
     const B = this.B, b = i * 6;
     const tx = dx > 0 ? (B[b + 3] - ox) / dx : dx < 0 ? (B[b] - ox) / dx : Infinity;
     const ty = dy > 0 ? (B[b + 4] - oy) / dy : dy < 0 ? (B[b + 1] - oy) / dy : Infinity;
@@ -239,6 +258,10 @@ export class CollisionWorld {
     const n = this.gather(p.x - r, p.y - r, p.z - r, p.x + r, p.y + r, p.z + r);
     const B = this.B;
     let hit = false;
+    if (this.terrain) {
+      const th = this.terrain.heightAt(p.x, p.z);
+      if (p.y - r < th) { p.y = th + r; hit = true; }
+    }
     for (let k = 0; k < n; k++) {
       const b = this.cand[k] * 6;
       const cx = Math.max(B[b], Math.min(p.x, B[b + 3]));
@@ -257,6 +280,30 @@ export class CollisionWorld {
         const m = Math.min(px0, px1, py0, py1, pz0, pz1);
         if (m === py1) p.y = B[b + 4] + r; else if (m === py0) p.y = B[b + 1] - r;
         else if (m === px0) p.x = B[b] - r; else if (m === px1) p.x = B[b + 3] + r;
+        else if (m === pz0) p.z = B[b + 2] - r; else p.z = B[b + 5] + r;
+      }
+    }
+    return hit;
+  }
+
+  // Push a vertical circle (a vehicle's body) out of everything solid between heights y0 and y1. Moves p in XZ only.
+  pushOutCircle(p, r, y0, y1) {
+    const n = this.gather(p.x - r, y0, p.z - r, p.x + r, y1, p.z + r);
+    const B = this.B;
+    let hit = false;
+    for (let k = 0; k < n; k++) {
+      const b = this.cand[k] * 6;
+      const cx = Math.max(B[b], Math.min(p.x, B[b + 3])), cz = Math.max(B[b + 2], Math.min(p.z, B[b + 5]));
+      const dx = p.x - cx, dz = p.z - cz, d2 = dx * dx + dz * dz;
+      if (d2 >= r * r) continue;
+      hit = true;
+      if (d2 > 1e-8) {
+        const d = Math.sqrt(d2), push = (r - d) / d;
+        p.x += dx * push; p.z += dz * push;
+      } else {
+        const px0 = p.x - B[b], px1 = B[b + 3] - p.x, pz0 = p.z - B[b + 2], pz1 = B[b + 5] - p.z;
+        const m = Math.min(px0, px1, pz0, pz1);
+        if (m === px0) p.x = B[b] - r; else if (m === px1) p.x = B[b + 3] + r;
         else if (m === pz0) p.z = B[b + 2] - r; else p.z = B[b + 5] + r;
       }
     }

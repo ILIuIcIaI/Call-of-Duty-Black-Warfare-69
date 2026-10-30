@@ -8,6 +8,7 @@ src/dev/vmsheet.js
 src/dev/simsheet.js
 src/dev/mantletest.js
 src/dev/fuzz.js
+src/dev/gunsheet.js
 dist/
 
 # system files
@@ -15,3 +16,9 @@ dist/
 Thumbs.db
 desktop.ini
 *.log
+/src/dev/brpilot.js
+/src/dev/cityview.js
+/src/dev/finsheet.js
+/src/dev/brsim.js
+/src/dev/fincheck.js
+/src/dev/finfuzz.js

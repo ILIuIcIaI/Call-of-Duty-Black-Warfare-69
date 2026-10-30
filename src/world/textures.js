@@ -344,6 +344,30 @@ export function projectUV(g, tile) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
+// The lettering on shops and public buildings: one sheet, two columns of eight boards
+const SIGNS = [
+  ['HOTEL', '#7a1f28', '#f4dc9a'], ['BAR', '#201c28', '#ff8a5c'], ['CAFÉ', '#2e4a3a', '#f0e8d0'], ['MARKT', '#a83228', '#ffffff'],
+  ['BÄCKEREI', '#e8cc88', '#5a3216'], ['APOTHEKE', '#1e6e46', '#ffffff'], ['BANK', '#1e3a5e', '#f0e0a8'], ['GARAGE', '#d8a820', '#1c1c1c'],
+  ['TANKSTELLE', '#c8302a', '#ffffff'], ['SCHULE', '#e8e4d8', '#28406a'], ['KLINIK', '#ffffff', '#c02828'], ['RATHAUS', '#ece4d0', '#3a3228'],
+  ['FISCH', '#2a6a8a', '#ffffff'], ['POST', '#e8b818', '#1c1c1c'], ['PENSION', '#5a7a4a', '#f8f0d8'], ['LAGER', '#54585c', '#f0e8c8'],
+];
+function signAtlas() {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const x = c.getContext('2d');
+  SIGNS.forEach(([text, bg, fg], i) => {
+    const px = (i % 2) * 512, py = ((i / 2) | 0) * 128;
+    x.fillStyle = bg; x.fillRect(px, py, 512, 128);
+    x.strokeStyle = fg; x.lineWidth = 5; x.strokeRect(px + 9, py + 9, 494, 110);
+    x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
+    let size = 84; x.font = `bold ${size}px Arial, sans-serif`;
+    while (x.measureText(text).width > 450) { size -= 4; x.font = `bold ${size}px Arial, sans-serif`; }
+    x.fillText(text, px + 256, py + 68);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4;
+  return t;
+}
+
 export class TextureLib {
   constructor(engine) {
     this.engine = engine;
@@ -361,6 +385,7 @@ export class TextureLib {
 
   generate(name) {
     if (this.tex[name]) return this.tex[name];
+    if (name === 'signs') return (this.tex[name] = { map: signAtlas() });
     const P = GENERATORS[name](), S = P.S;
     const col = new Uint8ClampedArray(S * S * 4);
     // limited color depth, like a palette texture

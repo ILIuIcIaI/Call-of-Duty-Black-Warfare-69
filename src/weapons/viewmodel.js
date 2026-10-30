@@ -38,6 +38,8 @@ const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Qua
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _s3 = new THREE.Vector3();
 const ONE3 = new THREE.Vector3(1, 1, 1);
 const tmpA = [0, 0, 0, 0, 0, 0], tmpB = [0, 0, 0];
+const tmpC = [0, 0, 0, 0, 0, 0];
+const KNIFE_ARM = new THREE.Vector3(-0.5, -0.55, 0.9).normalize(); // where the forearm of the left fist points
 const ZERO6 = [0, 0, 0, 0, 0, 0];
 
 function flashTexture() {
@@ -80,6 +82,21 @@ export class Viewmodel {
     this.lhandOpen.visible = false; this.rhandOpen.visible = false;
     this.ledge = null; this.ledgeK = 0;
     this.freeW = 0;
+    // knife arm: a third hand in camera space, only there during a melee
+    this.knifeArm = buildHands(this.mats).left;
+    const kb = new THREE.Group();
+    const kh = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.11, 0.032), this.mats.dark); kh.position.y = 0.0; kb.add(kh);
+    const kg = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.012, 0.05), this.mats.steel); kg.position.y = 0.06; kb.add(kg);
+    const blade = new THREE.BufferGeometry(); const L = 0.17, W = 0.038, T = 0.006;
+    const bv = [[-T, 0, -W / 2], [T, 0, -W / 2], [T, 0, W / 2], [-T, 0, W / 2], [0, L, W / 2 - 0.006]];
+    const bi = [[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4], [0, 2, 1], [0, 3, 2]], bp = [];
+    for (const f of bi) for (const i of f) bp.push(...bv[i]);
+    blade.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); blade.computeVertexNormals();
+    const kbm = new THREE.Mesh(blade, this.mats.steel); kbm.position.y = 0.066; kb.add(kbm);
+    kb.position.set(0, 0.0, -0.022);
+    this.knifeArm.add(kb);
+    this.knifeArm.visible = false;
+    this.root.add(this.knifeArm);
 
     // lights (camera space); key light follows the world sun direction
     this.hemi = new THREE.HemisphereLight(0xe8e6e0, 0x5a5044, 1.7);
@@ -152,7 +169,7 @@ export class Viewmodel {
     this.isPistol = !!w.pistol;
     this.hip = (this.isPistol ? HIP_PISTOL : HIP_RIFLE).clone();
     if (def.id === 'lmg') this.hip.add(_v.set(0.0, -0.01, 0.02));
-    if (def.id === 'sniper') this.hip.add(_v.set(0.0, -0.005, 0.03));
+    if (def.id === 'sniper' || def.id === 'amr') this.hip.add(_v.set(0.0, -0.005, 0.03));
     // rest transforms live on the (cached) model so they can never get out of sync with it
     if (!w.rest) { w.rest = {}; for (const [k, p] of Object.entries(w.parts)) w.rest[k] = { pos: p.position.clone(), rot: p.rotation.clone(), parent: p.parent }; }
     this.rest = w.rest;
@@ -177,7 +194,7 @@ export class Viewmodel {
     if (w.parts.shellHand) this.shellRel = new THREE.Matrix4().makeTranslation(-0.01, 0.0, -0.035);
     w.root.add(this.flash);
     this.flash.position.copy(w.anchors.muzzle);
-    this.flash.scale.setScalar(def.id === 'shotgun' || def.id === 'sniper' || def.id === 'revolver' ? 1.6 : def.id === 'smg' ? 0.8 : def.id === 'lmg' ? 1.25 : 1.1);
+    this.flash.scale.setScalar(def.flash ? def.flash : def.id === 'shotgun' || def.id === 'sniper' || def.id === 'revolver' ? 1.6 : def.id === 'smg' ? 0.8 : def.id === 'lmg' ? 1.25 : 1.1);
     this.persist.slide = 0;
     this.clip = null;
     this.setMagState('gun');
@@ -279,6 +296,39 @@ export class Viewmodel {
     }
   }
 
+  // -------------------------------------------------------------- no gun out: only the hands
+  // kind: 'fall' arms spread in free fall, 'chute' hands up on the lines, 'crawl' pulling along the ground, 'revive' on the wound
+  updateFree(dt, kind, t, amount = 1) {
+    this.pivot.visible = false;
+    const L = this.lhandOpen, R = this.rhandOpen;
+    L.visible = R.visible = true;
+    this.knifeArm.visible = false;
+    const f = Math.sin(t * 19) * 0.006 * amount, g = Math.sin(t * 23 + 1) * 0.006 * amount;
+    let lp, rp, lr, rr;
+    // how far the screen reaches sideways at arm's length: hands stay in the picture on any aspect ratio
+    const vc = this.game.engine.vmCamera, hw = Math.tan(vc.fov * Math.PI / 360) * vc.aspect * 0.46;
+    if (kind === 'fall') {
+      lp = [-hw * 0.74 + f, -0.17 + g, -0.46]; rp = [hw * 0.74 - g, -0.17 + f, -0.46];
+      lr = [0.5, 0.35, 0.5]; rr = [0.5, -0.35, -0.5];
+    } else if (kind === 'chute') {
+      const s = Math.sin(t * 1.3) * 0.01;
+      lp = [-hw * 0.68, 0.07 + s, -0.46]; rp = [hw * 0.68, 0.07 - s, -0.46];
+      lr = [1.35, 0.25, 0.2]; rr = [1.35, -0.25, -0.2];
+    } else if (kind === 'crawl') {
+      // arms reach forward in turn; amount = crawl speed
+      const a = Math.sin(t), b = Math.sin(t + Math.PI);
+      lp = [-0.24, -0.22 + Math.max(0, a) * 0.05 * amount, -0.42 - a * 0.12 * amount]; rp = [0.24, -0.22 + Math.max(0, b) * 0.05 * amount, -0.42 - b * 0.12 * amount];
+      lr = [-0.15, 0.2, 0.1]; rr = [-0.15, -0.2, -0.1];
+    } else {
+      const s = Math.sin(t * 7) * 0.006;
+      lp = [-0.12, -0.3 + s, -0.34]; rp = [0.1, -0.33 - s, -0.33];
+      lr = [0.5, -0.5, 0.5]; rr = [0.6, 0.5, -0.5];
+    }
+    L.position.set(lp[0], lp[1], lp[2]); R.position.set(rp[0], rp[1], rp[2]);
+    L.rotation.set(lr[0], lr[1], lr[2], 'YXZ'); R.rotation.set(rr[0], rr[1], rr[2], 'YXZ');
+  }
+  endFree() { this.pivot.visible = true; this.lhandOpen.visible = false; this.rhandOpen.visible = false; }
+
   // -------------------------------------------------------------- clips & jolts
   play(clip) {
     this.clip = clip; this.clipT = 0; this.clipFired.clear();
@@ -367,7 +417,7 @@ export class Viewmodel {
     this.flash.children[0].scale.setScalar(s);
     for (let i = 1; i < this.flash.children.length; i++) this.flash.children[i].scale.set(0.7 + Math.random() * 0.6, 0.8 + Math.random() * 0.4, 1);
     this.flashLight.intensity = 3.2;
-    this.heat = Math.min(1.5, this.heat + (def.fire === 'auto' ? 0.09 : 0.35));
+    this.heat = Math.min(1.5, this.heat + (def.fire === 'auto' || def.fire === 'burst' ? 0.09 : 0.35));
   }
 
   ejectCasing() {
@@ -555,8 +605,12 @@ export class Viewmodel {
     rx += Math.sin(this.breath * 1.6 + 0.6) * 0.004 * br;
     ry += Math.sin(this.breath * 0.8) * 0.003 * br;
 
+    // ---- docked: the gun rests on the cover, leans with the body and hardly sways
+    this.mountW = damp(this.mountW || 0, st.mount ? 1 : 0, 11, dt);
+    pos.y -= 0.005 * this.mountW; pos.z += 0.004 * this.mountW; rz += (st.mountSide || 0) * -0.05 * this.mountW;
+
     // ---- mouse sway (weapon lags behind the look direction)
-    const swayK = 1 - adsE * 0.7;
+    const swayK = (1 - adsE * 0.7) * (1 - this.mountW * 0.6);
     this.swayRot.setTarget(clamp(-st.lookDY * 0.0028, -0.14, 0.14) * swayK, clamp(-st.lookDX * 0.0028, -0.16, 0.16) * swayK, clamp(-st.lookDX * 0.002, -0.12, 0.12) * swayK);
     this.swayPos.setTarget(clamp(-st.lookDX * 0.00028, -0.014, 0.014) * swayK, clamp(st.lookDY * 0.00028, -0.014, 0.014) * swayK, 0);
     this.swayRot.update(dt); this.swayPos.update(dt);
@@ -664,6 +718,17 @@ export class Viewmodel {
       }
     } else { this.lhandOpen.visible = false; this.lhand.visible = true; }
     if (!this.ledge) this.rhandOpen.visible = false;
+    // ---- knife: the left hand leaves the gun, the knife arm does the work
+    if (c && c.name === 'melee') {
+      this.lhand.visible = false; this.lhandOpen.visible = false;
+      const K = sampleKeys(c.K, Math.min(1, this.clipT), 1, 4, tmpC);
+      this.knifeArm.visible = true;
+      this.knifeArm.position.set(K[0], K[1], K[2]);
+      // the forearm always runs back to an elbow below the camera; the blade turns around it
+      _v3.set(-0.25 - K[0], -0.72 - K[1], 0.28 - K[2]).normalize();
+      _q.setFromUnitVectors(KNIFE_ARM, _v3);
+      this.knifeArm.quaternion.setFromAxisAngle(_v3, K[3]).multiply(_q);
+    } else this.knifeArm.visible = false;
     // ---- flat-hand slaps during clips (magazine tap / bolt release)
     const openUp = (S.openUp || 0) > 0.5, openSide = (S.openSide || 0) > 0.5;
     if (c && (openUp || openSide)) {

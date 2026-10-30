@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPONS, PRIMARIES, SECONDARIES, OPTIC_NAMES } from '../weapons/defs.js';
+import { WEAPONS, PRIMARIES, SECONDARIES, OPTICS, opticFits } from '../weapons/defs.js';
 import { MAP_LIST } from '../world/maps/index.js';
 import { QUALITY } from '../core/engine.js';
 import { buildWeapon, weaponMaterials } from '../weapons/models.js';
@@ -16,6 +16,7 @@ export class Menu {
     this.el = document.getElementById('menu');
     this.tab = 'play';
     this.preview = null;
+    this.focus = 'primary'; // which loadout slot the preview and the stats panel show
   }
 
   sfx(n = 'uiClick') { this.game.audio.play(n, { vol: 0.35 }); }
@@ -24,10 +25,11 @@ export class Menu {
     this.tab = tab; this.mode = mode;
     const g = this.game, S = g.settings;
     const tabs = mode === 'pause'
-      ? [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']]
-      : [['play', 'SPIELEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG']];
+      ? (g.br ? [['resume', 'FORTSETZEN'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']] : [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']])
+      : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG']];
     let body = '';
     if (tab === 'play') body = this.playTab();
+    else if (tab === 'warzone') body = this.warzoneTab();
     else if (tab === 'loadout') body = this.loadoutTab();
     else if (tab === 'settings') body = this.settingsTab();
     else if (tab === 'controls') body = this.controlsTab();
@@ -64,21 +66,48 @@ export class Menu {
       <div style="margin-top:22px"><button class="btn" id="start-btn">MATCH STARTEN</button></div>`;
   }
 
+  warzoneTab() {
+    const m = this.game.settings.match;
+    const li = (a, b) => `<li><b>${a}</b>${b}</li>`;
+    return `<div class="wz">
+      <h2>BATTLE ROYALE AUF DER INSEL SERENA</h2>
+      <p>20 Spieler springen aus einem Flugzeug über der Insel ab. Du landest nur mit einer einfachen Pistole. Suche Waffen und Platten, weiche der Zone aus und bleib als Letzter übrig.</p>
+      <ul>
+        ${li('Absprung', 'Gleiter steuern und mit der Sekundärwaffe schießen, während du hängst')}
+        ${li('Beute', 'Kisten und Bodenfunde: jede Waffe mit jedem Visier, in fünf Seltenheitsstufen')}
+        ${li('Rüstung', 'Bis zu 5 Platten tragen, 3 gleichzeitig einsetzen')}
+        ${li('Fahrzeuge', 'Kleinwagen, Limousine, Pickup, Jeep und Geländewagen')}
+        ${li('Zone', 'Sie schrumpft in Etappen, außerhalb verlierst du Leben')}
+      </ul>
+      <div class="opt"><label>Schwierigkeit der Bots</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+      <div style="margin-top:18px"><button class="btn" id="wz-start">WARZONE STARTEN</button></div>
+      </div>`;
+  }
+
   loadoutTab() {
     const lo = this.game.settings.loadout;
-    const stat = (n, v) => `<div class="stat"><span>${n}</span><i><b style="width:${v}%"></b></i></div>`;
     const card = (id, sel, attr) => {
       const d = WEAPONS[id];
-      return `<div class="card wcard ${sel ? 'sel' : ''}" data-${attr}="${id}"><span class="tag">${d.cls.toUpperCase()}</span><h4>${d.name}</h4>
-        ${stat('SCHADEN', d.stats.dmg)}${stat('FEUERRATE', d.stats.rof)}${stat('REICHWEITE', d.stats.rng)}${stat('PRÄZISION', d.stats.acc)}${stat('MOBILITÄT', d.stats.mob)}${stat('HANDLING', d.stats.hnd)}</div>`;
+      return `<div class="card wcard ${sel ? 'sel' : ''}" data-${attr}="${id}"><span class="tag">${d.cls.toUpperCase()}</span><h4>${d.name}</h4></div>`;
     };
-    const p = WEAPONS[lo.primary];
-    const optics = p.optics.map((o) => `<button data-v="${o}" class="${lo.primaryOptic === o ? 'on' : ''}">${OPTIC_NAMES[o]}</button>`).join('');
-    return `<div class="section-title">PRIMÄRWAFFE</div><div class="row">${PRIMARIES.map((id) => card(id, lo.primary === id, 'prim')).join('')}</div>
-      <div class="section-title">VISIER</div><div class="seg" data-seg="optic">${optics}</div>
-      <div class="section-title">SEKUNDÄRWAFFE</div><div class="row">${SECONDARIES.map((id) => card(id, lo.secondary === id, 'sec')).join('')}</div>
-      ${this.mode === 'pause' ? '<div style="margin-top:18px"><button class="btn" id="resume-btn">WEITERSPIELEN</button></div>' : ''}
-      <div class="hint">${this.mode === 'pause' ? 'Die Waffen werden sofort getauscht, wenn du weiterspielst ([L] oder [Esc]). Tot: beim Respawn.' : 'Die Vorschau rechts zeigt deine Primärwaffe.'}</div>`;
+    // the optics this gun takes, and what the chosen one does and fits on
+    const optics = (id, cur, seg) => {
+      const def = WEAPONS[id], o = OPTICS[cur] || OPTICS[def.optics[0]];
+      const btns = def.optics.map((k) => `<button data-v="${k}" class="${cur === k ? 'on' : ''}">${OPTICS[k].name}${OPTICS[k].power === '1x' ? '' : ' ' + OPTICS[k].power}</button>`).join('');
+      return `<div class="seg wrap" data-seg="${seg}">${btns}</div>
+        <div class="hint optic-hint">${o.desc}${cur === 'iron' ? '' : ` <b>Passt auf:</b> ${opticFits(cur).join(', ')}`}</div>`;
+    };
+    const f = this.focus === 'secondary' ? [lo.secondary, lo.secondaryOptic] : [lo.primary, lo.primaryOptic];
+    const d = WEAPONS[f[0]], fo = OPTICS[f[1]] || OPTICS[d.optics[0]];
+    const stat = (n, v) => `<div class="stat"><span>${n}</span><i><b style="width:${v}%"></b></i></div>`;
+    return `<div class="section-title">PRIMÄRWAFFE</div><div class="wgrid">${PRIMARIES.map((id) => card(id, lo.primary === id, 'prim')).join('')}</div>
+      <div class="section-title">VISIER</div>${optics(lo.primary, lo.primaryOptic, 'optic')}
+      <div class="section-title">SEKUNDÄRWAFFE</div><div class="wgrid">${SECONDARIES.map((id) => card(id, lo.secondary === id, 'sec')).join('')}</div>
+      <div class="section-title">VISIER</div>${optics(lo.secondary, lo.secondaryOptic, 'optic2')}
+      ${this.mode === 'pause' ? '<div style="margin-top:18px"><button class="btn" id="resume-btn">WEITERSPIELEN</button></div><div class="hint">Die Waffen werden sofort getauscht, wenn du weiterspielst ([L] oder [Esc]). Tot: beim Respawn.</div>' : ''}
+      <div class="wstats"><span class="tag">${d.cls.toUpperCase()}</span><h4>${d.name}</h4>
+        <div class="wstats-optic">${fo.name} · ${fo.power}</div>
+        ${stat('SCHADEN', d.stats.dmg)}${stat('FEUERRATE', d.stats.rof)}${stat('REICHWEITE', d.stats.rng)}${stat('PRÄZISION', d.stats.acc)}${stat('MOBILITÄT', d.stats.mob)}${stat('HANDLING', d.stats.hnd)}</div>`;
   }
 
   settingsTab() {
@@ -107,8 +136,10 @@ export class Menu {
       ['C / Strg', 'Ducken · halten = Hinlegen · beim Sprint: tippen = Slide, halten = Slide + Hechtsprung · in der Luft = in die Luft legen, landet liegend'],
       ['Z / X', 'Hinlegen · beim Sprint = Dive (rückwärts = Rückenlage)'],
       ['Shift (liegend)', 'Sofort aufstehen und losrennen'], ['Umsehen (liegend)', '360° · hinter dich schauen = auf den Rücken rollen'],
-      ['Springen im Slide', 'Slide-Cancel (behält Schwung, lädt Taktik-Sprint auf)'], ['R', 'Nachladen'], ['1 / 2 / Q / Mausrad', 'Waffe wechseln'],
+      ['Springen im Slide', 'Slide-Cancel (behält Schwung, lädt Taktik-Sprint auf)'], ['R', 'Nachladen'], ['1 / 2 / Q / Mausrad', 'Waffe wechseln'], ['V / E', 'Nahkampf'],
+      ['Zielen + W gegen Kante', 'Andocken: Waffe auflegen, weniger Rückstoß, an Ecken lehnst du dich heraus'], ['T', 'Andocken von Hand an / aus'],
       ['I', 'Waffe inspizieren'], ['Tab', 'Punktetafel'], ['L', 'Loadout ändern (auch mitten in der Runde)'], ['Esc', 'Pause'],
+      ['F', 'Warzone: aufheben, Kiste öffnen, ein- und aussteigen'], ['G', 'Warzone: Platte einsetzen'], ['M', 'Warzone: große Karte'], ['V', 'Warzone, im Fahrzeug: Kamera wechseln'],
     ];
     return `<div class="section-title">STEUERUNG</div><div class="controls">${rows.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join('')}</div>`;
   }
@@ -121,7 +152,8 @@ export class Menu {
       const k = seg.dataset.seg, v = b.dataset.v;
       this.sfx();
       if (k === 'mode' || k === 'difficulty') S.match[k] = v;
-      else if (k === 'optic') S.loadout.primaryOptic = v;
+      else if (k === 'optic') { S.loadout.primaryOptic = v; this.focus = 'primary'; }
+      else if (k === 'optic2') { S.loadout.secondaryOptic = v; this.focus = 'secondary'; }
       else if (k === 'quality') S.quality = v;
       g.saveSettings();
       this.show(this.tab, this.mode);
@@ -140,14 +172,22 @@ export class Menu {
       S.loadout.primary = c.dataset.prim;
       const d = WEAPONS[S.loadout.primary];
       if (!d.optics.includes(S.loadout.primaryOptic)) S.loadout.primaryOptic = d.optics.includes('reflex') ? 'reflex' : d.optics[0];
+      this.focus = 'primary';
       this.sfx(); g.saveSettings(); this.show('loadout', this.mode);
     }));
-    el.querySelectorAll('[data-sec]').forEach((c) => c.addEventListener('click', () => { S.loadout.secondary = c.dataset.sec; this.sfx(); g.saveSettings(); this.show('loadout', this.mode); }));
+    el.querySelectorAll('[data-sec]').forEach((c) => c.addEventListener('click', () => {
+      S.loadout.secondary = c.dataset.sec;
+      if (!WEAPONS[c.dataset.sec].optics.includes(S.loadout.secondaryOptic)) S.loadout.secondaryOptic = 'iron';
+      this.focus = 'secondary';
+      this.sfx(); g.saveSettings(); this.show('loadout', this.mode);
+    }));
     el.querySelectorAll('.card, .btn, .seg button, .tab').forEach((c) => c.addEventListener('mouseenter', () => this.sfx('uiHover')));
     const res = el.querySelector('#resume-btn');
     if (res) res.addEventListener('click', () => { this.sfx(); g.resume(); });
     const start = el.querySelector('#start-btn');
     if (start) start.addEventListener('click', () => { this.sfx(); g.beginMatch(); });
+    const wz = el.querySelector('#wz-start');
+    if (wz) wz.addEventListener('click', () => { this.sfx(); g.beginWarzone(); });
     el.querySelectorAll('[data-mapprev]').forEach((c) => this.drawMapPreview(c, c.dataset.mapprev));
   }
 
@@ -193,13 +233,18 @@ export class Menu {
       this.preview = { scene, cam, holder, key: '' };
     }
     const lo = g.settings.loadout;
-    const key = lo.primary + '|' + lo.primaryOptic;
+    const [id, optic] = this.focus === 'secondary' ? [lo.secondary, lo.secondaryOptic] : [lo.primary, lo.primaryOptic];
+    const key = id + '|' + optic;
     if (this.preview.key !== key) {
-      this.preview.holder.clear();
-      const w = buildWeapon(WEAPONS[lo.primary].model, lo.primaryOptic, weaponMaterials(g.tex));
+      const h = this.preview.holder;
+      h.clear();
+      const w = buildWeapon(WEAPONS[id].model, optic, weaponMaterials(g.tex));
       w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
-      this.preview.holder.add(w.root);
-      w.root.position.set(0, -0.03, 0.12);
+      h.add(w.root);
+      // centered, and scaled so a pistol and a 1.5 m rifle both fill the preview
+      const box = new THREE.Box3().setFromObject(w.root), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      w.root.position.set(-c.x, -c.y, -c.z);
+      h.scale.setScalar(THREE.MathUtils.clamp(1.1 / size.z, 0.6, 2.4));
       this.preview.key = key;
     }
     if (g.scene.environment) this.preview.scene.environment = g.scene.environment;

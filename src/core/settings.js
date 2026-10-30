@@ -10,7 +10,7 @@ export const DEFAULTS = {
   autoSprint: false,
   showFps: true,
   invertY: false,
-  loadout: { primary: 'ar', primaryOptic: 'reflex', secondary: 'pistol' },
+  loadout: { primary: 'ar', primaryOptic: 'reflex', secondary: 'pistol', secondaryOptic: 'iron' },
   match: { map: 'drydock', mode: 'tdm', bots: 5, difficulty: 'regular' },
 };
 

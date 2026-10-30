@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { WEAPONS } from './defs.js';
 import { Viewmodel } from './viewmodel.js';
-import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise } from './anim.js';
+import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise, plateClip, meleeClip } from './anim.js';
+import { makeWeaponDef } from '../game/loot.js';
 import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
 
 // =============================================================================
@@ -41,7 +42,7 @@ export class PlayerWeapons {
       const def = WEAPONS[id];
       return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
     };
-    this.slots = [mk(lo.primary, lo.primaryOptic), mk(lo.secondary, 'iron')];
+    this.slots = [mk(lo.primary, lo.primaryOptic), mk(lo.secondary, lo.secondaryOptic)];
     this.cur = 0;
     this.equip(true);
   }
@@ -52,9 +53,9 @@ export class PlayerWeapons {
       const def = WEAPONS[id];
       return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
     };
-    const P = slot(lo.primary, lo.primaryOptic), S = slot(lo.secondary, 'iron');
+    const P = slot(lo.primary, lo.primaryOptic), S = slot(lo.secondary, lo.secondaryOptic);
     const cur = this.slots;
-    const chP = !cur[0] || cur[0].def !== P.def || cur[0].optic !== P.optic, chS = !cur[1] || cur[1].def !== S.def;
+    const chP = !cur[0] || cur[0].def !== P.def || cur[0].optic !== P.optic, chS = !cur[1] || cur[1].def !== S.def || cur[1].optic !== S.optic;
     if (!chP && !chS) return false;
     if (chP) cur[0] = P;
     if (chS) cur[1] = S;
@@ -64,6 +65,49 @@ export class PlayerWeapons {
     return true;
   }
 
+  // Warzone: you land with nothing but a plain pistol
+  setStartLoadout() {
+    const def = WEAPONS.pistol;
+    this.slots = [null, { def, optic: 'iron', mag: def.mag, reserve: def.mag * 2, chambered: true }];
+    this.cur = 1; this.lockSlot = -1; this.state = 'idle'; this.adsAmount = 0; this.burstLeft = 0; this.stowed = false; this.lunge = null;
+    this.vm.stop(); this.vm.endFree();
+    this.vm.setWeapon(def, 'iron');
+  }
+
+  // a found weapon goes into its slot; what was there comes back to be dropped
+  pickup(it) {
+    const def = makeWeaponDef(it.weaponId, it.rarity);
+    const i = def.slot === 'primary' ? 0 : 1, old = this.slots[i];
+    this.slots[i] = { def, optic: it.optic, mag: it.mag ?? def.mag, reserve: it.reserve ?? def.mag * 3, chambered: true };
+    this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1;
+    this.cur = i;
+    this.equip(false);
+    return old;
+  }
+
+  // put away for the jump: nothing in the hands until a weapon key is pressed
+  stow() {
+    this.prevCur = this.cur;
+    this.cancelReload(); this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0; this.lunge = null;
+    this.state = 'idle'; this.adsAmount = 0; this.wantsAds = false; this.firingRecently = false;
+    this.stowed = true;
+  }
+  // the sidearm comes out
+  unstow(slot = 1) {
+    this.stowed = false;
+    this.vm.endFree();
+    this.cur = slot; this.equip(false);
+  }
+
+  startPlate() {
+    if (this.state === 'holster' || this.state === 'draw') return false;
+    this.vm.stop(); this.shellLoop = false;
+    this.state = 'plate';
+    this.vm.play(plateClip(1.05));
+    return true;
+  }
+  plateDone() { if (this.state === 'plate') this.state = 'idle'; }
+
   refillAll() {
     for (const s of this.slots) { s.mag = s.def.mag; s.reserve = s.def.reserve; s.chambered = true; }
   }
@@ -71,7 +115,7 @@ export class PlayerWeapons {
   equip(first) {
     const w = this.w;
     this.vm.setWeapon(w.def, w.optic);
-    this.adsAmount = 0;
+    this.adsAmount = 0; this.burstLeft = 0;
     this.state = 'draw';
     const quick = w.def.slot === 'secondary';
     if (first && !quick) this.vm.play(firstRaise(1.0, !!this.vm.model.parts.charge && w.def.reloadStyle === 'mag'));
@@ -90,11 +134,15 @@ export class PlayerWeapons {
     if (input.pressed('weapon1')) want = 0;
     if (input.pressed('weapon2')) want = 1;
     if (input.pressed('swap') || input.wheel !== 0) want = 1 - this.cur;
-    if (want >= 0 && want !== this.cur && this.state !== 'holster') {
+    if (want >= 0 && want !== this.cur && this.state !== 'holster' && this.state !== 'plate' && this.slots[want] && !(this.lockSlot >= 0)) {
       this.cancelReload();
       this.state = 'holster'; this.pendingSlot = want;
       this.vm.play(holsterClip(0.2));
     }
+
+    // ---- knife
+    if (input.pressed('melee') && !player.gliding && player.mode !== 'mantle' && player.mode !== 'dive' && this.state !== 'holster' && this.state !== 'plate' && this.state !== 'melee') this.startMelee(player);
+    if (this.lunge) this.updateLunge(dt, player);
 
     // ---- sprint / movement restrictions
     const sprinting = player.sprinting;
@@ -110,7 +158,7 @@ export class PlayerWeapons {
     // aiming during a reload: wait for the magazine, then it cuts the rest of the animation short
     let reloading = this.state === 'reload' && def.reloadStyle !== 'shell';
     if (reloading && this.refilled && input.ads && !sprinting && !lowered) { this.vm.stop(); this.state = 'idle'; reloading = false; }
-    this.wantsAds = input.ads && !sprinting && !lowered && !reloading && this.state !== 'inspect';
+    this.wantsAds = (input.ads || (player.mount && player.mount.held)) && !sprinting && !lowered && !reloading && this.state !== 'inspect' && this.state !== 'plate' && this.state !== 'melee';
     const adsRate = 1 / def.ads * (this.raiseT > 0 ? 0.75 : 1);
     this.adsAmount = clamp(this.adsAmount + (this.wantsAds ? adsRate : -adsRate * 1.3) * dt, 0, 1);
 
@@ -119,12 +167,17 @@ export class PlayerWeapons {
     this.firingRecently = input.fire && this.state !== 'holster' && this.state !== 'draw';
     const triggerHeld = input.fire;
     const canShootState = this.state === 'idle' || (this.state === 'reload' && def.reloadStyle === 'shell' && w.mag > 0);
-    if ((this.fireBuffer > 0 || (triggerHeld && def.fire === 'auto')) && canShootState && this.raiseT <= 0 && !lowered && t >= this.nextShot) {
+    // a started burst always finishes, unless the gun runs dry or gets put away
+    if (this.burstLeft > 0 && (w.mag <= 0 || !canShootState || lowered)) { this.burstLeft = 0; this.nextShot = Math.max(this.nextShot, t + def.burstDelay); }
+    const bursting = this.burstLeft > 0;
+    if ((this.fireBuffer > 0 || bursting || (triggerHeld && def.fire === 'auto')) && canShootState && this.raiseT <= 0 && !lowered && t >= this.nextShot) {
       if (w.mag <= 0) {
         if (this.fireBuffer > 0) { g.audio.play('dryfire', { vol: 0.6 }); this.fireBuffer = 0; this.tryReload(); }
-      } else if (def.fire === 'auto' || this.fireBuffer > 0) {
+      } else if (def.fire === 'auto' || bursting || this.fireBuffer > 0) {
         if (this.state === 'reload') { this.shellLoop = false; this.vm.stop(); this.state = 'idle'; }
+        if (def.fire === 'burst' && !bursting) this.burstLeft = def.burst;
         if (def.fire !== 'bolt' || w.chambered) this.shoot(player);
+        if (def.fire === 'burst' && --this.burstLeft === 0) this.nextShot = t + def.burstDelay;
         this.fireBuffer = 0;
       }
     }
@@ -150,7 +203,7 @@ export class PlayerWeapons {
       bobPhase: player.bobPhase, bobAmt: player.bobAmt * (player.onGround ? 1 : 0),
       lookDX: g.lookDX, lookDY: g.lookDY, vy: player.vel.y, strafe: player.moveInput.x,
       landImpulse: player._landVm || 0, corner, mantleK: player.mantle ? Math.min(1, player.mantle.t / player.mantle.dur) : 0,
-      sunDirCam: g.sunDirCam, inShadow: g.playerInShadow,
+      sunDirCam: g.sunDirCam, inShadow: g.playerInShadow, mount: !!player.mount, mountSide: player.mount ? player.mount.side : 0,
     });
     player._landVm = 0;
   }
@@ -174,10 +227,10 @@ export class PlayerWeapons {
     const def = this.def;
     const moveF = clamp(player.speedH / 7, 0, 1);
     let hip = def.hip + def.moveSpread * moveF + this.bloom;
-    if (!player.onGround && player.mode !== 'dive') hip += 3.5;
+    if (!player.onGround && player.mode !== 'dive' && !player.gliding) hip += 3.5;
     if (player.mode === 'slide' || player.mode === 'dive') hip += 1.5;
     if (player.stance === 'crouch') hip *= 0.85; else if (player.stance === 'prone') hip *= 0.7;
-    const adsS = def.adsSpread + (player.onGround ? 0 : 1.5) + moveF * 0.15;
+    const adsS = def.adsSpread + (player.onGround || player.gliding ? 0 : 1.5) + moveF * 0.15;
     const a = Math.pow(this.adsAmount, 1.5);
     return hip + (adsS - hip) * a;
   }
@@ -211,7 +264,7 @@ export class PlayerWeapons {
     const rc = def.recoil, k = this.recoilIndex;
     const ramp = k === 0 ? 0.75 : Math.min(1.15, 0.85 + k * 0.06);
     const adsM = this.adsAmount > 0.5 ? 1 : 1.2;
-    const stanceM = player.stance === 'crouch' ? 0.85 : player.stance === 'prone' ? 0.65 : 1;
+    const stanceM = (player.stance === 'crouch' ? 0.85 : player.stance === 'prone' ? 0.65 : 1) * (player.mount ? 0.55 : 1);
     const up = rc.up * ramp * adsM * stanceM;
     const side = (Math.sin(k * 1.9 + this.cur * 3) * 0.55 + (Math.random() * 2 - 1) * 0.45) * rc.side * adsM + rc.bias * 0.3;
     player.pitch = clamp(player.pitch + up * 0.72 * DEG, -88 * DEG, 88 * DEG);
@@ -246,12 +299,78 @@ export class PlayerWeapons {
     this.state = 'reload'; this.refilled = false;
     this.reloadEmpty = empty;
     const style = def.reloadStyle;
-    if (style === 'mag' || style === 'bolt') this.vm.play(magReload(empty ? def.reloadEmpty : def.reload, empty && style === 'mag', def.id === 'smg' || def.id === 'dmr' ? 'charge' : 'bolt'));
+    if (style === 'mag' || style === 'bolt') this.vm.play(magReload(empty ? def.reloadEmpty : def.reload, empty && style === 'mag', def.reloadTail || (def.id === 'smg' || def.id === 'dmr' ? 'charge' : 'bolt')));
     else if (style === 'box') this.vm.play(boxReload(def.reload));
     else if (style === 'pistol') this.vm.play(pistolReload(empty ? def.reloadEmpty : def.reload, empty));
     else if (style === 'revolver') this.vm.play(revolverReload(def.reload));
     else if (style === 'shell') { this.shellLoop = true; this.vm.play(shotgunStart(0.36)); }
     this.game.events.emit('reload', { entity: this.game.player });
+  }
+
+  // ---------------------------------------------------------------- knife
+  // the closest enemy in front of us within reach
+  meleeTarget(player, reach, cone = 0.72) {
+    const g = this.game, f = player.forwardVec(_v), eye = player.eyePos;
+    let best = null, bd = Infinity;
+    for (const c of g.combatants) {
+      if (c === player || !c.alive || c.sky || g.isFriendly(c, player)) continue;
+      const dx = c.pos.x - player.pos.x, dz = c.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+      if (d > reach || Math.abs(c.pos.y - player.pos.y) > 1.7) continue;
+      if (d > 0.7 && (dx * f.x + dz * f.z) / d < Math.cos(cone)) continue;
+      if (!g.col.lineClear(eye.x, eye.y, eye.z, c.pos.x, c.pos.y + 1.1, c.pos.z)) continue;
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+  }
+
+  startMelee(player) {
+    const g = this.game;
+    this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0;
+    player.sprinting = false; player.tac = false;
+    // Warzone: from behind, on someone already hurt, it turns into a finisher
+    if (g.br && g.br.tryFinisher(player)) return;
+    this.state = 'melee';
+    this.vm.play(meleeClip(0.62));
+    // a short lunge toward whoever is close enough
+    const c = this.meleeTarget(player, 3.6);
+    this.lunge = c ? { c, t: 0.17 } : null;
+  }
+
+  updateLunge(dt, player) {
+    const L = this.lunge;
+    L.t -= dt;
+    if (L.t <= 0 || !L.c.alive || player.mode !== 'normal') { this.lunge = null; return; }
+    const dx = L.c.pos.x - player.pos.x, dz = L.c.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+    if (d < 1.25) { this.lunge = null; return; }
+    player.vel.x = dx / d * 10.5; player.vel.z = dz / d * 10.5;
+  }
+
+  meleeStrike(player) {
+    const g = this.game, c = this.meleeTarget(player, 2.45, 0.95), cam = g.engine.camera;
+    cam.getWorldDirection(_dir);
+    if (c) {
+      const dx = c.pos.x - player.pos.x, dz = c.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+      // its own facing against the direction we are coming from: from behind, the knife kills outright
+      const yaw = c.isBot ? c.aimYaw : c.yaw, back = (-Math.sin(yaw) * dx + -Math.cos(yaw) * dz) / d > 0.35;
+      const dmg = back && !g.br ? 400 : 105; // Warzone has the finisher for this
+      const dir = new THREE.Vector3(dx / d, 0.1, dz / d);
+      const point = new THREE.Vector3(c.pos.x - dx / d * 0.25, c.pos.y + 1.15, c.pos.z - dz / d * 0.25);
+      g.fx.impact(point, _v.copy(dir).negate(), 'flesh', 1.4);
+      g.audio.play('stab', { vol: 1 });
+      g.shake.add(0.16);
+      this.vm.jolt(0, 0, 0.05, 0.5, -0.5, -0.4);
+      g.applyDamage(c, dmg, player, { part: 'chest', dir, weapon: { name: 'MESSER', damage: [dmg, dmg] }, point });
+      return;
+    }
+    // a wall? you hear it
+    const eye = cam.position, h = g.col.raycast(eye.x, eye.y, eye.z, _dir.x, _dir.y, _dir.z, 1.7, this._mh || (this._mh = {}));
+    if (h) {
+      const p = new THREE.Vector3(h.x, h.y, h.z), n = new THREE.Vector3(h.nx, h.ny, h.nz);
+      g.fx.impact(p, n, h.surface, 0.8);
+      g.audio.play('imp_' + (h.surface === 'glass' || h.surface === 'water' ? 'metal' : h.surface), { pos: p, vol: 0.8, maxDist: 30, occlude: false });
+      g.shake.add(0.08);
+      this.vm.jolt(0, 0, 0.07, 0.8, -0.8, -0.5);
+    }
   }
 
   cancelReload() {
@@ -290,6 +409,8 @@ export class PlayerWeapons {
     else if (name === 'cylOpen') J.jolt(-0.05, 0.05, 0, 0.6, 0, 1.4);
     else if (name === 'cylClose') J.jolt(0.06, 0.08, 0, 0.8, 0, -2.2);
     else if (name === 'loaderIn') J.jolt(0, -0.1, 0.06, -0.8, 0, 0.2);
+    if (name === 'swing') { g.audio.play('swing', { vol: 0.8 }); J.jolt(0, -0.02, 0, -0.3, 0.3, 0); }
+    if (name === 'meleeHit') this.meleeStrike(g.player);
     if (name === 'refill') {
       const n = Math.min(def.mag - w.mag, w.reserve);
       w.mag += n; w.reserve -= n; this.refilled = true;
@@ -311,7 +432,7 @@ export class PlayerWeapons {
       return;
     }
     if (c === 'draw' || c === 'raise') { this.state = 'idle'; return; }
-    if (c === 'inspect') { this.state = 'idle'; return; }
+    if (c === 'inspect' || c === 'plate' || c === 'melee') { this.state = 'idle'; return; }
     if (c === 'pump') { this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
     if (c === 'bolt') { w.chambered = true; this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
     if (c === 'rstart') { this.vm.play(shotgunShell(def.reload)); return; }

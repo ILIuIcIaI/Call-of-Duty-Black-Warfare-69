@@ -47,7 +47,7 @@ export class Bot {
     this.soldier.setWeapon(this.wdef, optic);
     this.mag = this.wdef.mag;
     // preferred engagement distances per weapon class
-    this.prefDist = { smg: 8, shotgun: 5, ar: 16, lmg: 22, dmr: 28, sniper: 38 }[id] || 15;
+    this.prefDist = { smg: 8, pdw: 7, shotgun: 5, autoshot: 6, ar: 16, burst: 18, lmg: 22, dmr: 28, sniper: 38, amr: 42 }[id] || 15;
   }
 
   get eyeH() { return this.crouching ? 1.12 : 1.6; }
@@ -94,7 +94,8 @@ export class Bot {
     const w = info && info.weapon;
     let strength = w ? Math.min(7, 2.2 + (w.damage[0] * (w.pellets || 1)) / 40) : 3;
     if (info && info.part === 'head') strength *= 1.15;
-    this.soldier.die(info && info.dir ? info.dir : new THREE.Vector3(0, 0, 1), { part: info && info.part, point: info && info.point, strength, vel: this.vel.clone() });
+    if (info && info.strength) strength = info.strength;
+    this.soldier.die(info && info.dir ? info.dir : new THREE.Vector3(0, 0, 1), { part: info && info.part, point: info && info.point, strength, vel: this.vel.clone(), staged: info && info.staged });
   }
 
   // called by the game when someone fires (hearing)
@@ -114,7 +115,7 @@ export class Bot {
       if (c === this || !c.alive || g.isFriendly(c, this)) continue;
       const dx = c.pos.x - this.pos.x, dz = c.pos.z - this.pos.z, dy = c.pos.y - this.pos.y;
       const dist = Math.hypot(dx, dy, dz);
-      if (dist > D.view) continue;
+      if (dist > D.view || (this.ignores && this.ignores(c, dist))) continue;
       const yawTo = Math.atan2(-dx, -dz);
       const off = Math.abs(angleDiff(this.aimYaw, yawTo));
       const recentAttacker = c === this.lastAttacker && g.time - this.lastDamage < 2.5;
@@ -122,7 +123,8 @@ export class Bot {
       if (!(off < D.fov * 0.5 * DEG || dist < 4 || recentAttacker || known)) continue;
       // line of sight to head or chest
       const ch = c.isPlayer ? c.eyeH : c.eyeH;
-      const vis = g.col.lineClear(eye.x, eye.y, eye.z, c.pos.x, c.pos.y + ch, c.pos.z) || g.col.lineClear(eye.x, eye.y, eye.z, c.pos.x, c.pos.y + ch * 0.6, c.pos.z);
+      const px = c.peek ? c.peek.x : 0, pz = c.peek ? c.peek.z : 0;
+      const vis = g.col.lineClear(eye.x, eye.y, eye.z, c.pos.x + px, c.pos.y + ch, c.pos.z + pz) || g.col.lineClear(eye.x, eye.y, eye.z, c.pos.x, c.pos.y + ch * 0.6, c.pos.z);
       if (!vis) continue;
       // a crouched / prone target far away is harder to notice on first glance
       if (!known && !recentAttacker) {
@@ -130,7 +132,7 @@ export class Bot {
         const noticeChance = clamp((1.4 - dist / D.view) * low * (off < 20 * DEG ? 1.3 : 0.8), 0.15, 1);
         if (Math.random() > noticeChance) continue;
       }
-      const score = -dist - off * 6 + (known ? 25 : 0) + (recentAttacker ? 18 : 0);
+      const score = -dist - off * 6 + (known ? 25 : 0) + (recentAttacker ? 18 : 0) + (this.targetBias ? this.targetBias(c, dist) : 0);
       if (score > bestScore) { bestScore = score; best = c; }
     }
     const t = g.time;
@@ -176,7 +178,7 @@ export class Bot {
       // reposition when the enemy is out of our weapon's comfort zone
       const d = this.target.pos.distanceTo(this.pos);
       this.wantClose = d > this.prefDist * 1.6;
-      this.wantBack = d < this.prefDist * 0.4 && (this.wdef.id === 'sniper' || this.wdef.id === 'lmg' || this.wdef.id === 'dmr');
+      this.wantBack = d < this.prefDist * 0.4 && (this.wdef.id === 'sniper' || this.wdef.id === 'amr' || this.wdef.id === 'lmg' || this.wdef.id === 'dmr');
       if (this.wantClose && (this.repathT <= 0 || !this.path)) { this.pathTo(this.target.pos); this.repathT = 1.5; }
     }
     if (this.state === 'chase' && this.path && this.wp >= this.path.length) {
@@ -263,7 +265,7 @@ export class Bot {
       if (this.strafing) wish.addScaledVector(_r, this.strafeDir);
       if (this.wantClose && this.path && this.wp < this.path.length) wish.add(this.followPath(dt).multiplyScalar(1.3));
       else if (this.wantBack) wish.addScaledVector(toT, -0.8);
-      speed = this.reloadT > 0 ? SPEED.walk : (this.wdef.id === 'smg' || this.wdef.id === 'shotgun' ? SPEED.walk : SPEED.ads + 0.6);
+      speed = this.reloadT > 0 ? SPEED.walk : (this.wdef.id === 'smg' || this.wdef.id === 'pdw' || this.wdef.pellets ? SPEED.walk : SPEED.ads + 0.6);
       if (this.crouchT > 0) { this.crouchT -= dt; speed = SPEED.crouch * 0.6; }
     } else if (this.path && this.wp < this.path.length) {
       wish.copy(this.followPath(dt));
@@ -322,6 +324,7 @@ export class Bot {
     this.updateAim(dt, engaging);
     // ---- weapon
     this.updateWeapon(dt, engaging);
+    if (this.meleeT > 0) this.meleeT -= dt;
     // ---- health regen
     if (this.health < this.maxHealth && t - this.lastDamage > 4.5) this.health = Math.min(this.maxHealth, this.health + 70 * dt);
     // ---- footsteps
@@ -330,8 +333,10 @@ export class Bot {
       this.footPhase += sp * dt / 1.6;
       if (this.footPhase > 1) { this.footPhase -= 1; g.events.emit('footstep', { entity: this, sprint: sp > 6 }); }
     }
-    // ---- animation
-    this.soldier.update(dt, this.animState(), this.pos);
+    // ---- animation (far away bots update less often)
+    this._animC = (this._animC || 0) + 1;
+    if (this._animC >= (this.animEvery || 1)) { this.soldier.update(dt * this._animC, this.animState(), this.pos); this._animC = 0; }
+    else this.soldier.root.position.copy(this.pos);
   }
 
   groundAhead(dir) {
@@ -382,7 +387,7 @@ export class Bot {
       const tg = this.target;
       const hy = tg.isPlayer ? tg.eyeH : tg.eyeH;
       const aimY = tg.pos.y + (this.aimHead ? hy + 0.02 : hy * 0.68);
-      const dx = tg.pos.x - this.pos.x, dz = tg.pos.z - this.pos.z, dy = aimY - (this.pos.y + this.eyeH);
+      const dx = tg.pos.x + (tg.peek ? tg.peek.x : 0) - this.pos.x, dz = tg.pos.z + (tg.peek ? tg.peek.z : 0) - this.pos.z, dy = aimY - (this.pos.y + this.eyeH);
       ty = Math.atan2(-dx, -dz);
       tp = Math.atan2(dy, Math.hypot(dx, dz));
     } else if (this.alertYaw !== undefined && this.game.time - this.lastDamage < 1.5) {
@@ -422,9 +427,22 @@ export class Bot {
       return;
     }
     this.reactT -= dt;
-    if (this.reactT > 0 || this.mantling) return;
-    if (this.burstPause > 0) { this.burstPause -= dt; return; }
     const t = g.time;
+    if (this.meleeHitAt && t >= this.meleeHitAt) {
+      this.meleeHitAt = 0;
+      const tg = this.target;
+      if (tg && tg.alive && tg.pos.distanceTo(this.pos) < 2.4) {
+        g.audio.play('stab', { pos: tg.pos, vol: 0.9, maxDist: 25 });
+        g.applyDamage(tg, 75, this, { part: 'chest', dir: _d.set(tg.pos.x - this.pos.x, 0.1, tg.pos.z - this.pos.z).normalize().clone(), weapon: { name: 'MESSER', damage: [75, 75] }, point: tg.pos.clone().setY(tg.pos.y + 1.2) });
+      }
+    }
+    if (this.reactT > 0 || this.mantling) return;
+    if (t >= (this.meleeCd || 0) && this.target && this.target.pos.distanceTo(this.pos) < 1.75 && this.onGround) {
+      this.meleeCd = t + 1.15; this.meleeT = 0.5; this.meleeHitAt = t + 0.17; this.nextShot = Math.max(this.nextShot, t + 0.48);
+      g.audio.play('swing', { pos: this.pos, vol: 0.7, maxDist: 25 });
+      return;
+    }
+    if (this.burstPause > 0) { this.burstPause -= dt; return; }
     if (t < this.nextShot) return;
     // only shoot when the crosshair is roughly on target
     const tg = this.target;
@@ -432,13 +450,13 @@ export class Bot {
     const yawTo = Math.atan2(-(tg.pos.x - this.pos.x), -(tg.pos.z - this.pos.z));
     const off = Math.abs(angleDiff(this.aimYaw, yawTo));
     if (off > Math.atan2(0.9, dist) + 4 * DEG) return;
-    if (def.id === 'shotgun' && dist > 22) return;
+    if (def.pellets && dist > 22) return;
     this.fire(dist);
     this.nextShot = t + 60 / def.rpm * (def.fire === 'semi' ? rand(1.3, 2.0) : 1) + (def.fire === 'bolt' ? def.boltTime : def.fire === 'pump' ? def.pumpTime : 0);
-    if (def.fire === 'auto') {
-      if (this.burst <= 0) this.burst = Math.round(rand(D.burst[0], D.burst[1]) * (dist > 30 ? 0.5 : 1));
+    if (def.fire === 'auto' || def.fire === 'burst') {
+      if (this.burst <= 0) this.burst = def.fire === 'burst' ? def.burst : Math.round(rand(D.burst[0], D.burst[1]) * (dist > 30 ? 0.5 : 1));
       this.burst--;
-      if (this.burst <= 0) this.burstPause = rand(0.12, 0.35) * (dist > 25 ? 1.6 : 1);
+      if (this.burst <= 0) this.burstPause = (def.fire === 'burst' ? def.burstDelay : 0) + rand(0.12, 0.35) * (dist > 25 ? 1.6 : 1);
     }
   }
 
@@ -466,7 +484,7 @@ export class Bot {
     this.errPitch += def.recoil.up * DEG * (1 - D.comp) * 0.9;
     this.errYaw += (Math.random() - 0.5) * def.recoil.side * DEG * (1 - D.comp);
     g.audio.gunshot(def.sound, { pos: this.pos.clone().setY(this.pos.y + 1.4) });
-    g.fx.muzzleWorld(muzzle, def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
+    g.fx.muzzleWorld(muzzle, def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
     g.onBotShot(this);
   }
 
@@ -477,7 +495,7 @@ export class Bot {
     return {
       yaw: this.aimYaw, pitch: this.aimPitch, speed: sp, moveAngle: -moveAngle,
       crouch: this.crouching && this.sliding <= 0, slide: this.sliding > 0, dive: false, prone: false, supine: false,
-      air: !this.onGround && !this.mantling, tac: this.tac && sp > 6, sprint: this.sprinting && sp > 5, reloadK: this.reloadT > 0 ? 1 - this.reloadT / (this.reloadTotal || 1) : 0, reload: this.reloadT > 0, mantle: !!this.mantling, floorY: this.pos.y,
+      air: !this.onGround && !this.mantling, tac: this.tac && sp > 6, sprint: this.sprinting && sp > 5, melee: this.meleeT > 0 ? 1 - this.meleeT / 0.5 : 0, reloadK: this.reloadT > 0 ? 1 - this.reloadT / (this.reloadTotal || 1) : 0, reload: this.reloadT > 0, mantle: !!this.mantling, floorY: this.pos.y,
     };
   }
 

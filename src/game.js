@@ -17,7 +17,9 @@ import { damageAt } from './weapons/defs.js';
 import { Soldier, OUTFITS } from './characters/soldier.js';
 import { Menu } from './ui/menu.js';
 import { NavGraph } from './bots/nav.js';
+import { IslandNav } from './bots/islandNav.js';
 import { Match } from './game/match.js';
+import { BRMatch } from './game/br.js';
 import { Autopilot } from './dev/autopilot.js';
 
 const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _p = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
@@ -84,6 +86,8 @@ export class Game {
 
   saveSettings() { saveSettings(this.settings); }
 
+  get br() { return this.match && this.match.mode === 'br' ? this.match : null; }
+
   bindEvents() {
     const unlockAudio = () => { this.audio.unlock(); };
     window.addEventListener('pointerdown', unlockAudio);
@@ -146,7 +150,9 @@ export class Game {
     // Fallback ticker: some embedded/hidden views pause requestAnimationFrame entirely.
     // (dev only, so hidden player tabs never burn GPU in the background)
     if (this.dev) setInterval(() => { if (performance.now() - this.lastT > 250) this.frame(performance.now(), true); }, 100);
-    if (this.dev) this.startMatch({ ...this.settings.match, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
+    if (this.dev && this.params.has('manual')) this.debugManual = true; // dev tooling drives the frames from the start
+    if (this.dev && this.params.has('br')) this.startMatch({ mode: 'br', map: 'island', bots: +(this.params.get('bots') ?? 19), difficulty: this.settings.match.difficulty });
+    else if (this.dev) this.startMatch({ ...this.settings.match, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
     else { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
   }
 
@@ -163,6 +169,31 @@ export class Game {
     this.input.lock();
   }
 
+  // Warzone: the island takes a moment to build, so the screen says so first
+  beginWarzone() {
+    this.audio.unlock();
+    this.input.lock(); // has to happen right on the click
+    this.menu.hide();
+    const L = document.getElementById('loading');
+    document.getElementById('load-msg').textContent = 'Die Insel wird vorbereitet';
+    document.getElementById('load-fill').style.width = '100%';
+    L.classList.remove('hidden');
+    setTimeout(() => {
+      this.startMatch({ mode: 'br', map: 'island', bots: 19, difficulty: this.settings.match.difficulty });
+      L.classList.add('hidden');
+    }, 60);
+  }
+
+  restartWarzone() {
+    if (this.br) this.br.dispose();
+    this.clearBots();
+    this.match = null;
+    document.getElementById('death-screen').classList.add('hidden');
+    document.getElementById('menu').innerHTML = '';
+    this.state = 'menu';
+    this.beginWarzone();
+  }
+
   onPause() {
     if (this.state !== 'playing' || this.paused) return;
     this.paused = true;
@@ -172,13 +203,14 @@ export class Game {
   resume() {
     this.menu.hide();
     this.paused = false;
-    this.weapons.applyLoadout(this.settings.loadout);
+    if (!this.br) this.weapons.applyLoadout(this.settings.loadout);
     this.input.pressedKeys.clear();
     this.input.lock();
   }
 
   quitToMenu() {
     this.paused = false;
+    if (this.br) this.br.dispose();
     if (this.clearBots) this.clearBots();
     this.match = null;
     document.getElementById('death-screen').classList.add('hidden');
@@ -188,7 +220,7 @@ export class Game {
 
   isFriendly(a, b) {
     if (a === b) return true;
-    if (!this.match || this.match.mode === 'ffa') return false;
+    if (!this.match || this.match.mode !== 'tdm') return false;
     return a.team === b.team;
   }
 
@@ -205,7 +237,14 @@ export class Game {
     this.glassByIdx = new Map(this.glassMeshes.map((m) => [m.userData.glassIdx, m]));
     this.envObjs = createEnvironment(this.engine, this.scene, def.env, def.bounds);
     this.engine.renderer.shadowMap.needsUpdate = true;
+    // world effects live on layer 2: visible to every camera except the thermal picture
+    const preFx = new Set(this.scene.children);
     this.fx = new Effects(this);
+    for (const o of this.scene.children) if (!preFx.has(o)) o.traverse((c) => c.layers.set(2));
+    this.engine.camera.layers.enable(2);
+    // big outdoor maps see much further than the small arenas
+    this.engine.camera.far = def.large ? 2400 : this.engine.q.viewDist + 100;
+    this.engine.camera.updateProjectionMatrix();
     this.muzzleLight = null;
     if (this.engine.q.standard) { this.muzzleLight = new THREE.PointLight(0xffaa55, 0, 9, 2); this.scene.add(this.muzzleLight); }
     if (this.playerBody) this.playerBody.dispose();
@@ -215,7 +254,7 @@ export class Game {
       return this.col.lineClear(c.x, c.y, c.z, p.x, p.y + 0.2, p.z);
     };
     const t0 = performance.now();
-    this.nav = new NavGraph(this.col, def.bounds).build();
+    this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds).build();
     console.log('nav graph: ' + this.nav.n + ' nodes in ' + (performance.now() - t0).toFixed(0) + 'ms');
     this.hud.buildMinimap();
     // PIP render target for magnified optics
@@ -223,7 +262,8 @@ export class Game {
       const r = this.engine.q.pipRes;
       this.pipRT = new THREE.WebGLRenderTarget(r, r, { samples: 0 });
       this.pipRT.texture.colorSpace = THREE.SRGBColorSpace;
-      this.pipCam = new THREE.PerspectiveCamera(20, 1, 0.05, 400);
+      this.pipCam = new THREE.PerspectiveCamera(20, 1, 0.05, 1600);
+      this.pipCam.layers.enable(2);
     }
   }
 
@@ -231,18 +271,19 @@ export class Game {
     this.cfg = cfg;
     this.loadMap(cfg.map);
     this.clearBots();
-    this.match = new Match(this, cfg);
+    this.match = cfg.mode === 'br' ? new BRMatch(this, cfg) : new Match(this, cfg);
     this.player.team = cfg.mode === 'ffa' ? 1 : 0;
     this.player.kills = 0; this.player.deaths = 0; this.player.score = 0;
     this.combatants = [this.player];
     this.bots = this.match.createBots();
     for (const b of this.bots) { this.combatants.push(b); this.match.spawn(b); }
     this.time = 0;
-    this.weapons.setLoadout(this.settings.loadout);
-    this.spawnPlayer();
+    if (cfg.mode === 'br') this.match.startPlayer();
+    else { this.weapons.setLoadout(this.settings.loadout); this.spawnPlayer(); }
     this.state = 'playing';
     document.getElementById('hud').classList.remove('hidden');
-    document.getElementById('sb-mode').textContent = cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
+    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
+    document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' ? 'none' : '';
     if (this.onMatchStart) this.onMatchStart(cfg);
   }
 
@@ -285,7 +326,7 @@ export class Game {
       _o.set(ox, oy, oz);
       for (const c of this.combatants) {
         if (c === shooter || !c.alive) continue;
-        if (this.match && this.match.mode !== 'ffa' && c.team === shooter.team) continue;
+        if (this.match && this.match.mode === 'tdm' && c.team === shooter.team) continue;
         // broad phase: distance from ray to body center
         _t.set(c.pos.x - ox, c.pos.y + 0.9 - oy, c.pos.z - oz);
         const along = _t.dot(dir);
@@ -296,6 +337,23 @@ export class Game {
         for (const h of boxes) {
           const t = h.type === 'sphere' ? raySphere(_o, dir, h.c, h.r) : rayCapsule(_o, dir, h.a, h.b, h.r);
           if (t >= 0 && t < bestT) { bestT = t; best = { c, part: h.part }; }
+        }
+      }
+      // vehicles stop bullets below the window line, people inside stay exposed above it
+      if (this.br) {
+        let car = null;
+        for (const v of this.br.vehicles.list) {
+          if (v.dead) continue;
+          const tv = v.rayHit(ox, oy, oz, dir.x, dir.y, dir.z, bestT);
+          if (tv >= 0 && tv < bestT) { bestT = tv; car = v; best = null; }
+        }
+        if (car) {
+          _p.set(ox + dir.x * bestT, oy + dir.y * bestT, oz + dir.z * bestT);
+          this.fx.impact(_p, _n.copy(dir).negate(), 'metal', isPlayer ? 1 : 0.6);
+          if (Math.random() < 0.5) this.audio.play('imp_metal', { pos: _p, vol: 0.55, maxDist: 50, occlude: false });
+          car.damage(damageAt(def, travelled + bestT) * dmgMul * (def.pellets ? 0.5 : 0.7), shooter);
+          endPoint = _p.clone();
+          break;
         }
       }
       if (best) {
@@ -368,16 +426,29 @@ export class Game {
 
   applyDamage(victim, dmg, attacker, info) {
     if (!victim.alive) return;
+    if (this.br && attacker && attacker.isBot) dmg = victim.isBot ? dmg * this.match.botDamage : Math.min(dmg * this.match.zone.now.toPlayer, 60); // no bot one-shots you
+    // armor plates take the hit first
+    let armorHit = false, armorBroke = false;
+    if (victim.armor > 0) {
+      const a = Math.min(victim.armor, dmg);
+      victim.armor -= a; dmg -= a; armorHit = true;
+      armorBroke = victim.armor <= 0;
+    }
     victim.health -= dmg;
     victim.lastDamage = this.time;
     victim.lastAttacker = attacker;
     if (victim.onDamaged) victim.onDamaged(dmg, attacker, info);
     const killed = victim.health <= 0;
     if (attacker === this.player) {
-      this.hud.hitmarker(killed ? 'kill' : info.part === 'head' ? 'head' : 'hit');
-      this.audio.play(killed ? 'kill' : info.part === 'head' ? 'hitHead' : 'hit', { vol: killed ? 0.7 : 0.5 });
+      this.hud.hitmarker(killed ? 'kill' : armorHit ? 'armor' : info.part === 'head' ? 'head' : 'hit');
+      this.audio.play(killed ? 'kill' : info.part === 'head' ? 'hitHead' : 'hit', { vol: killed ? 0.7 : 0.5, rate: armorHit && !killed ? 1.35 : 1 });
+      if (armorBroke && !killed) { this.audio.play('magDrop', { vol: 0.8, rate: 1.5 }); this.hud.popup('', 'RÜSTUNG ZERSTÖRT'); }
     }
-    if (victim === this.player) this.onPlayerDamaged(dmg, attacker, info);
+    if (victim === this.player) {
+      this.onPlayerDamaged(dmg, attacker, info);
+      if (armorBroke) this.audio.play('magDrop', { vol: 0.9, rate: 0.8 });
+    }
+    if (killed && victim === this.player && this.br && this.br.playerGoesDown(attacker, info)) return;
     if (killed) this.kill(victim, attacker, info);
   }
 
@@ -445,6 +516,7 @@ export class Game {
     document.getElementById('death-by').textContent = killer && killer !== this.player ? 'von ' + killer.name : '';
     this.respawnT = 3.5;
     this.weapons.vm.root.visible = false;
+    if (this.br) this.br.onPlayerDown(killer);
     this.audio.setMuffle(0);
   }
 
@@ -476,7 +548,7 @@ export class Game {
       const c = this.engine.camera;
       c.getWorldDirection(_d);
       this.muzzleLight.position.copy(c.position).addScaledVector(_d, 0.9);
-      this.muzzleLight.intensity = def.id === 'shotgun' || def.id === 'sniper' ? 26 : 16;
+      this.muzzleLight.intensity = def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 26 : 16;
     }
     this.player.lastRadar = this.time;
     this.events.emit('shot', { shooter: this.player, def, pos: this.player.pos });
@@ -484,6 +556,7 @@ export class Game {
 
   // push overlapping combatants apart (XZ circles)
   separate(ent) {
+    if (this.br) this.br.pushOutOfVehicles(ent);
     for (const c of this.combatants) {
       if (c === ent || !c.alive) continue;
       const dx = ent.pos.x - c.pos.x, dz = ent.pos.z - c.pos.z;
@@ -518,6 +591,7 @@ export class Game {
 
   updatePlaying(dt) {
     if (this.state === 'ended') { this.engine.render(this.scene, this.vmScene); return; } // freeze the world on the end screen
+    if (this.slowmo) dt *= this.slowmo;
     this.time += dt;
     this.frameId = (this.frameId || 0) + 1;
     const inp = this.input, p = this.player, W = this.weapons;
@@ -539,7 +613,10 @@ export class Game {
 
     // ---- simulate
     if (paused) { this.engine.render(this.scene, this.vmScene); this.renderLoadoutPreview(); return; }
-    if (p.alive) {
+    const br = this.br;
+    if (p.alive && br && br.controlsPlayer) {
+      br.updatePlayer(dt, inp);
+    } else if (p.alive) {
       const steps = Math.ceil(dt / (1 / 120));
       const h = dt / steps;
       for (let i = 0; i < steps; i++) {
@@ -548,14 +625,14 @@ export class Game {
       }
       inp.suppress = false;
       W.update(dt, inp, p);
-    } else if (!p.alive) {
+    } else if (!br) {
       this.respawnT -= dt;
       document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
       if (this.respawnT <= 0 && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
     }
     for (const b of this.bots) b.update(dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
-    if (inp.pressed('loadout')) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
+    if (inp.pressed('loadout') && !br) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.match) {
       this.match.update(dt);
       const sc = this.match.scores();
@@ -578,16 +655,17 @@ export class Game {
     cam.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / targetZoom) / DEG + W.fovPunch.x;
     cam.updateProjectionMatrix();
     const punch = W.punch;
-    if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
+    if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
+    else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
     else this.deathCam(dt);
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
-    document.getElementById('scope-overlay').classList.toggle('hidden', !scoped);
-    W.vm.root.visible = p.alive && !scoped;
+    this.hud.setScope(scoped ? optic.overlay : null);
+    W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel);
     if (scoped) {
-      const t = this.time;
-      cam.rotation.x += Math.sin(t * 0.9) * 0.0018 + Math.sin(t * 2.3) * 0.0006;
-      cam.rotation.y += Math.cos(t * 0.7) * 0.0018;
+      const t = this.time, k = (optic.sway ?? 1) * (p.mount ? 0.3 : 1);
+      cam.rotation.x += (Math.sin(t * 0.9) * 0.0018 + Math.sin(t * 2.3) * 0.0006) * k;
+      cam.rotation.y += Math.cos(t * 0.7) * 0.0018 * k;
     }
     cam.updateMatrixWorld();
     // viewmodel camera FOV (narrower when aiming for a bigger sight picture)
@@ -608,7 +686,7 @@ export class Game {
     // ---- first person body
     if (this.playerBody) {
       const fb = this.playerBody;
-      fb.setVisible(p.alive);
+      fb.setVisible(p.alive && !(br && br.hideBody));
       const pw = p.proneW * (0.58 - 0.13 * fb.anim.supine), by = p.bodyYaw; // (on the back: chest just under the view)
       const back = p.mode === 'slide' ? 0.05 : 0.16 * (1 - p.proneW);
       // slide / on the back: body slightly left so the legs show beside the gun
@@ -638,19 +716,56 @@ export class Game {
     this.hud.showScoreboard(inp.down('scoreboard'));
 
     // ---- render (PIP scope first)
-    if (optic && optic.lens && W.adsAmount > 0.02 && p.alive) {
-      const pc = this.pipCam;
-      pc.position.copy(cam.position); pc.quaternion.copy(cam.quaternion);
-      pc.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG;
-      pc.updateProjectionMatrix();
-      const r = this.engine.renderer;
-      W.vm.root.visible = false;
-      r.setRenderTarget(this.pipRT); r.clear(); r.render(this.scene, pc); r.setRenderTarget(null);
-      W.vm.root.visible = true;
-      optic.pipMat.map = this.pipRT.texture; optic.pipMat.needsUpdate = optic.pipMat.map !== optic._lastMap; optic._lastMap = optic.pipMat.map;
+    if (optic && optic.lens) {
+      // the lens only shows a live picture while aiming, otherwise it's dark glass
+      const live = W.adsAmount > 0.02 && p.alive;
+      if (live !== optic._live) {
+        optic._live = live;
+        optic.pipMat.map = live ? this.pipRT.texture : null;
+        optic.pipMat.color.setHex(live ? 0xffffff : 0x0c1116);
+        optic.pipMat.needsUpdate = true;
+      }
+      if (live) {
+        const pc = this.pipCam;
+        pc.position.copy(cam.position); pc.quaternion.copy(cam.quaternion);
+        pc.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG;
+        pc.updateProjectionMatrix();
+        const r = this.engine.renderer;
+        W.vm.root.visible = false;
+        r.setRenderTarget(this.pipRT);
+        if (optic.thermal) this.renderThermal(pc); else { r.clear(); r.render(this.scene, pc); }
+        r.setRenderTarget(null);
+        W.vm.root.visible = true;
+      }
     }
-    this.engine.render(this.scene, this.vmScene);
+    if (scoped && optic.thermal) { this.engine.renderer.info.reset(); this.renderThermal(cam); }
+    else this.engine.render(this.scene, this.vmScene);
+    if (br) br.hud.renderPreview(dt);
     this.updateDebug(dt);
+  }
+
+  // Thermal picture into the current render target: a cold, flat world, then the bodies on top of it
+  // (their depth from the first pass keeps them behind walls; glass counts as a wall, as with real thermal sights).
+  renderThermal(camera) {
+    const r = this.engine.renderer, s = this.scene, mask = camera.layers.mask, bg = s.background;
+    if (!this.thermalMats) {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, '#fffdf0'); g.addColorStop(0.55, '#ffe9a8'); g.addColorStop(0.82, '#ff9a3c'); g.addColorStop(1, '#c23a1c');
+      x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+      const matcap = new THREE.CanvasTexture(c); matcap.colorSpace = THREE.SRGBColorSpace;
+      this.thermalMats = {
+        cold: new THREE.MeshLambertMaterial({ color: 0x47566e, fog: false }),
+        hot: new THREE.MeshMatcapMaterial({ matcap, fog: false }),
+      };
+    }
+    s.background = null; // a color background would clear the first pass again
+    r.setClearColor(0x0b0f18, 1); r.clear();
+    camera.layers.set(0); s.overrideMaterial = this.thermalMats.cold;
+    r.render(s, camera);
+    camera.layers.set(1); s.overrideMaterial = this.thermalMats.hot;
+    r.render(s, camera);
+    s.overrideMaterial = null; camera.layers.mask = mask; s.background = bg;
   }
 
   deathCam(dt) {

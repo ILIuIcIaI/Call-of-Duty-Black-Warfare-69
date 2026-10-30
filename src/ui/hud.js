@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math.js';
+import { drawScope } from './scopes.js';
 const _p = new THREE.Vector3(), _f = new THREE.Vector3();
 
 // =============================================================================
@@ -16,7 +17,7 @@ export class HUD {
       ammoBar: $('ammo-bar'), ammoHint: $('ammo-hint'), vigD: $('vignette-dmg'), vigL: $('vignette-low'), kf: $('killfeed'),
       sbF: $('sb-friendly'), sbE: $('sb-enemy'), timer: $('sb-timer'), mode: $('sb-mode'), center: $('center-msg'), pops: $('score-popups'),
       ename: $('enemy-name'), dmg: $('dmg-indicators'), board: $('scoreboard'), tac: $('tac-bar'), tacFill: $('tac-fill'), moveSt: $('move-state'),
-      scope: $('scope-overlay'), death: $('death-screen'), deathBy: $('death-by'), deathT: $('death-timer'), mm: $('minimap'),
+      scope: $('scope-overlay'), scopeC: $('scope-canvas'), scopeR: $('scope-read'), death: $('death-screen'), deathBy: $('death-by'), deathT: $('death-timer'), mm: $('minimap'),
     };
     this.ctx = this.el.mm.getContext('2d');
     this.hitT = 0; this.dmgFlash = 0;
@@ -28,6 +29,31 @@ export class HUD {
     this.tagRoot = document.createElement('div');
     this.tagRoot.id = 'nametags';
     this.el.hud.appendChild(this.tagRoot);
+  }
+
+  // full-screen scope picture (null = none); redrawn when the type or the window size changes
+  setScope(kind) {
+    const key = kind ? kind + '|' + window.innerWidth + '|' + window.innerHeight : null;
+    if (key === this.scopeKey) return;
+    this.scopeKey = key; this.scopeKind = kind;
+    this.el.scope.classList.toggle('hidden', !kind);
+    this.el.scopeR.textContent = '';
+    if (kind) drawScope(this.el.scopeC, kind);
+  }
+
+  // digital scope: laser range to whatever is under the reticle
+  updateScopeRead(dt) {
+    if (this.scopeKind !== 'digital') return;
+    this._rangeT = (this._rangeT || 0) - dt;
+    if (this._rangeT > 0) return;
+    this._rangeT = 0.1;
+    const g = this.game, cam = g.engine.camera;
+    cam.getWorldDirection(_f);
+    const hit = g.col.raycast(cam.position.x, cam.position.y, cam.position.z, _f.x, _f.y, _f.z, 400, this._rh || (this._rh = {}));
+    const lock = this.aimed && (!hit || this.aimedD < hit.t + 1);
+    const d = lock ? this.aimedD : hit ? hit.t : null;
+    this.el.scopeR.textContent = (lock ? 'ZIEL  ' : 'ENTF  ') + (d === null ? '---' : Math.round(d) + ' m');
+    this.el.scopeR.classList.toggle('lock', !!lock);
   }
 
   clearTags() { for (const t of this.tags.values()) t.remove(); this.tags.clear(); }
@@ -81,6 +107,7 @@ export class HUD {
       el.style.display = '';
     }
     for (const [c, el] of this.tags) if (!seen.has(c)) el.style.display = 'none';
+    this.aimed = aimed; this.aimedD = aimedD;
     const en = this.el.ename;
     if (aimed) { en.textContent = aimed.name; en.className = ''; en.style.opacity = 1; }
     else en.style.opacity = 0;
@@ -88,6 +115,8 @@ export class HUD {
 
   buildMinimap() {
     const g = this.game, col = g.col, b = g.mapDef.bounds;
+    if (g.mapDef.large) { this.buildLargeMinimap(); return; }
+    this.mmZoom = 1.25;
     const S = 4; // px per meter
     const w = Math.ceil((b.maxX - b.minX + 8) * S), h = Math.ceil((b.maxZ - b.minZ + 8) * S);
     const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -111,13 +140,30 @@ export class HUD {
     this.mmImg = c; this.mmS = S; this.mmOx = b.minX - 4; this.mmOz = b.minZ - 4;
   }
 
+  // island: the painted ground with roofs on top, one image for the minimap and the big map
+  buildLargeMinimap() {
+    const g = this.game, def = g.mapDef, src = def.groundCanvas, S = src.width / def.terrain.size;
+    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    const x = c.getContext('2d');
+    x.drawImage(src, 0, 0);
+    const ox = def.terrain.ox, oz = def.terrain.oz;
+    for (const [x0, z0, x1, z1, floors] of def.layout.footprints) {
+      const l = 96 + Math.min(floors, 6) * 12;
+      x.fillStyle = `rgb(${l},${l},${l + 2})`;
+      x.fillRect((x0 - ox) * S, (z0 - oz) * S, (x1 - x0) * S, (z1 - z0) * S);
+      x.strokeStyle = 'rgba(0,0,0,0.55)'; x.lineWidth = 1;
+      x.strokeRect((x0 - ox) * S, (z0 - oz) * S, (x1 - x0) * S, (z1 - z0) * S);
+    }
+    this.mmImg = c; this.mmS = S; this.mmOx = ox; this.mmOz = oz; this.mmZoom = 0.95;
+  }
+
   drawMinimap() {
     const g = this.game, p = g.player, x = this.ctx, W = 220, H = 220;
     if (!this.mmImg) return;
     x.clearRect(0, 0, W, H);
     x.save();
     x.translate(W / 2, H / 2);
-    const zoom = 1.25; // minimap px per image px
+    const zoom = this.mmZoom; // minimap px per image px
     x.rotate(p.yaw);
     x.scale(zoom, zoom);
     x.translate(-(p.pos.x - this.mmOx) * this.mmS, -(p.pos.z - this.mmOz) * this.mmS);
@@ -147,7 +193,7 @@ export class HUD {
 
   hitmarker(kind) {
     const h = this.el.hit;
-    h.className = kind === 'kill' ? 'kill' : kind === 'head' ? 'head' : '';
+    h.className = kind === 'kill' ? 'kill' : kind === 'head' ? 'head' : kind === 'armor' ? 'armor' : '';
     this.hitT = kind === 'kill' ? 0.35 : 0.2;
     this.hitScale = kind === 'kill' ? 1.6 : 1.25;
   }
@@ -164,7 +210,7 @@ export class HUD {
     const g = this.game, p = g.player;
     const cls = (c) => (c === p ? 'me' : g.isFriendly(c, p) ? 'f' : 'e');
     const d = document.createElement('div'); d.className = 'kf';
-    d.innerHTML = `<span class="${cls(killer)}">${killer.name}</span><span class="w">[${weapon}]</span>${head ? '<span class="hs">⊕</span>' : ''}<span class="${cls(victim)}">${victim.name}</span>`;
+    d.innerHTML = `<span class="${cls(killer)}">${killer === victim ? '' : killer.name}</span><span class="w">[${weapon}]</span>${head ? '<span class="hs">⊕</span>' : ''}<span class="${cls(victim)}">${victim.name}</span>`;
     this.el.kf.prepend(d);
     while (this.el.kf.children.length > 5) this.el.kf.lastChild.remove();
     setTimeout(() => d.remove(), 6000);
@@ -191,8 +237,11 @@ export class HUD {
     const [t, b, l, r] = this.chParts;
     t.style.transform = `translateY(${-gap - 9}px)`; b.style.transform = `translateY(${gap}px)`;
     l.style.transform = `translateX(${-gap - 9}px)`; r.style.transform = `translateX(${gap}px)`;
-    const hideCh = ads > 0.35 || p.sprinting || !p.alive || (wpn && wpn.state === 'inspect');
+    const hideCh = ads > 0.35 || p.sprinting || !p.alive || (wpn && (wpn.state === 'inspect' || wpn.state === 'melee' || wpn.stowed)) || (g.br && (g.br.hideViewmodel || g.br.playerState === 'downed'));
     this.el.cross.style.opacity = hideCh ? 0 : 1;
+    // ---- docked to cover
+    const mk = p.alive && p.mount ? p.mount.kind : '';
+    if (mk !== this.lastMount) { this.lastMount = mk; document.getElementById('mount-mark').className = mk; }
     // ---- hitmarker
     if (this.hitT > 0) {
       this.hitT -= dt;
@@ -201,7 +250,7 @@ export class HUD {
       this.el.hit.style.transform = `scale(${this.hitScale})`;
     } else this.el.hit.style.opacity = 0;
     // ---- ammo (hidden while dead)
-    document.getElementById('ammo').style.opacity = p.alive ? 1 : 0;
+    document.getElementById('ammo').style.opacity = p.alive && !(g.br && g.br.playerState === 'downed') ? 1 : 0;
     if (wpn && wpn.w) {
       const w = wpn.w;
       const s = w.mag + '|' + w.reserve + '|' + w.def.name;
@@ -242,6 +291,7 @@ export class HUD {
     // ---- center message
     if (this.centerT > 0) { this.centerT -= dt; if (this.centerT <= 0) this.el.center.innerHTML = ''; }
     this.updateNameTags();
+    this.updateScopeRead(dt);
     // ---- minimap (throttled)
     this._mmT = (this._mmT || 0) - dt;
     if (this._mmT <= 0) { this._mmT = 1 / 30; this.drawMinimap(); }
@@ -265,7 +315,10 @@ export class HUD {
     const rows = [...g.combatants].sort((a, c) => c.score - a.score || c.kills - a.kills);
     const row = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${g.isFriendly(c, g.player) ? 'tf' : 'te'}">${c.name}</td><td>${c.score}</td><td>${c.kills}</td><td>${c.deaths}</td><td>${c.deaths ? (c.kills / c.deaths).toFixed(2) : c.kills.toFixed(2)}</td></tr>`;
     const head = '<tr><th>NAME</th><th>PUNKTE</th><th>KILLS</th><th>TODE</th><th>K/D</th></tr>';
-    if (m.mode === 'tdm') {
+    if (m.mode === 'br') {
+      const alive = rows.filter((c) => (c.isPlayer ? c.alive : !c.out));
+      b.innerHTML = `<h3>${g.mapDef.name} — WARZONE · ${alive.length} LEBEN NOCH</h3><table>${head}${rows.slice(0, 12).map(row).join('')}</table>`;
+    } else if (m.mode === 'tdm') {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
       b.innerHTML = `<h3>${g.mapDef.name} — TEAM DEATHMATCH</h3><table>${head}<tr><th colspan="5" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="5" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
     } else {

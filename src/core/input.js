@@ -14,8 +14,13 @@ export const BINDINGS = {
   swap: ['KeyQ'],
   inspect: ['KeyI'],
   melee: ['KeyV', 'KeyE'],
+  mount: ['KeyT'],
   scoreboard: ['Tab'],
   loadout: ['KeyL'],
+  interact: ['KeyF'],
+  plate: ['KeyG'],
+  map: ['KeyM'],
+  camera: ['KeyV'],
 };
 
 export class Input {

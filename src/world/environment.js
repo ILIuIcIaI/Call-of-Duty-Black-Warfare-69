@@ -17,7 +17,7 @@ export function createEnvironment(engine, scene, env, bounds) {
       cloudColor: { value: new THREE.Color(env.cloudColor ?? 0xffffff) },
       clouds: { value: env.clouds ?? 0.5 },
     },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0); gl_Position = p.xyww; }`,
     fragmentShader: `
       uniform vec3 top, horizon, bottom, sunDir, sunColor, cloudColor; uniform float clouds; varying vec3 vDir;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
@@ -51,22 +51,23 @@ export function createEnvironment(engine, scene, env, bounds) {
   const sun = new THREE.DirectionalLight(env.sunColor, env.sunIntensity ?? 3);
   const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
   const radius = Math.hypot(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2 + 4;
-  sun.position.set(cx + sunDir.x * 120, sunDir.y * 120, cz + sunDir.z * 120);
+  const sunDist = Math.max(120, radius * 1.3);
+  sun.position.set(cx + sunDir.x * sunDist, sunDir.y * sunDist, cz + sunDir.z * sunDist);
   sun.target.position.set(cx, 0, cz);
   scene.add(sun); scene.add(sun.target);
   if (q.shadows > 0) {
     sun.castShadow = true;
     // coarse and blurred on purpose: soft shadow pools rather than crisp outlines
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(env.shadowMap || 1024, env.shadowMap || 1024);
     const c = sun.shadow.camera;
-    c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius; c.near = 1; c.far = 300;
-    sun.shadow.bias = -0.0004;
+    c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius; c.near = 1; c.far = Math.max(300, radius * 3);
+    sun.shadow.bias = env.shadowBias ?? -0.0004;
     sun.shadow.normalBias = 0.03;
     sun.shadow.radius = 3.5;
     c.updateProjectionMatrix();
   }
 
-  scene.fog = new THREE.Fog(env.fogColor ?? env.skyHorizon, env.fogNear ?? 40, Math.min(env.fogFar ?? 260, q.viewDist));
+  scene.fog = new THREE.Fog(env.fogColor ?? env.skyHorizon, env.fogNear ?? 40, env.large ? env.fogFar : Math.min(env.fogFar ?? 260, q.viewDist));
   scene.background = new THREE.Color(env.skyHorizon);
 
   return { sky, sun, hemi, sunDir };

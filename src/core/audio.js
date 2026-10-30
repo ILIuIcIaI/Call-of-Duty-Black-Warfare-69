@@ -16,6 +16,11 @@ const GUN = {
   shotgun: { crack: 1.0, bodyCut: 3300, bodyDecay: 0.14, body: 1.25, boom: 1.45, f0: 100, f1: 38, boomDecay: 0.23, mech: 0.0, drive: 3.6, len: 1.0 },
   pistol: { crack: 0.9, bodyCut: 6200, bodyDecay: 0.05, body: 0.9, boom: 0.62, f0: 185, f1: 62, boomDecay: 0.075, mech: 0.25, drive: 2.1, len: 0.5 },
   revolver: { crack: 1.0, bodyCut: 4300, bodyDecay: 0.12, body: 1.1, boom: 1.25, f0: 105, f1: 40, boomDecay: 0.2, mech: 0.0, drive: 3.3, len: 0.9 },
+  burst: { crack: 0.95, bodyCut: 5000, bodyDecay: 0.08, body: 1.05, boom: 1.0, f0: 140, f1: 46, boomDecay: 0.13, mech: 0.24, drive: 2.8, len: 0.75 },
+  pdw: { crack: 0.8, bodyCut: 7600, bodyDecay: 0.035, body: 0.85, boom: 0.45, f0: 200, f1: 75, boomDecay: 0.05, mech: 0.32, drive: 2.0, len: 0.42 },
+  amr: { crack: 1.0, bodyCut: 3200, bodyDecay: 0.22, body: 1.25, boom: 1.6, f0: 78, f1: 30, boomDecay: 0.42, mech: 0.0, drive: 4.0, len: 1.7 },
+  autoshot: { crack: 1.0, bodyCut: 3600, bodyDecay: 0.11, body: 1.2, boom: 1.3, f0: 108, f1: 40, boomDecay: 0.17, mech: 0.25, drive: 3.4, len: 0.85 },
+  handcannon: { crack: 1.0, bodyCut: 3900, bodyDecay: 0.14, body: 1.15, boom: 1.35, f0: 96, f1: 38, boomDecay: 0.24, mech: 0.18, drive: 3.5, len: 1.0 },
   mpistol: { crack: 0.8, bodyCut: 7200, bodyDecay: 0.04, body: 0.9, boom: 0.5, f0: 190, f1: 70, boomDecay: 0.06, mech: 0.3, drive: 2.1, len: 0.45 },
 };
 
@@ -279,6 +284,18 @@ export class Audio {
     add('uiHover', clk([3000], 0.006, 0.2, 281));
     add('spawn', sweepNoise(sr, 0.5, 400, 1600, (t) => Math.sin(t * Math.PI) * 0.5, 282, 1.2));
     add('denied', clk([400, 600], 0.04, 0.3, 283));
+    // knife
+    add('swing', sweepNoise(sr, 0.2, 1500, 5200, (t) => Math.sin(t * Math.PI) * 0.8, 300, 2.2));
+    add('swing', sweepNoise(sr, 0.22, 1300, 4600, (t) => Math.sin(t * Math.PI) * 0.8, 301, 2.2));
+    add('stab', concat(sr, [[synthNoiseHit(sr, 0.14, 420, 0.03, 0.9, 'lp', 302, 0.9, 85), 0, 1], [synthNoiseHit(sr, 0.09, 2100, 0.018, 1.2, 'bp', 303), 0.004, 0.65], [sweepNoise(sr, 0.1, 900, 400, (t) => 1 - t, 304, 1.2), 0.02, 0.4]]));
+    add('stab', concat(sr, [[synthNoiseHit(sr, 0.16, 360, 0.035, 0.9, 'lp', 305, 1, 75), 0, 1], [synthNoiseHit(sr, 0.08, 1800, 0.016, 1.2, 'bp', 306), 0.003, 0.7]]));
+    add('crack', concat(sr, [[synthNoiseHit(sr, 0.05, 2600, 0.008, 1.4, 'bp', 307), 0, 1], [synthNoiseHit(sr, 0.06, 900, 0.012, 1, 'bp', 308), 0.012, 0.7], [synthNoiseHit(sr, 0.12, 240, 0.03, 0.8, 'lp', 309, 0.7, 70), 0.01, 0.6]]));
+    add('stim', concat(sr, [[clk([2900, 4300], 0.01, 0.3, 310), 0, 1], [sweepNoise(sr, 0.22, 3600, 1400, (t) => 1 - t, 311, 2), 0.02, 0.5]]));
+    add('punch', concat(sr, [[synthNoiseHit(sr, 0.18, 320, 0.04, 0.9, 'lp', 320, 1.1, 68), 0, 1], [synthNoiseHit(sr, 0.05, 1500, 0.01, 1, 'bp', 321), 0, 0.6]]));
+    add('thud', concat(sr, [[synthNoiseHit(sr, 0.34, 170, 0.08, 0.8, 'lp', 322, 1.1, 50), 0, 1], [synthNoiseHit(sr, 0.22, 800, 0.05, 0.8, 'bp', 323), 0.012, 0.4]]));
+    add('pinpull', concat(sr, [[clk([3400, 5400], 0.014, 0.3, 324), 0, 1], [clk([2600, 4200], 0.03, 0.2, 325), 0.07, 0.75]]));
+    add('boom', concat(sr, [[synthNoiseHit(sr, 1.9, 520, 0.42, 0.7, 'lp', 326, 1.2, 36), 0, 1], [synthNoiseHit(sr, 0.5, 2300, 0.08, 0.8, 'bp', 327), 0, 0.65], [synthNoiseHit(sr, 1.2, 220, 0.5, 0.7, 'lp', 329), 0.08, 0.6]]));
+    add('sting', synthNoiseHit(sr, 0.8, 130, 0.24, 0.7, 'lp', 328, 1.2, 40));
   }
 
   startAmbience() {
@@ -360,6 +377,46 @@ export class Audio {
     }
     src.start(c.currentTime + (opts.delay || 0));
     return src;
+  }
+
+  // Continuous sounds (plane, wind, engine). Returns { set(gain, rate), stop() }, or null without audio.
+  loop(kind, gain = 0) {
+    if (!this.ready) return null;
+    const c = this.ctx;
+    this.loopBufs = this.loopBufs || {};
+    if (!this.loopBufs[kind]) this.loopBufs[kind] = this.makeLoop(kind);
+    const s = c.createBufferSource(); s.buffer = this.loopBufs[kind]; s.loop = true;
+    const g = c.createGain(); g.gain.value = gain;
+    s.connect(g); g.connect(this.sfx); s.start();
+    return {
+      set: (v, r = 1) => { const t = c.currentTime; g.gain.setTargetAtTime(v, t, 0.08); s.playbackRate.setTargetAtTime(r, t, 0.12); },
+      stop: () => { try { g.gain.setTargetAtTime(0, c.currentTime, 0.08); s.stop(c.currentTime + 0.4); } catch (e) { /* already stopped */ } },
+    };
+  }
+
+  makeLoop(kind) {
+    const c = this.ctx, sr = c.sampleRate, n = sr * 2, b = c.createBuffer(1, n, sr), d = b.getChannelData(0);
+    const saw = (t, f) => 2 * ((t * f) % 1) - 1;
+    let lp = 0, lp2 = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, w = Math.random() * 2 - 1;
+      if (kind === 'wind') {
+        lp += (w - lp) * 0.06; lp2 += (w - lp2) * 0.012;
+        d[i] = (lp * 1.3 + lp2 * 3.2) * (0.72 + 0.28 * Math.sin(t * Math.PI * 2 * 1.5));
+      } else if (kind === 'plane') {
+        lp += (w - lp) * 0.03;
+        d[i] = (saw(t, 45) * 0.3 + saw(t, 46) * 0.3 + saw(t, 90) * 0.14 + saw(t, 136) * 0.06) * 0.7 + lp * 1.1;
+      } else {
+        // a four-cylinder idle: pulses of a low saw through a soft clip
+        const pulse = 0.55 + 0.45 * Math.sin(t * Math.PI * 2 * 30);
+        lp += (w - lp) * 0.2;
+        d[i] = Math.tanh((saw(t, 60) * 0.6 + saw(t, 120) * 0.3 + saw(t, 30) * 0.5) * pulse * 1.4) * 0.5 + lp * 0.07;
+      }
+    }
+    // seamless ends
+    const f = Math.floor(sr * 0.05);
+    for (let i = 0; i < f; i++) { const k = i / f; d[i] = d[i] * k + d[n - f + i] * (1 - k); }
+    return b;
   }
 
   gunshot(sound, opts = {}) {

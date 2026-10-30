@@ -156,6 +156,7 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3
 export class Soldier {
   constructor(game, outfit, opts = {}) {
     this.game = game;
+    this.outfit = outfit;
     this.fp = !!opts.firstPerson;
     const m = this.m = getMats(game, outfit);
     const root = this.root = new THREE.Group();
@@ -271,10 +272,13 @@ export class Soldier {
     }
     root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     game.scene.add(root);
+    // thermal optics: bodies glow on layer 1, the fake shadow blob stays out of that picture
+    if (!this.fp) root.traverse((o) => { if (o.isMesh) o.layers.enable(1); });
+    this.blob.layers.set(2);
 
     // animation state
     this.phase = 0;
-    this.anim = { crouch: 0, slide: 0, dive: 0, prone: 0, supine: 0, air: 0, run: 0, tac: 0, sprint: 0, aim: 0, reload: 0, mantle: 0 };
+    this.anim = { crouch: 0, slide: 0, dive: 0, prone: 0, supine: 0, air: 0, run: 0, tac: 0, sprint: 0, aim: 0, reload: 0, mantle: 0, fall: 0, seat: 0 };
     this.lowerYaw = 0;
     this.flinch = new Spring(120, 10);
     this.dead = false; this.deathT = 0;
@@ -350,6 +354,8 @@ export class Soldier {
     A.tac = damp(A.tac, st.tac ? 1 : 0, 8, dt);
     A.reload = damp(A.reload, st.reload ? 1 : 0, 10, dt);
     A.mantle = damp(A.mantle, st.mantle ? 1 : 0, 14, dt);
+    A.fall = damp(A.fall, st.fall ? 1 : 0, 7, dt);
+    A.seat = damp(A.seat, st.seat ? 1 : 0, 12, dt);
     const speed = st.speed;
     A.run = damp(A.run, clamp(speed / 7.5, 0, 1.3), 8, dt);
     this.flinch.update(dt);
@@ -360,7 +366,7 @@ export class Soldier {
     const crouchK = A.crouch;
     const strideLen = lerp(1.3, lerp(2.5, 3.0, A.tac), run) * (1 - crouchK * 0.35);
     const lying = A.prone;
-    const moving = clamp(speed / 1.1, 0, 1) * (1 - A.slide) * (1 - A.dive) * (1 - lying) * (1 - A.air) * (1 - A.mantle);
+    const moving = clamp(speed / 1.1, 0, 1) * (1 - A.slide) * (1 - A.dive) * (1 - lying) * (1 - A.air) * (1 - A.mantle) * (1 - A.fall) * (1 - A.seat);
     // lower body turns into the movement direction; walking backwards plays the cycle in reverse
     const rel = -(st.moveAngle || 0);
     let lowerYaw = 0, dirSign = 1;
@@ -385,6 +391,8 @@ export class Soldier {
     py = lerp(py, 0.16, lying);
     pRotX = lerp(pRotX, -1.52, A.prone);
     py = lerp(py, this.hipH - 0.25, A.mantle);
+    py = lerp(py, 0.95, A.fall); pRotX = lerp(pRotX, -1.38, A.fall); // skydiving: flat on the air, arms and legs out
+    py = lerp(py, 0.1, A.seat); pRotX = lerp(pRotX, 0.06, A.seat);   // driving: sitting on the seat
     py += this.flinch.x * 0.01;
     this.pelvis.position.y = py;
     this.pelvis.rotation.set(pRotX, this.lowerYaw + pYawOsc, pRotZ, 'YXZ');
@@ -417,6 +425,8 @@ export class Soldier {
         else { tx = lerp(tx, 0.1, A.supine); kx = lerp(kx, -0.12, A.supine); tz = lerp(tz, 0.05, A.supine); }
       }
       tx = lerp(tx, L.s > 0 ? 1.2 : 0.2, A.mantle); kx = lerp(kx, L.s > 0 ? -1.6 : -0.3, A.mantle);
+      tx = lerp(tx, 0.14, A.fall); kx = lerp(kx, -0.6, A.fall); tz = lerp(tz, -0.24 * L.s, A.fall);
+      tx = lerp(tx, 1.5, A.seat); kx = lerp(kx, -1.32, A.seat); tz = lerp(tz, -0.07 * L.s, A.seat);
       L.thigh.rotation.set(tx, 0, tz);
       L.knee.rotation.set(kx, 0, 0);
       L.foot.rotation.set(-(tx + kx + pRotX * (1 - lying)) * 0.85 + ax, 0, 0);
@@ -424,11 +434,11 @@ export class Soldier {
 
     // ---- upper body: counter-rotate the hips, distribute aim pitch, lean into sprints
     const aim = clamp(st.pitch, -1.2, 1.2);
-    const counter = -pRotX * (1 - lying - A.dive) * 0.8;
+    const counter = -pRotX * (1 - lying - A.dive - A.fall) * 0.8;
     const lean = -(0.1 * A.sprint + 0.22 * A.tac) * moving;
     this.spine.rotation.set(aim * 0.3 + counter * 0.6 + lean, -(this.lowerYaw + pYawOsc) * 0.75, -pRotZ * 0.6, 'YXZ');
     this.chest.rotation.set(aim * 0.35 + counter * 0.4 + lean * 0.5 + this.flinch.x * 0.2, -(this.lowerYaw + pYawOsc) * 0.25, Math.sin(ph * Math.PI * 4) * 0.02 * moving * run, 'YXZ');
-    this.head.rotation.set(aim * 0.3 - lean * 0.9 + A.prone * 0.9 - A.supine * 1.3, 0, 0);
+    this.head.rotation.set(aim * 0.3 - lean * 0.9 + A.prone * 0.9 - A.supine * 1.3 + A.fall * 1.0, 0, 0);
 
     // ---- weapon carry: ready (aiming), low-ready across the chest (sprint), straight up at the shoulder (tac sprint)
     const wm = this.weaponMount, pistol = this.weapon && this.weapon.proto.pistol;
@@ -463,6 +473,15 @@ export class Soldier {
         const sw = Math.sin((ph + 0.5) * Math.PI * 2);
         lt.lerp(_c.set(-0.24 - 0.03 * sw, -0.16 + 0.13 * Math.max(0, sw) - 0.06 * Math.max(0, -sw), -0.06 - 0.2 * sw), A.tac);
       }
+      if (st.melee > 0) {
+        // knife in the left hand: swings across the chest
+        const k = st.melee, e = Math.sin(k * Math.PI);
+        lt.lerp(_c.set(-0.26 + 0.62 * k, 0.12 - 0.22 * k, -0.52 + 0.1 * e), e);
+        this.chest.rotation.y += (0.35 - 0.9 * k) * e;
+      }
+      if (A.fall > 0.02) { rt.lerp(_c.set(0.56, 0.12, -0.14), A.fall); lt.lerp(_c.set(-0.56, 0.12, -0.14), A.fall); }
+      if (A.seat > 0.02) { rt.lerp(_c.set(0.17, -0.12, -0.42), A.seat); lt.lerp(_c.set(-0.17, -0.12, -0.42), A.seat); }
+      this.weapon.root.visible = A.fall < 0.5 && A.seat < 0.5;
       this.solveArm(this.arms[1], rt, 0.8);
       this.solveArm(this.arms[0], lt, -0.8);
     }
@@ -471,6 +490,29 @@ export class Soldier {
 
     // blob shadow
     this.updateBlob(pos, st.floorY);
+  }
+
+  // ---- a baked pose, see game/motion.js. T: one body of the clip, s: the sample, between two frames if it has to be.
+  // from: the pose it was in before (bones, hips) and how far it has left it, w.
+  get poseBones() {
+    if (!this.pb) { const L = this.legs, A = this.arms; this.pb = [this.pelvis, this.spine, this.chest, this.head, L[0].thigh, L[0].knee, L[0].foot, L[1].thigh, L[1].knee, L[1].foot, A[0].upper, A[0].fore, A[1].upper, A[1].fore]; }
+    return this.pb;
+  }
+  playPose(T, s, from, w = 1) {
+    const B = this.poseBones, nj = B.length, n = T.pos.length / 3, i = Math.min(n - 2, Math.floor(s)), f = s - i, g = 1 - f, Q = T.q, S = T.sh, P = T.pos;
+    for (let j = 0; j < nj; j++) {
+      const a = (i * nj + j) * 4, b = a + nj * 4;
+      _q.set(Q[a] * g + Q[b] * f, Q[a + 1] * g + Q[b + 1] * f, Q[a + 2] * g + Q[b + 2] * f, Q[a + 3] * g + Q[b + 3] * f).normalize();
+      if (from && w < 1) _q.slerp(from.q[j], 1 - w);
+      B[j].quaternion.copy(_q);
+    }
+    this.pelvis.position.set(P[i * 3] * g + P[i * 3 + 3] * f, P[i * 3 + 1] * g + P[i * 3 + 4] * f, P[i * 3 + 2] * g + P[i * 3 + 5] * f);
+    if (from && w < 1) this.pelvis.position.lerp(from.p, 1 - w);
+    for (let k = 0; k < 2; k++) {
+      const a = i * 6 + k * 3, b = a + 6;
+      this.arms[k].shoulder.position.set(S[a] * g + S[b] * f, S[a + 1] * g + S[b + 1] * f, S[a + 2] * g + S[b + 2] * f);
+    }
+    for (const m of this.skinned || []) m.boundingSphere.center.copy(this.pelvis.position);
   }
 
   updateBlob(pos, floorY) {
@@ -486,19 +528,32 @@ export class Soldier {
   // opts: { part, point, strength, vel }
   die(dir, opts = {}) {
     this.dead = true; this.deathT = 0;
-    // drop the weapon
-    if (this.weapon) {
-      const w = this.weapon.root;
-      w.updateMatrixWorld(true);
-      const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
-      w.matrixWorld.decompose(wp, wq, ws);
-      this.game.scene.add(w); w.position.copy(wp); w.quaternion.copy(wq);
-      const dv = dir.clone().multiplyScalar(1.5);
-      this.weaponDrop = { obj: w, vel: new THREE.Vector3((Math.random() - 0.5) * 2 + dv.x, 1.5, (Math.random() - 0.5) * 2 + dv.z), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 4 - 2, Math.random() * 6 - 3), floor: this.root.position.y + 0.05 };
-    }
-    const d = dir.clone(); d.y = Math.max(d.y, -0.2) + 0.12; d.normalize();
+    if (!this.weaponDrop) this.dropWeapon(dir);
     this.floorY = this.root.position.y;
+    if (opts.staged) return; // the scene still has hold of this body, and leaves it where it ends
+    const d = dir.clone(); d.y = Math.max(d.y, -0.2) + 0.12; d.normalize();
     this.ragdoll = new Ragdoll(this, this.game.col, { dir: d, part: opts.part, point: opts.point, strength: opts.strength || 3.2, vel: opts.vel });
+  }
+
+  // the gun falls out of the hands
+  dropWeapon(dir) {
+    if (!this.weapon) return;
+    const w = this.weapon.root;
+    w.updateMatrixWorld(true);
+    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+    w.matrixWorld.decompose(wp, wq, ws);
+    this.game.scene.add(w); w.position.copy(wp); w.quaternion.copy(wq);
+    const dv = dir.clone().multiplyScalar(1.5);
+    this.weaponDrop = { obj: w, vel: new THREE.Vector3((Math.random() - 0.5) * 2 + dv.x, 1.5, (Math.random() - 0.5) * 2 + dv.z), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 4 - 2, Math.random() * 6 - 3), floor: this.root.position.y + 0.05 };
+  }
+
+  updateWeaponDrop(dt) {
+    const d = this.weaponDrop;
+    if (!d || d.obj.position.y <= d.floor) return;
+    d.vel.y -= 9.8 * dt;
+    d.obj.position.addScaledVector(d.vel, dt);
+    d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
+    if (d.obj.position.y <= d.floor) { d.obj.position.y = d.floor; d.obj.rotation.x = 0; d.obj.rotation.z = Math.PI / 2; }
   }
 
   updateDeath(dt) {
@@ -513,15 +568,7 @@ export class Soldier {
     }
     // after a while, sink into the ground
     if (t > 6) { this.root.position.y -= dt * 0.3; }
-    if (this.weaponDrop) {
-      const d = this.weaponDrop;
-      if (d.obj.position.y > d.floor) {
-        d.vel.y -= 9.8 * dt;
-        d.obj.position.addScaledVector(d.vel, dt);
-        d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
-        if (d.obj.position.y <= d.floor) { d.obj.position.y = d.floor; d.obj.rotation.x = 0; d.obj.rotation.z = Math.PI / 2; }
-      }
-    }
+    this.updateWeaponDrop(dt);
   }
 
   // back to a clean standing pose (after a ragdoll)
@@ -530,6 +577,7 @@ export class Soldier {
     this.root.position.set(0, 0, 0); this.root.rotation.set(0, 0, 0);
     this.pelvis.position.set(0, this.hipH, 0);
     this.root.traverse((o) => { if (o.isBone) o.quaternion.identity(); });
+    for (const a of this.arms) a.shoulder.position.set(a.s * 0.2, 0.16, a.s < 0 ? -0.07 : 0.03);
     for (const m of this.skinned || []) m.boundingSphere.center.set(0, 0.9, 0);
     for (const k of Object.keys(this.anim)) this.anim[k] = 0;
   }
