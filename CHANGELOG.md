@@ -4,7 +4,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [0.3.0] - 2026-10-31
 
-The multiplayer update: play every mode with your friends over the local network.
+The multiplayer update: play every mode with your friends over the local network, on any network and any PC.
 
 ### Added
 
@@ -16,8 +16,26 @@ The multiplayer update: play every mode with your friends over the local network
 - Join a running Team Deathmatch or Free for All at any time, or leave it and come back with your score.
 - If the computer with the room goes away, the others find a new room by themselves.
 
+**Any local network and any PC**
+- Computers find each other on networks that drop announcements between devices, which many Wi-Fi routers do. They also ask each other one by one and keep looking while you wait in the lobby.
+- A firewall doesn't leave you stuck on "searching". If the room you find can't be reached, you get a room of your own, and as soon as one computer lets others in you end up together by yourselves: a room nobody can get into gives way to one that works.
+- The lobby says what is wrong: your own firewall, another computer that lets nobody in, or another version of the game on the network.
+- On Windows the lobby offers a **FREIGEBEN** button when the firewall keeps others out, also on networks set to "public". One click, Windows asks once, and the rule only covers devices in your own network.
+- The lobby shows the addresses that actually work and skips virtual network cards and VPNs. A bare cable between two computers and phone hotspots work too.
+- A laptop that changes networks or gets a new address stays reachable.
+- Bots run on a computer that can carry them, not simply on the first one in the room. If the one running them takes too long to load a match, another one takes them over at the start, so nobody stands on an empty map. A slow computer still comes in when it has finished loading.
+- `start.bat` explains what to do if Node.js is missing, opens the page itself, and doesn't trip over a window left open. If another program uses port 8069, the game takes the next free one.
+- A browser without WebGL 2 gets an explanation instead of a technical error.
+
 **Bot finishers on every player**
 - In a Warzone match bots now finish all players, not only the one whose computer runs them. One bot comes over to someone lying on the ground and the others leave that player alone. The player sees the scene through the film camera, everyone else sees the same scene from outside, and the body stays where the scene leaves it. From outside the sounds of a finisher now come from where it happens, and a grenade finisher shows its blast.
+
+### Changed
+
+**Fairer finishers in Warzone**
+- A player can now only be finished from behind, by bots and by other players alike: on their feet when their health is low enough, on the ground as well. Before, a low enough player could also be finished from the front, and someone lying down from any side.
+- A bot walks around someone lying on the ground to get to their back. If that player keeps facing it or has a wall behind them, the bot gives up and shoots instead.
+- Bots can still be finished from any side once they are hurt enough.
 
 ## [0.2.0] - 2026-10-31
 

@@ -8,11 +8,16 @@
 const dgram = require('dgram');
 const crypto = require('crypto');
 const os = require('os');
+const net = require('net');
+const firewall = require('./firewall.js');
 
 const VERSION = 1;
 const UDP_PORT = 48069, GROUP = '239.69.0.69';
 const LOOK_MS = 900, BEACON_MS = 1000;
-const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000;
+const REACH_MS = 1500, RETRY_MS = 3000, SWEEP_TICKS = 6, FIREWALL_TICKS = 15;
+// network cards that aren't the way to the others: virtual machines, VPNs, Bluetooth and the like
+const VIRTUAL = /v-?ethernet|virtual|vmware|vmnet|vbox|hyper-?v|wsl|docker|virbr|^br-|bridge|loopback|bluetooth|tailscale|zerotier|hamachi|radmin|wireguard|nordlynx|vpn|^tap|^tun|^utun|^wg\d|awdl|llw|lan-verbindung\s*\*|local area connection\s*\*/i;
+const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40;
 const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20 };
 const MATCH_MS = 600000;
 const MAPS = ['drydock', 'citadel', 'blacksite'];
@@ -105,6 +110,7 @@ class Room {
 
   get phase() { return this.state; }
   connected() { return [...this.players.values()]; }
+  hasGuests() { return this.connected().some((p) => p.guest); }
 
   resetLobby() {
     clearTimeout(this.timer); clearTimeout(this.loadTimer); clearInterval(this.clock); clearTimeout(this.matchTimer);
@@ -177,6 +183,7 @@ class Room {
       starts: this.startsAt ? Math.max(0, this.startsAt - Date.now()) : 0,
       solo: this.waitingSolo,
       joinable: !!(this.match && this.match.joinable),
+      ...this.service.netInfo(),
     };
   }
   broadcastLobby() { this.everyone(this.lobbyState()); }
@@ -242,15 +249,17 @@ class Room {
       roster.push({ id: 'b' + (i + 1), name: names[i % names.length], team, bot: true, outfit: mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[(players.length + i) % FFA_OUTFITS.length], weapon: pickWeapon() });
     }
     const limit = mode === 'ffa' ? 25 : mode === 'tdm' ? 50 + (roster.length - 1) * 5 : 0;
+    // (the bots run in somebody's browser: a PC that already has enough to do with itself is spared that)
+    const carrier = players.find((p) => !(p.fps < SMOOTH_FPS)) || players.reduce((a, b) => (b.fps > a.fps ? b : a));
     this.match = {
-      mode, map: mode === 'br' ? 'island' : c.map, seed, roster, limit, auth: players[0].id,
+      mode, map: mode === 'br' ? 'island' : c.map, seed, roster, limit, auth: carrier.id,
       score: new Map(roster.map((r) => [r.id, { kills: 0, deaths: 0, points: 0, team: r.team }])), team: [0, 0],
       alive: new Set(roster.map((r) => r.id)), joinable: mode !== 'br', taken: new Set(),
     };
-    this.state = 'loading'; this.startsAt = 0;
+    this.state = 'loading'; this.startsAt = 0; this.lateOk = false;
     this.everyone({ t: 'start', cfg: this.startCfg(), you: null });
     this.broadcastLobby();
-    this.loadTimer = setTimeout(() => this.go(), LOAD_MS);
+    this.loadTimer = setTimeout(() => { this.lateOk = true; this.checkLoaded(); }, LOAD_MS);
   }
 
   startCfg() {
@@ -258,12 +267,19 @@ class Room {
     return { mode: m.mode, map: m.map, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : MATCH_MS, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points })), team: m.team };
   }
 
-  checkLoaded() { if (this.state === 'loading' && this.connected().filter((p) => p.inMatch).every((p) => p.loaded)) this.go(); }
+  // Everybody is there, or the time is up and somebody is: whoever is late comes in when he can.
+  checkLoaded() {
+    if (this.state !== 'loading') return;
+    const q = this.connected().filter((p) => p.inMatch);
+    if (q.every((p) => p.loaded) || (this.lateOk && q.some((p) => p.loaded))) this.go();
+  }
 
   go() {
     clearTimeout(this.loadTimer);
     if (this.state !== 'loading') return;
-    const m = this.match;
+    const m = this.match, here = this.connected().filter((p) => p.inMatch && p.loaded);
+    // (without the one who runs the bots there is nobody out there: if he is among the late ones they go to somebody who isn't)
+    if (here.length && !here.some((p) => p.id === m.auth)) m.auth = here[0].id;
     this.state = 'match';
     m.startedAt = Date.now();
     m.endsAt = m.mode === 'br' ? 0 : m.startedAt + MATCH_MS;
@@ -349,6 +365,7 @@ class Room {
       case 'chat': { const text = String(m.text || '').trim().slice(0, 160); if (text) this.say(p, text); break; }
       case 'vote': this.vote(p, m.stage, m.v); break;
       case 'solo': this.solo(p); break;
+      case 'fps': p.fps = +m.v || 0; break;
       case 'rejoin': if (this.state === 'match' && this.match.joinable && !p.inMatch) this.joinRunning(p); break;
       case 'loaded':
         p.loaded = true;
@@ -395,11 +412,17 @@ class Service {
   constructor(port) {
     this.port = port; this.room = null; this.udp = null; this.seen = new Map(); this.onLan = null;
     this.me = crypto.randomBytes(4).toString('hex');
+    this.blocked = new Map(); // rooms this computer knows of and can't get into: address, when it last tried
+    this.tried = new Map();   // when a try last failed
+    this.probing = new Set(); // being tried right now
+    this.foreign = new Map(); // rooms of another version of the game: address, when last heard
+    this.fw = null;           // 'blocked': the firewall here probably keeps everybody out
+    this.ticks = 0;
   }
 
   addresses() {
     const out = [];
-    for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) out.push(a);
+    for (const [name, list] of Object.entries(os.networkInterfaces())) for (const a of list || []) if ((a.family === 'IPv4' || a.family === 4) && !a.internal) out.push({ ...a, name });
     return out;
   }
   broadcasts() {
@@ -423,32 +446,106 @@ class Service {
     return this.udpReady;
   }
 
+  packet(obj) { return Buffer.from(JSON.stringify({ g: 'bw69', v: VERSION, from: this.me, ...obj })); }
+
   sendUdp(obj) {
     if (!this.udp) return;
-    const b = Buffer.from(JSON.stringify({ g: 'bw69', v: VERSION, from: this.me, ...obj }));
+    const b = this.packet(obj);
     const to = [GROUP, '255.255.255.255', ...this.broadcasts()];
     for (const addr of to) { try { this.udp.send(b, UDP_PORT, addr); } catch (e) { /* no route there */ } }
+  }
+
+  // Everybody around, one at a time. Plenty of routers swallow broadcasts between wireless devices but not this. And a firewall that
+  // drops every packet from outside lets the answer to a packet of its own through.
+  sweep(obj) {
+    if (!this.udp) return;
+    const b = this.packet(obj);
+    for (const a of this.addresses()) {
+      if (a.address.startsWith('169.254.') || VIRTUAL.test(a.name)) continue;
+      const net24 = a.address.slice(0, a.address.lastIndexOf('.') + 1);
+      for (let i = 1; i < 255; i++) if (net24 + i !== a.address) { try { this.udp.send(b, UDP_PORT, net24 + i); } catch (e) { /* no route there */ } }
+    }
   }
 
   onPacket(buf, from) {
     let m;
     try { m = JSON.parse(buf.toString()); } catch (e) { return; }
-    if (!m || m.g !== 'bw69' || m.v !== VERSION || m.from === this.me) return;
-    if (m.t === 'who') { if (this.room) this.beacon(); return; }
+    if (!m || m.g !== 'bw69' || m.from === this.me) return;
+    if (m.v !== VERSION) { if (m.t === 'room') this.foreign.set(from.address, Date.now()); return; }
+    if (m.t === 'who') { if (this.room && this.udp) { try { this.udp.send(this.packet(this.roomInfo()), from.port, from.address); } catch (e) { /* gone */ } } return; }
     if (m.t !== 'room') return;
     // what a room on this same computer can be reached by
     const entry = { id: m.id, born: m.born, ip: this.isLocal(from.address) ? '127.0.0.1' : from.address, lan: from.address, port: m.port, players: m.players, state: m.state, at: Date.now() };
     this.seen.set(m.id, entry);
-    // two people looked at the same moment: the younger room gives way to the older one
-    if (this.room && this.room.id !== m.id && this.room.state === 'lobby' && (m.born < this.room.born || (m.born === this.room.born && m.id < this.room.id))) this.moveTo(entry);
+    this.consider(entry, m);
+  }
+
+  // Two rooms on one network should be one: the younger gives way to the older one. Unless nobody gets into the older one, which is what
+  // a firewall nobody has answered does. Then that one gives way, and the room ends up on a computer that works.
+  async consider(e, m) {
+    const r = this.room;
+    if (!r || r.id === m.id || r.state !== 'lobby') return;
+    const older = m.born < r.born || (m.born === r.born && m.id < r.id), nobodyGetsIn = !r.hasGuests() && (m.cant || []).some((ip) => this.isLocal(ip));
+    if (!older && !nobodyGetsIn) return;
+    // (a failed try waits a moment before the next one, a room that works doesn't have to wait for anything)
+    if (this.probing.has(e.lan) || Date.now() - (this.tried.get(e.lan) || 0) < RETRY_MS) return;
+    this.probing.add(e.lan);
+    const ok = await this.reachable(e);
+    this.probing.delete(e.lan);
+    if (!ok) { this.tried.set(e.lan, Date.now()); this.blocked.set(e.lan, Date.now()); return; }
+    this.blocked.delete(e.lan);
+    if (this.room === r && r.state === 'lobby') this.moveTo(e);
+  }
+
+  // A firewall lets the announcement out and nothing in, so seeing a room doesn't mean anybody can get there.
+  reachable(e) {
+    return new Promise((res) => {
+      const s = net.connect({ host: e.lan, port: e.port });
+      const done = (ok) => { clearTimeout(t); s.destroy(); res(ok); }, t = setTimeout(() => done(false), REACH_MS);
+      s.once('connect', () => done(true));
+      s.once('error', () => done(false));
+    });
   }
 
   isLocal(ip) { return this.addresses().some((a) => a.address === ip) || ip === '127.0.0.1'; }
 
-  beacon() {
-    const r = this.room;
-    if (r) this.sendUdp({ t: 'room', id: r.id, born: r.born, port: this.port, players: r.players.size, state: r.state });
+  roomInfo() { const r = this.room; return { t: 'room', id: r.id, born: r.born, port: this.port, players: r.players.size, state: r.state, cant: this.blockedRooms() }; }
+
+  beacon() { if (this.room) this.sendUdp(this.roomInfo()); }
+
+  // (only as long as that room is still there)
+  blockedRooms() { const now = Date.now(); return [...this.blocked.keys()].filter((ip) => [...this.seen.values()].some((e) => e.lan === ip && now - e.at < 4000)); }
+
+  // what the people in the lobby should know about the network
+  netInfo() {
+    const now = Date.now();
+    // (someone from another computer is in here: whatever the firewall settings look like, they let him through)
+    return { addr: this.shareAddresses().slice(0, 3).map((ip) => ip + ':' + this.port), blocked: this.blockedRooms(), foreign: [...this.foreign].filter((f) => now - f[1] < 5000).map((f) => f[0]), fw: this.room && this.room.hasGuests() ? 'ok' : this.fw };
   }
+
+  // once a second, while there is a room
+  tick() {
+    const r = this.room;
+    if (!r) return;
+    this.beacon();
+    this.ticks++;
+    // (whoever is alone keeps looking for the others, however late they come)
+    if (r.state === 'lobby' && r.players.size < 2 && this.ticks % SWEEP_TICKS === 0) this.sweep({ t: 'who' });
+    if (this.fw === 'blocked' && this.ticks % FIREWALL_TICKS === 0) this.checkFirewall();
+    const info = JSON.stringify(this.netInfo());
+    if (info !== this.lastInfo) { this.lastInfo = info; r.broadcastLobby(); }
+  }
+
+  mainAdapter() { const a = this.rankedAddresses()[0]; return a ? a.name : null; }
+
+  checkFirewall(done) {
+    if (this.fwBusy) { if (done) done(); return; }
+    this.fwBusy = true;
+    firewall.check(this.mainAdapter(), (s) => { this.fwBusy = false; this.fw = s; if (done) done(); });
+  }
+
+  // whoever sits at this computer asked for it, and Windows asks once more
+  openFirewall(done) { firewall.open((ok) => { this.fwBusy = false; this.checkFirewall(() => done({ ok, fw: this.fw })); }); }
 
   moveTo(entry) {
     const r = this.room;
@@ -467,38 +564,55 @@ class Service {
   openRoom() {
     if (this.room) return this.room;
     this.room = new Room(this);
-    this.beaconTimer = setInterval(() => this.beacon(), BEACON_MS);
+    this.lastInfo = null;
+    this.beaconTimer = setInterval(() => this.tick(), BEACON_MS);
     this.beacon();
     return this.room;
   }
 
-  // the address others on the network can reach this computer by (virtual adapters tend to end in .1)
-  lanAddress() {
-    const list = this.addresses().map((a) => a.address), ok = (ip) => !ip.endsWith('.1');
-    return list.find((ip) => ip.startsWith('192.168.') && ok(ip)) || list.find(ok) || list[0] || null;
+  // The network cards others can reach this computer by, the likeliest first. Nothing is ruled out: on a direct cable 169.254 is all there
+  // is, and a computer sharing its own hotspot does end in .1. Elsewhere that usually means a virtual card.
+  rankedAddresses() {
+    const rank = (a) => (a.address.startsWith('169.254.') ? 16 : 0) + (VIRTUAL.test(a.name) ? 8 : 0) + (a.address.endsWith('.1') ? 4 : 0) + (a.address.startsWith('192.168.') ? 0 : a.address.startsWith('10.') ? 1 : 2);
+    return this.addresses().map((a) => ({ ...a, rank: rank(a) })).sort((a, b) => a.rank - b.rank);
   }
+  shareAddresses() {
+    const list = this.rankedAddresses(), good = list.filter((a) => a.rank < 8);
+    return (good.length ? good : list.slice(0, 1)).map((a) => a.address);
+  }
+  lanAddress() { return this.shareAddresses()[0] || null; }
+
+  ownRoom() { return { own: true, room: this.room.id, port: this.port, lan: this.lanAddress() }; }
 
   // ---- "where do I go?"
   async find(preferLocalOnly) {
     if (this.onLan) this.onLan();
     await this.listenUdp();
-    if (this.room) return { own: true, room: this.room.id, port: this.port, lan: this.lanAddress() };
+    this.checkFirewall();
+    if (this.room) return this.ownRoom();
     if (!preferLocalOnly) {
       this.sendUdp({ t: 'who' });
+      this.sweep({ t: 'who' });
       await new Promise((r) => setTimeout(r, LOOK_MS / 2));
       this.sendUdp({ t: 'who' });
       await new Promise((r) => setTimeout(r, LOOK_MS / 2));
     }
-    if (this.room) return { own: true, room: this.room.id, port: this.port, lan: this.lanAddress() };
+    if (this.room) return this.ownRoom();
     const now = Date.now(), rooms = [...this.seen.values()].filter((e) => now - e.at < 4000).sort((a, b) => a.born - b.born);
-    if (rooms[0]) return { own: false, room: rooms[0].id, ip: rooms[0].lan, port: rooms[0].port, sameHost: this.isLocal(rooms[0].lan) };
-    this.openRoom();
-    return { own: true, room: this.room.id, port: this.port, lan: this.lanAddress() };
+    for (const e of rooms) {
+      if (await this.reachable(e)) { this.blocked.delete(e.lan); return { own: false, room: e.id, ip: e.lan, port: e.port, sameHost: this.isLocal(e.lan) }; }
+      this.blocked.set(e.lan, Date.now()); this.tried.set(e.lan, Date.now());
+    }
+    // nothing there, or nothing anybody can get into: then the room is here
+    if (!this.room) this.openRoom();
+    return this.ownRoom();
   }
 
   // ---- a browser connects
   accept(req, sock) {
     if (!fromHere(req.headers.origin, req.headers.host)) { sock.destroy(); return; }
+    const peer = String(req.socket.remoteAddress).replace('::ffff:', ''), guest = !this.isLocal(peer);
+    this.blocked.delete(peer); // (whoever made it here, he has given up on his own room)
     const ws = acceptUpgrade(req, sock);
     if (!ws) return;
     let p = null;
@@ -510,6 +624,7 @@ class Service {
         if (m.ver !== VERSION) { ws.send({ t: 'refused', why: 'Andere Spielversion' }); ws.close(); return; }
         const r = this.openRoom(); // (a room may have just gone away and someone gets here late: he opens the next one)
         p = r.add(ws, m.name);
+        p.guest = guest;
         return;
       }
       try { if (room()) room().receive(p, m); } catch (e) { console.error('mp: ' + e.message); }

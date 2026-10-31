@@ -17,7 +17,7 @@ export class Net {
     this.onChange = null; // the lobby screen listens here
     this.byId = new Map();
     this.sendT = 0; this.botsT = 0; this.counter = 0; this.clockT = 0;
-    this.name = '';
+    this.name = ''; this.tries = 0; this.own = false;
   }
 
   changed() { if (this.onChange) this.onChange(); }
@@ -27,20 +27,24 @@ export class Net {
     this.name = name;
     this.status = 'search'; this.error = null; this.changed();
     let r;
-    try { r = await (await fetch('/mp/find', { cache: 'no-store' })).json(); } catch (e) { return this.fail('Der Spielserver antwortet nicht. Läuft start.bat noch?'); }
+    try { r = await (await fetch('/mp/find', { cache: 'no-store' })).json(); } catch (e) { return this.fail(this.onThisPc ? 'Der Spielserver antwortet nicht. Läuft start.bat noch?' : 'Der PC mit dem Raum antwortet nicht mehr. Läuft das Spiel dort noch?'); }
     if (this.status !== 'search') return;
     if (r.error) return this.fail('Raumsuche fehlgeschlagen');
-    this.address = r.own ? (r.lan ? r.lan + ':' + r.port : null) : r.ip + ':' + r.port;
+    this.own = !!r.own;
     this.connect(r.own ? location.host : (r.ip + ':' + r.port));
   }
+
+  get onThisPc() { return /^(localhost|127\.)/.test(location.hostname); }
 
   connect(host) {
     this.status = 'search'; this.changed();
     const ws = this.ws = new WebSocket('ws://' + host + '/mp');
     this.moved = false;
-    ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: this.name, ver: VERSION }));
+    // (a firewall doesn't say no, it just never answers)
+    const slow = setTimeout(() => { if (ws === this.ws && ws.readyState === 0) ws.close(); }, 6000);
+    ws.onopen = () => { clearTimeout(slow); ws.send(JSON.stringify({ t: 'hello', name: this.name, ver: VERSION })); };
     ws.onmessage = (e) => { if (ws === this.ws) { try { this.receive(JSON.parse(e.data)); } catch (err) { console.error(err); } } };
-    ws.onclose = () => { if (ws === this.ws && !this.moved) this.lost(); };
+    ws.onclose = () => { clearTimeout(slow); if (ws === this.ws && !this.moved) this.lost(); };
     ws.onerror = () => {};
   }
 
@@ -53,6 +57,8 @@ export class Net {
     if (this.status === 'off') return;
     const wasMatch = this.status === 'match';
     this.teardownMatch();
+    // (it never got as far as a room: it won't get further by trying forever)
+    if (this.status === 'search' && ++this.tries >= 4) { this.tries = 0; return this.fail('Keine Verbindung zum Raum. Läuft das Spiel auf dem anderen PC noch, und lässt seine Firewall Node.js durch?'); }
     this.chat.push({ from: null, text: 'Verbindung zum Raum verloren, suche neu' });
     this.status = 'search'; this.changed();
     if (wasMatch) g.leaveNetMatch();
@@ -80,13 +86,14 @@ export class Net {
   receive(m) {
     const g = this.game;
     switch (m.t) {
-      case 'welcome': this.you = m.you; this.chat = m.chat || []; this.status = 'lobby'; g.player.netId = m.you; this.changed(); break;
+      case 'welcome': this.you = m.you; this.tries = 0; this.chat = m.chat || []; this.status = 'lobby'; g.player.netId = m.you; this.changed(); this.measure(); break;
       case 'refused': this.fail(m.why); break;
       case 'lobby': this.lobby = m; this.lobbyAt = performance.now(); if (this.status === 'search') this.status = 'lobby'; this.changed(); break;
       case 'chat': this.chat.push(m); if (this.chat.length > 200) this.chat.shift(); this.changed(); if (m.from && this.status === 'lobby') g.audio.play('uiClick', { vol: 0.25 }); break;
-      case 'move': this.moved = true; try { this.ws.close(); } catch (e) { /* gone */ } this.connect((m.sameHost && location.hostname === 'localhost' ? 'localhost' : m.ip) + ':' + m.port); break;
+      case 'move': this.moved = true; this.own = false; try { this.ws.close(); } catch (e) { /* gone */ } this.connect((m.sameHost && location.hostname === 'localhost' ? 'localhost' : m.ip) + ':' + m.port); break;
       case 'start': this.startMatch(m.cfg); break;
       case 'go':
+        if (m.auth && m.auth !== this.you && this.isAuth) this.giveUpBots();
         if (m.auth) this.setAuth(m.auth);
         g.netWait = false; g.showNetWait(false);
         // (the browser only hands over the mouse on a click)
@@ -111,6 +118,22 @@ export class Net {
   }
 
   note(text) { if (this.game.hud) this.game.hud.message('<span style="font-size:20px">' + esc(text) + '</span>', 2.5); }
+
+  // How smoothly this PC runs, measured in the lobby: the room gives the bots to one that can carry them.
+  // (a tab in the background gets no frames and says nothing)
+  measure() {
+    if (this.measuring) return;
+    this.measuring = true;
+    let frames = 0, from = 0, last = 0;
+    const step = (now) => {
+      if (this.status === 'off') { this.measuring = false; return; }
+      if (this.status !== 'lobby' || now - last > 1000) { frames = 0; from = now; }
+      else if (++frames >= 30 && now - from >= 1000) { this.send({ t: 'fps', v: Math.round((frames * 1000) / (now - from)) }); frames = 0; from = now; }
+      last = now;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   // ---------------------------------------------------------------- a match starts
   startMatch(cfg) {
@@ -181,6 +204,22 @@ export class Net {
     const old = this.cfg && this.cfg.auth;
     if (this.cfg) this.cfg.auth = id;
     if (id === this.you && old !== id) this.adoptBots();
+  }
+
+  // it took this PC too long to load and somebody else runs them by now: puppets here as well
+  giveUpBots() {
+    const g = this.game;
+    for (const e of this.cfg.roster) {
+      const b = this.byId.get(e.id);
+      if (!e.bot || !b || b.remote) continue;
+      const pu = new Puppet(g, e), i = g.bots.indexOf(b), j = g.combatants.indexOf(b);
+      pu.netId = e.id;
+      g.hud.dropTag(b);
+      b.dispose();
+      if (i >= 0) g.bots[i] = pu;
+      if (j >= 0) g.combatants[j] = pu;
+      this.byId.set(e.id, pu);
+    }
   }
 
   // whoever ran them is gone: they carry on here from where they were last seen

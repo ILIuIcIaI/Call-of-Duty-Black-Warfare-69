@@ -280,7 +280,7 @@ export class BRBot extends Bot {
   // Someone lying there within reach, here or on another computer: no more shooting, over there and end it by hand. One for each of them.
   goFinish(inGas) {
     const g = this.game, t = g.time, br = g.match, P = this.finishOn || this.target, mine = !!this.finishOn;
-    const quit = () => { if (mine) { br.finishing.delete(P); this.finishOn = null; } if (this.state === 'finish') { this.state = 'roam'; this.path = null; } return false; };
+    const quit = () => { if (this.finishOn) { br.finishing.delete(P); this.finishOn = null; } if (this.state === 'finish') { this.state = 'roam'; this.path = null; } return false; };
     if (inGas || !br.lyingThere(P)) return quit();
     if (!mine && br.onTheWay(P)) return false;
     const d = P.pos.distanceTo(this.pos);
@@ -291,8 +291,12 @@ export class BRBot extends Bot {
       br.letGo(P);
     } else if (t - this.finishT > 9) { this.finishCd = t + 12; return quit(); }
     this.state = 'finish'; this.target = P; this.lastSeen = P.pos.clone(); this.lastSeenT = t; this.prone = false; this.lootGoal = null;
-    if (d < 12 && g.col.lineClear(this.pos.x, this.pos.y + 0.5, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) { this.path = [{ x: P.pos.x, y: P.pos.y, z: P.pos.z, type: 0 }]; this.wp = 0; }
-    else if (this.repathT <= 0 || !this.path) { this.pathTo(P.pos); this.repathT = 0.7; }
+    if (d < 12 && g.col.lineClear(this.pos.x, this.pos.y + 0.5, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) {
+      // (only ever from behind. No getting there: then the normal way)
+      const way = br.wayToBack(this, P);
+      if (!way) { this.finishCd = t + 12; return quit(); }
+      this.path = way; this.wp = 0;
+    } else if (this.repathT <= 0 || !this.path) { this.pathTo(P.pos); this.repathT = 0.7; }
     return true;
   }
 
@@ -461,7 +465,8 @@ export class BRBot extends Bot {
       this.plateT -= dt;
       if (this.plateT <= 0 && this.plates > 0) { this.plates--; this.armor = Math.min(MAX_ARMOR, this.armor + PLATE_ARMOR); }
     }
-    if (this.state === 'finish' && this.onGround && this.finishOn.pos.distanceTo(this.pos) < 2) {
+    // (it has all the time it wants to get right behind him, and the less he gets turned around in the scene the better)
+    if (this.state === 'finish' && this.onGround && this.finishOn.pos.distanceTo(this.pos) < 2.2 && g.match.atBack(this, this.finishOn, 0.7)) {
       if (g.match.botFinisherOn(this, this.finishOn)) return;
       this.finishT = -99; this.state = 'roam'; this.path = null; // no room for it here: then the normal way
     }

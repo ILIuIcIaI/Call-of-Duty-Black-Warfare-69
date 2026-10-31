@@ -36,7 +36,10 @@ A battle royale for you and 19 bots on Serena, an island with a town, a harbor, 
 
 ### Finishers
 
-Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end. It works both ways: a bot that catches you down, or nearly dead right next to it, finishes you with the same scenes, and you watch it happen.
+Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end. It works both ways: a bot that gets behind you when you are down or low on health finishes you with the same scenes, and you watch it happen.
+
+- **Bots** can be finished from any side once they are hurt enough, and from any side when they are lying on the ground.
+- **Players** can only be finished from behind, by bots and by other players alike: on their feet when their health is low enough, on the ground as well. A bot walks around someone lying there to get to their back.
 
 There are no motion files behind them. Every scene is written as keys and baked once when the match starts. That step works out what a body would really do: the weight goes onto the standing foot before a step, heads stay level and keep their eyes on the target, hands travel in arcs around the shoulder, and when the muscles let go, physics takes over.
 
@@ -187,9 +190,17 @@ If you die in Warzone you can watch the others or go back to the lobby. In Team 
 
 Good to know:
 
-- The first time, Windows asks whether Node.js may use the network. Allow it, or nobody will find the room.
+- The first time, Windows asks whether Node.js may use the network. Allow it, also for public networks if the dialog offers that. If the firewall still keeps others out, the lobby tells you and offers a **FREIGEBEN** button: one click, Windows asks once, and the rule only covers devices in your own network.
+- As long as one computer lets others in, you end up together: a room nobody can get into gives way to one that works. The computers keep looking for each other while you wait, even if your router drops the usual network announcements between devices.
 - If a computer doesn't find the room, open the address shown in the lobby in its browser. That computer doesn't need Node.js at all.
 - The room lives on the computer that opened it. If that one goes away, everybody else looks for a new room.
+- Bots run in one player's browser: the first computer that runs the game smoothly. A slow computer is spared that, and if it takes too long to load a match it simply comes in later.
+- The computers have to be able to reach each other. Guest networks and some public networks keep their devices apart on purpose, and no game can get past that. A different network, a phone's hotspot or a cable between the computers will do.
+- Everybody needs the same version of the game. The lobby says so if another version is on the network.
+
+| When your own firewall keeps others out | When another computer lets nobody in |
+|---|---|
+| ![The lobby with a warning about the Windows firewall and a button to allow the game through](docs/screenshots/multiplayer-firewall.jpg) | ![The lobby with a note that a room on another computer can't be reached](docs/screenshots/multiplayer-blocked.jpg) |
 
 ## Controls
 

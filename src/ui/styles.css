@@ -286,6 +286,9 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 .mp-name input:focus, #mp-chat:focus { border-color: var(--accent); }
 .mp-row { display: flex; gap: 12px; margin-top: 16px; }
 .mp-err { color: var(--accent2); margin-top: 12px; min-height: 22px; letter-spacing: 1px; }
+.mp-warn { margin: 8px 0 2px; padding: 9px 11px; background: rgba(120, 60, 16, .34); border-left: 3px solid var(--accent); font-size: 14px; line-height: 1.35; color: #e8e3d6; }
+.mp-warn .btn { display: block; margin-top: 8px; }
+.mp-warn small { display: block; margin-top: 6px; font-size: 12px; opacity: .72; }
 .mp-search { margin-top: 60px; font-size: 26px; letter-spacing: 4px; font-weight: 700; color: var(--accent); }
 .mp-dots { width: 180px; height: 3px; margin-bottom: 18px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 60px 100%; background-repeat: no-repeat; animation: mpslide 1.1s linear infinite; }
 @keyframes mpslide { from { background-position: -60px 0; } to { background-position: 180px 0; } }
@@ -294,7 +297,8 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 .mp-col .btn { font-size: 17px; padding: 8px 14px; letter-spacing: 2px; min-width: 0; }
 .mp-grid { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(320px, 2fr) minmax(260px, 1.4fr); gap: 22px; margin-top: 12px; min-height: 0; flex: 1; }
 .mp-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: rgba(8, 10, 10, .55); padding: 12px 16px 16px; }
-.mp-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; overflow: auto; }
+.mp-col:first-child { min-height: min-content; }
+.mp-list { display: flex; flex: none; flex-direction: column; gap: 5px; margin-bottom: 8px; max-height: 34vh; overflow: auto; }
 .mp-p { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 600; letter-spacing: 1px; }
 .mp-p.me { color: var(--accent); }
 .mp-p .d { width: 9px; height: 9px; border-radius: 50%; background: rgba(255, 255, 255, .18); flex: none; }

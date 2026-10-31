@@ -30,8 +30,9 @@ const CAM_INTO_FALL = 1.6;   // seconds the camera takes from the plane into you
 // self revive takes (first, second, third time down in a match and every time after that)
 const DOWN_HP = 100, BLEED_OUT = [40, 30, 24, 18], REVIVE_TIME = [6.5, 8, 9.5, 11];
 const FINISH_HP = 100;       // health and armor left for a melee from behind to become a finisher
-const FRONT_HP = 60;         // from the front he has to be closer to the end
-const TAKEN_HP = 70, TAKEN_FRONT_HP = 40; // the same for a bot's melee on you: you go down from anything more
+const FRONT_HP = 60;         // from the front a bot has to be closer to the end. A person only ever gets it from behind.
+const TAKEN_HP = 70;         // the same for a bot's melee on a person: he goes down from anything more
+const BACK_OF = 1.9, SIDE_OF = 1.8; // where a bot goes to get behind someone lying there: his legs are in the way any closer
 const ANY_WAY = [0, Math.PI / 2, -Math.PI / 2, Math.PI], NEARBY = [[0, 0]];
 for (const r of [0.8, 1.6, 2.4]) for (let i = 0; i < 8; i++) NEARBY.push([Math.sin(i * Math.PI / 4) * r, Math.cos(i * Math.PI / 4) * r]);
 const SEEN_DMG = 0.7;        // how hard bots hit each other where the player can see it: fights there are the real thing
@@ -974,7 +975,7 @@ export class BRMatch {
 
   // ---------------------------------------------------------------- finishers
   // Who a melee would finish right now. Behind someone hurt, in front of someone almost dead, and on someone lying down:
-  // down from a wound from any side, lying in cover once he is hurt as well.
+  // down from a wound from any side, lying in cover once he is hurt as well. That is a bot. A person only ever from behind.
   finisherTarget(p) {
     const g = this.game, col = g.col, f = p.forwardVec(_v);
     let best = null, bd = Infinity;
@@ -983,7 +984,8 @@ export class BRMatch {
       const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz), low = b.downed || b.prone;
       if (d > (low ? 3.1 : 2.7) || d < 0.05 || Math.abs(b.pos.y - p.pos.y) > 0.8) continue;
       if ((dx * f.x + dz * f.z) / d < 0.5) continue;
-      const hp = b.health + (b.armor || 0), behind = (dx * -Math.sin(b.aimYaw) + dz * -Math.cos(b.aimYaw)) / d >= 0.4;
+      const hp = b.health + (b.armor || 0), behind = this.atBack(p, b);
+      if (!b.isBot && !behind) continue;
       if (!b.downed && hp > (low || behind ? FINISH_HP : FRONT_HP)) continue;
       if (!col.lineClear(p.pos.x, p.pos.y + 1.2, p.pos.z, b.pos.x, b.pos.y + (low ? 0.5 : 1.2), b.pos.z)) continue;
       if (d < bd) { bd = d; best = b; }
@@ -997,8 +999,7 @@ export class BRMatch {
     if (!best) return null;
     const floor = col.floorBelow(best.pos.x, best.pos.z, 0.2, best.pos.y + 0.6, best.pos.y - 0.6);
     if (!isFinite(floor)) return null;
-    const low = best.downed || best.prone, dx = best.pos.x - p.pos.x, dz = best.pos.z - p.pos.z, d = Math.hypot(dx, dz);
-    const behind = (dx * -Math.sin(best.aimYaw) + dz * -Math.cos(best.aimYaw)) / d >= 0.4;
+    const low = best.downed || best.prone, dx = best.pos.x - p.pos.x, dz = best.pos.z - p.pos.z, behind = this.atBack(p, best);
     // from the front the scene is set up looking from me to him, and he comes into it from where he stands
     return { best, floor, low, behind, yaw: low || behind ? best.aimYaw : Math.atan2(-dx, -dz) };
   }
@@ -1239,6 +1240,25 @@ export class BRMatch {
   // the bot on its way to end it for someone lying there
   onTheWay(c) { const b = this.finishing.get(c); return b && b.alive && !b.out ? b : null; }
 
+  // which way his body points: someone lying there can look somewhere else
+  bodyYawOf(c) { return c.isPlayer ? c.bodyYaw : c.remote ? c.st.yaw : c.aimYaw; }
+
+  // is he at his back
+  atBack(from, c, how = 0.4) {
+    const dx = c.pos.x - from.pos.x, dz = c.pos.z - from.pos.z, d = Math.hypot(dx, dz), yaw = this.bodyYawOf(c);
+    return d > 0.01 && (dx * -Math.sin(yaw) + dz * -Math.cos(yaw)) / d >= how;
+  }
+
+  // How a bot gets behind someone lying there: past his side if it comes from the front. Nothing free back there: null.
+  wayToBack(bot, c) {
+    const yaw = this.bodyYawOf(c), fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = bot.pos.x - c.pos.x, rz = bot.pos.z - c.pos.z, y = c.pos.y;
+    const back = { x: c.pos.x - fx * BACK_OF, y, z: c.pos.z - fz * BACK_OF, type: 0 };
+    if (!this.game.col.lineClear(c.pos.x, y + 0.5, c.pos.z, back.x, y + 0.5, back.z)) return null;
+    if (rx * fx + rz * fz < 0.5) return [back];
+    const s = rx * fz - rz * fx >= 0 ? SIDE_OF : -SIDE_OF;
+    return [{ x: c.pos.x + fz * s, y, z: c.pos.z - fx * s, type: 0 }, back];
+  }
+
   // whoever has him in their sights lets go, or some of them
   letGo(c, chance = 1) {
     for (const b of this.game.bots) if (!b.remote && b.target === c && Math.random() < chance) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } b.peaceUntil = 0; }
@@ -1251,12 +1271,11 @@ export class BRMatch {
     return !!this.netStages && this.netStages.some((s) => s.byBot && s.atk === c);
   }
 
-  // Can this bot start a scene on him, and where would it play. look: where he looks, low: he is lying down, standing: he is on his feet and not down.
-  botScene(bot, v, look, low, standing, reach, weakOnly) {
-    const dx = v.pos.x - bot.pos.x, dz = v.pos.z - bot.pos.z, d = Math.hypot(dx, dz);
-    if (d > reach || d < 0.01 || Math.abs(v.pos.y - bot.pos.y) > 0.9) return null;
-    const behind = (dx * -Math.sin(look) + dz * -Math.cos(look)) / d >= 0.4;
-    if (weakOnly && standing && v.health + (v.armor || 0) > (behind ? TAKEN_HP : TAKEN_FRONT_HP)) return null;
+  // Can this bot start a scene on him, and where would it play. Only ever from behind. low: he is lying down, standing: he is on his feet and not down.
+  botScene(bot, v, low, standing, reach, weakOnly) {
+    const d = Math.hypot(v.pos.x - bot.pos.x, v.pos.z - bot.pos.z);
+    if (d > reach || d < 0.01 || Math.abs(v.pos.y - bot.pos.y) > 0.9 || !this.atBack(bot, v)) return null;
+    if (weakOnly && standing && v.health + (v.armor || 0) > TAKEN_HP) return null;
     const col = this.game.col, floor = col.floorBelow(v.pos.x, v.pos.z, 0.2, v.pos.y + 0.6, v.pos.y - 0.6);
     if (!isFinite(floor)) return null;
     // You never saw how you stood yourself: the scene turns until he starts from where he is.
@@ -1291,7 +1310,7 @@ export class BRMatch {
     const g = this.game;
     if (v === g.player) return this.botFinisher(bot, reach, weakOnly);
     if (!v.remote || v.isBot || !v.alive || v.out || v.sky || v.scripted || v.st.seat || v.st.mantle || !bot.alive || bot.out || bot.remote || bot.scripted || !bot.soldier) return false;
-    const S = this.botScene(bot, v, v.aimYaw, v.downed || v.prone, !v.downed, reach, weakOnly);
+    const S = this.botScene(bot, v, v.downed || v.prone, !v.downed, reach, weakOnly);
     if (!S) return false;
     this.finishing.delete(v); bot.finishOn = null;
     this.letGo(v);
@@ -1307,7 +1326,7 @@ export class BRMatch {
   botFinisher(bot, reach = 2.4, weakOnly = false) {
     const g = this.game, p = g.player, W = g.weapons, s = this.playerState;
     if ((s !== 'downed' && s !== 'ground') || this.finisher || !p.alive || !bot.alive || bot.out || bot.remote || bot.scripted || !bot.soldier || p.mantle) return false;
-    const scene = this.botScene(bot, p, p.yaw, s === 'downed' || p.stance === 'prone', s === 'ground', reach, weakOnly);
+    const scene = this.botScene(bot, p, s === 'downed' || p.stance === 'prone', s === 'ground', reach, weakOnly);
     if (!scene) return false;
     const { F, origin, yaw } = scene;
     W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null; W.firingRecently = false;

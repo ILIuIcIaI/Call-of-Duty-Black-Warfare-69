@@ -64,7 +64,7 @@ export class Lobby {
     // the chat line someone is typing survives the screen being drawn again
     const old = this.el.querySelector('#mp-chat');
     if (old) { this.draft = old.value; this.hadFocus = document.activeElement === old; }
-    const you = L.players.find((p) => p.id === net.you);
+    const you = L.players.find((p) => p.id === net.you), notes = this.notes(L);
     const names = L.players.map((p) => `<div class="mp-p ${p.id === net.you ? 'me' : ''}"><span class="d ${p.voted ? 'on' : ''}"></span>${esc(p.name)}${p.inMatch ? '<i>im Match</i>' : ''}</div>`).join('');
     this.el.innerHTML = `<div class="menu-bg"></div><div class="menu-inner mp room">
       <div class="logo">BLACK WARFARE <b>69</b><small>MULTIPLAYER-LOBBY · ${L.players.length} ${L.players.length === 1 ? 'SPIELER' : 'SPIELER'}</small></div>
@@ -72,7 +72,8 @@ export class Lobby {
       <div class="mp-grid">
         <div class="mp-col"><div class="section-title">IM RAUM</div><div class="mp-list">${names}</div>
           <div class="hint">${L.players.length < 2 ? 'Noch bist du allein. Wer im selben Netzwerk auf MULTIPLAYER drückt, landet automatisch hier.' : 'Alle stimmen ab, niemand hat das Sagen.'}</div>
-          ${net.address ? `<div class="hint">Findet dich jemand nicht? Im Browser geht auch <b>http://${esc(net.address)}</b></div>` : ''}
+          ${notes}
+          ${(L.addr || []).length ? `<div class="hint">Findet dich jemand nicht? Im Browser geht auch ${L.addr.map((a) => `<b>http://${esc(a)}</b>`).join(' oder ')}${L.players.length < 2 && !notes ? '. Klappt auch das nicht, trennt das WLAN die Geräte voneinander, wie oft im Gast-WLAN. Dann hilft ein anderes WLAN, ein Handy-Hotspot oder ein Kabel.' : ''}</div>` : ''}
           <div class="mp-row"><button class="btn ghost" id="mp-leave">RAUM VERLASSEN</button></div></div>
         <div class="mp-col wide" id="mp-vote">${this.votePanel(L, you)}</div>
         <div class="mp-col"><div class="section-title">CHAT</div><div class="mp-chatlog" id="mp-log">${net.chat.slice(-60).map((m) => (m.from ? `<div><b>${esc(m.from)}</b> ${esc(m.text)}</div>` : `<div class="sys">${esc(m.text)}</div>`)).join('')}</div>
@@ -90,8 +91,33 @@ export class Lobby {
     if (rejoin) rejoin.addEventListener('click', () => { g.menu.sfx(); net.rejoin(); });
     const solo = this.el.querySelector('#mp-solo');
     if (solo) solo.addEventListener('click', () => { g.menu.sfx(); net.solo(); });
+    const fw = this.el.querySelector('#mp-fw');
+    if (fw) fw.addEventListener('click', () => { g.menu.sfx(); this.openFirewall(); });
     if (!this.tick) this.tick = setInterval(() => this.ticks(), 200);
     this.ticks();
+  }
+
+  // ---- what stands between the others and this room
+  notes(L) {
+    const net = this.game.net;
+    let out = '';
+    // (the firewall of the computer the room is on, and only whoever sits there can do something about it)
+    if (L.fw === 'blocked' && net.own && net.onThisPc) {
+      out += this.fwState === 'busy' ? '<div class="mp-warn">Windows fragt gerade nach. Bitte dort bestätigen.</div>'
+        : this.fwState === 'failed' ? '<div class="mp-warn">Das hat nicht geklappt. Von Hand: Windows-Sicherheit, Firewall- &amp; Netzwerkschutz, Zugriff von Apps durch die Firewall zulassen, dort Node.js für Privat und Öffentlich ankreuzen.<button class="btn" id="mp-fw">NOCHMAL</button></div>'
+          : '<div class="mp-warn">Andere PCs kommen vermutlich nicht in diesen Raum: Die Windows-Firewall lässt das Spiel nicht durch.<button class="btn" id="mp-fw">FREIGEBEN</button><small>Gilt nur für Geräte in deinem Netzwerk. Windows fragt einmal nach.</small></div>';
+    }
+    for (const ip of L.blocked || []) out += `<div class="mp-warn">Auf <b>${esc(ip)}</b> läuft auch ein Raum, aber dieser PC lässt niemanden hinein. Klickt dort auf FREIGEBEN, dann seid ihr automatisch zusammen.</div>`;
+    for (const ip of L.foreign || []) out += `<div class="mp-warn">Auf <b>${esc(ip)}</b> läuft eine andere Spielversion. Alle brauchen dieselbe Version.</div>`;
+    return out;
+  }
+
+  async openFirewall() {
+    this.fwState = 'busy'; this.draw();
+    let r = null;
+    try { r = await (await fetch('/mp/firewall', { method: 'POST' })).json(); } catch (e) { /* the same as a no */ }
+    this.fwState = r && r.fw === 'ok' ? null : 'failed';
+    this.draw();
   }
 
   // ---- the clocks run without the screen being drawn again
