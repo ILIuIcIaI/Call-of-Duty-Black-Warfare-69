@@ -429,6 +429,8 @@ export class Game {
 
   applyDamage(victim, dmg, attacker, info) {
     if (!victim.alive) return;
+    // in a scene with you as the victim nothing else can happen to either of you any more
+    if (this.br && this.br.finisher && this.br.finisher.victimView && (victim === this.player || victim === this.br.finisher.atk)) return;
     if (this.br && attacker && attacker.isBot) dmg = victim.isBot ? dmg * this.match.botDamageOn(victim) : Math.min(dmg * this.match.zone.now.toPlayer, 60); // no bot one-shots you
     // armor plates take the hit first
     let armorHit = false, armorBroke = false;
@@ -453,6 +455,8 @@ export class Game {
       if (armorBroke) this.audio.play('magDrop', { vol: 0.9, rate: 0.8 });
     }
     if (killed && victim === this.player && this.br && this.br.playerGoesDown(attacker, info)) return;
+    // the last shot from close by: the one who fired it comes over and does it by hand
+    if (killed && victim === this.player && this.br && attacker && attacker.isBot && this.br.botFinisher(attacker)) return;
     if (killed && !felled) this.kill(victim, attacker, info);
   }
 
@@ -512,7 +516,7 @@ export class Game {
   }
 
   onPlayerKilled(killer, info) {
-    this.spawnPlayerCorpse(info);
+    if (!(info && info.staged)) this.spawnPlayerCorpse(info); // (after a scene the body is already lying where it left it)
     this.lastKiller = killer && killer !== this.player ? killer : null;
     this.deathCamT = 0;
     const ds = document.getElementById('death-screen');

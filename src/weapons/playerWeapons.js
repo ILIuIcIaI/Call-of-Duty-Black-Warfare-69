@@ -263,13 +263,6 @@ export class PlayerWeapons {
     muzzle.applyMatrix4(cam.matrixWorld);
     const muzzleW = muzzle.clone();
     const scoped = vm.model.optic && vm.model.optic.overlay && this.adsAmount > 0.9;
-    if (!scoped) {
-      const n = def.pellets || def.recoil.vis > 1.5 ? 4 : 2, sm = g.fx.dust, a = (this.adsAmount > 0.5 ? 0.12 : 0.22);
-      for (let i = 0; i < n; i++) {
-        const s = 0.5 + Math.random() * 2;
-        sm.spawn(muzzleW.x, muzzleW.y, muzzleW.z, _dir.x * s + (Math.random() - 0.5) * 0.3, _dir.y * s + 0.05 + Math.random() * 0.3, _dir.z * s + (Math.random() - 0.5) * 0.3, 0.7 + Math.random() * 0.9, 0.09 + Math.random() * 0.1, 0.68, 0.68, 0.66, a, -0.12, 2.2, 2.6);
-      }
-    }
     for (let i = 0; i < pellets; i++) {
       // uniform disc sample in the spread cone
       const r = Math.sqrt(Math.random()) * (pellets > 1 ? def.pelletSpread * DEG * (1 - this.adsAmount * 0.25) : spread) * 0.5;
@@ -291,12 +284,11 @@ export class PlayerWeapons {
     this.punchP.impulse(up * DEG * 26 * adsP);
     this.punchY.impulse(-side * DEG * 18 * adsP);
     this.punchR.impulse((Math.random() * 2 - 1) * rc.kick * DEG * 30);
-    this.fovPunch.impulse((rc.kick + (rc.snap || 0) * 0.5) * 9 * (this.adsAmount > 0.5 ? 0.5 : 1));
-    if (rc.snap) this.punchP.impulse(rc.snap * DEG * 9 * adsP);
+    this.fovPunch.impulse(rc.kick * 9 * (this.adsAmount > 0.5 ? 0.5 : 1));
     this.recoilIndex++;
     this.bloom = Math.min(def.hip * 0.8, this.bloom + def.hip * 0.12);
     vm.onShot(def, this.adsAmount > 0.5);
-    g.shake.add((rc.kick + (rc.snap || 0) * 0.5) * (this.adsAmount > 0.5 ? 0.05 : 0.08));
+    g.shake.add(rc.kick * (this.adsAmount > 0.5 ? 0.05 : 0.08));
     g.audio.gunshot(def.sound);
     g.onPlayerShot(def);
     if (def.fire !== 'bolt' && def.fire !== 'pump' && !this.vm.model.revolver) {

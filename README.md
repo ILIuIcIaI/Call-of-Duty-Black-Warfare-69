@@ -36,7 +36,7 @@ A battle royale for you and 19 bots on Serena, an island with a town, a harbor, 
 
 ### Finishers
 
-Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end.
+Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end. It works both ways: a bot that catches you down, or nearly dead right next to it, finishes you with the same scenes, and you watch it happen.
 
 There are no motion files behind them. Every scene is written as keys and baked once when the match starts. That step works out what a body would really do: the weight goes onto the standing foot before a step, heads stay level and keep their eyes on the target, hands travel in arcs around the shoulder, and when the muscles let go, physics takes over.
 

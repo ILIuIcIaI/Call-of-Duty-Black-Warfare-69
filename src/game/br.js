@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { PLATE_TIME } from '../weapons/playerWeapons.js';
-import { BRBot, makeCanopy } from '../bots/brbot.js';
+import { BRBot, makeCanopy, openCanopy, OPEN_PULL, OPEN_BLOOM } from '../bots/brbot.js';
 import { OUTFITS, Soldier } from '../characters/soldier.js';
 import { Loot, makeWeaponDef, MAX_PLATES, PLATE_ARMOR, MAX_ARMOR, RARITY } from './loot.js';
 import { Vehicle, VEHICLE_TYPES } from '../vehicles/vehicle.js';
+import { buildPlane } from '../vehicles/plane.js';
 import { moveCharacter, hullFits } from '../player/physics.js';
 import { HULL } from '../player/player.js';
-import { FINISHERS, Stage, makeProp, bakeFinishers, clearance, roomOf, victimYaw } from './finishers.js';
+import { FINISHERS, Stage, makeProp, bakeFinishers, clearance, roomOf, victimYaw, startYaw } from './finishers.js';
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
-import { damp, clamp, lerp, DEG, angleDiff, rand } from '../core/math.js';
+import { damp, clamp, lerp, smoother, DEG, angleDiff, rand } from '../core/math.js';
 import { WORLD_R } from '../world/maps/island.js';
 import { BRHud } from '../ui/brhud.js';
 
@@ -20,15 +21,19 @@ import { BRHud } from '../ui/brhud.js';
 const NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill', 'Ronin', 'Sturm', 'Titan', 'Ulme', 'Wespe'];
 const OUTFIT_KEYS = ['raven', 'jungle', 'urban', 'desert', 'vanguard'];
 const PLANE_Y = 330, PLANE_SPEED = 40;
-const FALL_DEPLOY = 85;    // automatic opening above the ground
+const FALL_DEPLOY = 95;    // automatic opening above the ground
+const OPEN_END = 2;        // by then the opening is over, the view is back where you were looking
 const FALL_DEPLOY_MAX = 240; // highest you can open it by hand
 const CHUTE_MIN_DROP = 9;    // on foot: a drop has to be at least this deep for the canopy to open
-const CAM_INTO_FALL = 0.8;   // seconds the camera takes from the plane into your head
+const CAM_INTO_FALL = 1.6;   // seconds the camera takes from the plane into your head
 // lying on the ground: how many hit points are left down there, how long until you bleed out and how long the
 // self revive takes (first, second, third time down in a match and every time after that)
 const DOWN_HP = 100, BLEED_OUT = [40, 30, 24, 18], REVIVE_TIME = [6.5, 8, 9.5, 11];
 const FINISH_HP = 100;       // health and armor left for a melee from behind to become a finisher
 const FRONT_HP = 60;         // from the front he has to be closer to the end
+const TAKEN_HP = 70, TAKEN_FRONT_HP = 40; // the same for a bot's melee on you: you go down from anything more
+const ANY_WAY = [0, Math.PI / 2, -Math.PI / 2, Math.PI], NEARBY = [[0, 0]];
+for (const r of [0.8, 1.6, 2.4]) for (let i = 0; i < 8; i++) NEARBY.push([Math.sin(i * Math.PI / 4) * r, Math.cos(i * Math.PI / 4) * r]);
 const SEEN_DMG = 0.7;        // how hard bots hit each other where the player can see it: fights there are the real thing
 
 // wait before it moves, how long it moves, the radius it ends at, damage per second outside. For the bots:
@@ -144,31 +149,6 @@ class Zone {
 }
 
 // ---------------------------------------------------------------------------
-// The transport plane
-// ---------------------------------------------------------------------------
-function buildPlane() {
-  const g = new THREE.Group();
-  const gray = new THREE.MeshLambertMaterial({ color: 0x77807c, flatShading: true }), dark = new THREE.MeshLambertMaterial({ color: 0x2c3034 }), line = new THREE.MeshLambertMaterial({ color: 0x4e5854 });
-  const add = (geo, m, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
-  const body = new THREE.CylinderGeometry(2.9, 2.9, 26, 14); body.rotateX(Math.PI / 2); add(body, gray);
-  const nose = new THREE.ConeGeometry(2.9, 7, 14); nose.rotateX(-Math.PI / 2); add(nose, gray, 0, 0, -16.5);
-  const tailC = new THREE.CylinderGeometry(0.8, 2.9, 15, 14); tailC.rotateX(-Math.PI / 2); add(tailC, gray, 0, 0.9, 20);
-  add(new THREE.BoxGeometry(46, 0.5, 6), line, 0, 2.2, -2);
-  add(new THREE.BoxGeometry(16, 0.35, 3.6), line, 0, 2, 25);
-  const fin = new THREE.BoxGeometry(0.4, 7, 5); add(fin, line, 0, 5.6, 25);
-  add(new THREE.BoxGeometry(5.6, 1.2, 0.3), dark, 0, 1.2, -18.4);
-  g.props = [];
-  for (const x of [-16, -8, 8, 16]) {
-    const e = new THREE.CylinderGeometry(1.15, 1.15, 5.4, 10); e.rotateX(Math.PI / 2); add(e, dark, x, 1.8, -2.4);
-    const pr = new THREE.Group(); pr.position.set(x, 1.8, -5.3); g.add(pr);
-    for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.4, 0.08), dark); b.rotation.z = i * Math.PI / 1.5; pr.add(b); }
-    g.props.push(pr);
-  }
-  g.traverse((o) => o.layers.set(2));
-  return g;
-}
-
-// ---------------------------------------------------------------------------
 export class BRMatch {
   constructor(game, cfg) {
     this.game = game; this.cfg = cfg;
@@ -204,7 +184,7 @@ export class BRMatch {
     this.gasTick = 0; this.interactCd = 0; this.plateT = 0; this.mapOpen = false; this.botsFighting = 0; this.botDamage = 0.3; this.hunters = 0; this.safeUntil = 0;
     this.vehCam = 0; this.vehFirst = false; this.enterT = 0; this.lastLook = 0;
     this.camFrom = new THREE.Vector3();
-    this.camOff = new THREE.Vector3(); this.camBlend = 0; this.camFovFrom = 70;
+    this.camBlend = 0; this.fallFov = 70;
     this.downs = 0; this.bleedRate = 0; this.reviveK = 0; this.reviveTime = 0; this.crawlT = 0; this.reviveLock = 0;
     this.finisher = null;
     bakeFinishers();
@@ -359,6 +339,7 @@ export class BRMatch {
 
   gasDamage(c, dmg) {
     const g = this.game;
+    if (this.finisher && this.finisher.victimView && (c === g.player || c === this.finisher.atk)) return;
     c.health -= dmg; c.lastDamage = g.time;
     if (c === g.player) { g.audio.play('hurt', { vol: 0.32, rate: 0.85 }); g.hud.dmgFlash = Math.min(0.55, g.hud.dmgFlash + 0.14); }
     if (c.health <= 0 && !(c === g.player && this.playerGoesDown(null, null))) g.kill(c, null, { part: 'chest', weapon: { name: 'GAS', damage: [20, 20] }, zone: true, dir: new THREE.Vector3(0, -0.4, 1).normalize() });
@@ -388,6 +369,7 @@ export class BRMatch {
     if (this.vehicle) this.leaveVehicle(true);
     this.closeChute();
     if (this.finisher) this.endFinisher();
+    this.finishing = null;
     p.downed = false;
     this.hud.setDowned(null);
     this.playerState = 'dead';
@@ -431,22 +413,25 @@ export class BRMatch {
     this.planeT += dt;
     const s = this.planeT * PLANE_SPEED;
     this.plane.position.copy(F.a).addScaledVector(F.dir, s);
-    for (const pr of this.plane.props) pr.rotation.z += dt * 30;
+    this.plane.tick(dt);
     if (this.audioL.plane) {
       const d = this.plane.position.distanceTo(g.engine.camera.position);
       this.audioL.plane.set(this.playerState === 'plane' ? 0.5 : clamp(1 - d / 900, 0, 1) * 0.3, 1);
     }
     // bots leave one by one
-    for (const b of g.bots) if (b.sky === 'plane' && this.planeT >= b.jumpT) b.startFall(this.plane.position);
+    for (const b of g.bots) if (b.sky === 'plane' && this.planeT >= b.jumpT) { b.startFall(this.rampEdge()); b.vel.addScaledVector(F.dir, PLANE_SPEED * 0.85); }
     // out of island: everyone still inside has to go
     if (s > F.len - 40 && this.playerState === 'plane') this.jump();
     if (s > F.len + 900) { g.scene.remove(this.plane); this.planeLife = false; }
   }
 
+  // where you leave it: the far end of the ramp
+  rampEdge() { return this.plane.localToWorld(_rampAt.copy(this.plane.ramp)); }
+
   // ---------------------------------------------------------------- who has the controls
   get controlsPlayer() { const s = this.playerState; return s === 'plane' || s === 'fall' || s === 'chute' || s === 'vehicle' || s === 'downed' || s === 'finisher'; }
   get cameraOverride() { const s = this.playerState; return s === 'plane' || s === 'fall' || s === 'vehicle' || s === 'finisher' || this.enterT > 0 || this.camBlend > 0; }
-  get hideViewmodel() { const s = this.playerState; return s === 'plane' || s === 'vehicle' || s === 'finisher' || this.enterT > 0 || this.camBlend > 0.3; }
+  get hideViewmodel() { const s = this.playerState; return s === 'plane' || s === 'vehicle' || s === 'finisher' || this.enterT > 0 || this.camBlend > CAM_INTO_FALL * 0.5; }
   get hideBody() { const s = this.playerState; return s === 'plane' || s === 'fall' || s === 'chute' || s === 'vehicle' || s === 'downed' || s === 'finisher' || this.enterT > 0; }
 
   updatePlayer(dt, inp) {
@@ -462,10 +447,11 @@ export class BRMatch {
   jump() {
     const g = this.game, p = g.player;
     this.playerState = 'fall';
-    p.pos.copy(this.plane.position); p.pos.y -= 3.5;
-    p.pos.addScaledVector(this.flight.dir, -22);
-    p.vel.copy(this.flight.dir).multiplyScalar(PLANE_SPEED * 0.5); p.vel.y = -6;
-    this.camBlend = CAM_INTO_FALL; this.camOff.copy(g.engine.camera.position).sub(p.pos); this.camOff.y -= 1.6; this.camFovFrom = g.engine.camera.fov;
+    // over the edge of the ramp, at first still as fast as the plane: the air is what slows you down
+    p.pos.copy(this.rampEdge());
+    p.vel.copy(this.flight.dir).multiplyScalar(PLANE_SPEED); p.vel.y = -1;
+    this.camBlend = CAM_INTO_FALL; this.fallFov = g.engine.camera.fov;
+    this.avatar.resetPose(); this.avatar.setVisible(true);
     g.weapons.stow();
     p.onGround = false;
     g.audio.play('dive', { vol: 0.6, rate: 0.8 });
@@ -498,7 +484,8 @@ export class BRMatch {
     const g = this.game, p = g.player, m = this.readMove(inp, p.moveInput);
     p.eyeH = 1.6;
     if (this.camBlend > 0) this.camBlend = Math.max(0, this.camBlend - dt);
-    g.weapons.vm.updateFree(dt, 'fall', g.time, clamp(-p.vel.y / 40, 0.3, 1.6));
+    // (the arms come up into the picture once the camera is nearly there)
+    g.weapons.vm.updateFree(dt, 'fall', g.time, clamp(-p.vel.y / 40, 0.3, 1.6), smoother(clamp(1.9 - (this.camBlend / CAM_INTO_FALL) * 3.8, 0, 1)));
     const agl = p.pos.y - this.groundBelow(p);
     // W dives along the view; looking down makes it fast, S brakes
     const fwd = p.forwardVec(_v), right = p.rightVec(_w);
@@ -513,8 +500,12 @@ export class BRMatch {
     this.clampWorld(p);
     p.speedH = Math.hypot(p.vel.x, p.vel.z);
     this.windGain = clamp(-p.vel.y / 60, 0, 1) * 0.9;
-    if (agl <= FALL_DEPLOY) this.deploy(true);
-    else if (inp.pressed('jump')) { if (agl <= FALL_DEPLOY_MAX) this.deploy(false); else this.hud.hint('Zu hoch: Gleiter öffnet erst unter ' + FALL_DEPLOY_MAX + ' m', 1.6); }
+    // from outside you still see yourself go, until the camera has caught up with you
+    const seen = this.camBlend > 0 && g.engine.camera.position.distanceTo(p.pos) > 6;
+    this.avatar.setVisible(seen);
+    if (seen) this.avatar.update(dt, { yaw: Math.atan2(-p.vel.x, -p.vel.z), pitch: 0, speed: p.speedH, moveAngle: 0, fall: true, floorY: p.pos.y - 200 }, p.pos);
+    if (agl <= FALL_DEPLOY + Math.max(0, -p.vel.y - 40) * 1.4) this.deploy(true);
+    else if (inp.pressed('jump') && this.camBlend <= 0) { if (agl <= FALL_DEPLOY_MAX) this.deploy(false); else this.hud.hint('Zu hoch: Gleiter öffnet erst unter ' + FALL_DEPLOY_MAX + ' m', 1.6); }
     this.hud.setAltitude(agl);
     if (this.audioL.wind) this.audioL.wind.set(this.windGain, 0.9 + clamp(-p.vel.y / 80, 0, 0.5));
   }
@@ -522,15 +513,14 @@ export class BRMatch {
   deploy(auto) {
     const g = this.game, p = g.player, W = g.weapons;
     this.playerState = 'chute';
-    this.camBlend = 0;
+    this.camBlend = 0; this.avatar.setVisible(false);
     if (!W.stowed) W.stow();
-    this.canopy.visible = true; this.canopy.scale.setScalar(0.12); this.canopyT = 0;
+    // close to the ground there is no time to look for the handle
+    this.canopyT = OPEN_PULL - clamp((p.pos.y - this.groundBelow(p)) / 150, 0.08, OPEN_PULL); this.openStep = 0;
+    this.canopy.visible = false; openCanopy(this.canopy, 0);
+    g.fovKick = this.openFov = g.engine.camera.fov - g.engine.hfovToV(g.settings.fov);
+    this.openLook = clamp(0.62 - p.pitch, 0, 1.25);
     p.eyeH = 1.62; p.stance = 'stand'; p.mode = 'normal'; p.onGround = false; p.gliding = true; p.sprinting = false; p.tac = false; p.mount = null;
-    p.landSpring.impulse(-3.2); p.pitchKick.impulse(-1.2);
-    g.shake.add(0.5);
-    p.vel.y *= 0.55;
-    g.audio.play('slide', { vol: 0.7, rate: 0.7 });
-    g.audio.play('dive', { vol: 0.55, rate: 0.6 });
     // only one weapon works under the canopy: the sidearm, once you pull it
     W.lockSlot = 1;
     this.hud.hint('[Q] oder [2] Pistole ziehen   ·   [Strg] Gleiter kappen', 4);
@@ -541,15 +531,26 @@ export class BRMatch {
     const g = this.game, p = g.player, W = g.weapons, m = this.readMove(inp, p.moveInput);
     const fwd = p.forwardVec(_v), right = p.rightVec(_w);
     if (this.camBlend > 0) this.camBlend = Math.max(0, this.camBlend - dt);
-    this.canopyT = Math.min(1, this.canopyT + dt / 0.5);
-    this.canopy.scale.setScalar(0.12 + 0.88 * (1 - (1 - this.canopyT) ** 3));
+    // ---- the opening: the hand goes for the handle, the pack lets go, the lines run out, it fills, and only then does it carry you
+    const T = (this.canopyT += dt), o = smoother(clamp((T - OPEN_PULL) / OPEN_BLOOM, 0, 1));
+    this.canopy.visible = T > OPEN_PULL;
+    openCanopy(this.canopy, (T - OPEN_PULL) / OPEN_BLOOM);
+    if (this.openStep === 0 && T > OPEN_PULL - 0.16) { this.openStep = 1; g.audio.play('pouch', { vol: 0.7 }); }
+    if (this.openStep === 1 && T > OPEN_PULL) { this.openStep = 2; g.audio.play('slide', { vol: 0.7, rate: 0.7 }); }
+    if (this.openStep === 2 && T > OPEN_PULL + OPEN_BLOOM * 0.5) { this.openStep = 3; g.audio.play('dive', { vol: 0.55, rate: 0.6 }); p.landSpring.impulse(-1.5); g.shake.add(0.08); } // it catches the air
+    if (T < OPEN_END) {
+      // a look down at the hand, then the body swings upright under it and the view with it, up at the canopy and back
+      const ease = (x) => smoother(clamp(x, 0, 1));
+      p.pitchKick.target = -0.07 * ease(T / OPEN_PULL) * (1 - ease((T - OPEN_PULL) / 0.3)) + this.openLook * ease((T - OPEN_PULL) / 0.5) * (1 - ease((T - OPEN_PULL - 0.85) / 0.75));
+      g.fovKick = this.openFov * (1 - o);
+    } else p.pitchKick.target = 0;
     // gentle glide: W pulls ahead and sinks a bit faster, S flares, nothing keeps drifting
     const hs = m.y > 0 ? 17 : m.y < 0 ? 4 : 7.5;
     const vs = m.y > 0 ? 10 : m.y < 0 ? 5.2 : 7;
     const tx = fwd.x * hs + right.x * m.x * 9, tz = fwd.z * hs + right.z * m.x * 9;
-    const k = Math.min(1, dt * 1.7);
+    const k = Math.min(1, dt * 1.7 * o);
     p.vel.x += (tx - p.vel.x) * k; p.vel.z += (tz - p.vel.z) * k;
-    p.vel.y += (-vs - p.vel.y) * Math.min(1, dt * 3.2);
+    p.vel.y += (-vs - p.vel.y) * Math.min(1, dt * 3.2 * o);
     const steps = 2;
     let land = false;
     for (let i = 0; i < steps; i++) {
@@ -564,14 +565,15 @@ export class BRMatch {
     p.stepOffset = damp(p.stepOffset, 0, 14, dt);
     this.canopy.position.set(p.pos.x, p.pos.y + 0.1, p.pos.z);
     this.canopy.rotation.y = p.yaw;
-    this.canopy.rotation.z = -m.x * 0.14;
-    this.canopy.rotation.x = -clamp(p.speedH / 40, 0, 0.3);
-    if (this.audioL.wind) this.audioL.wind.set(0.28 + p.speedH * 0.01, 0.75);
+    const wing = this.canopy.userData.pivot;
+    wing.rotation.z = -m.x * 0.14;
+    wing.rotation.x -= clamp(p.speedH / 40, 0, 0.3) * 0.5;
+    if (this.audioL.wind) this.audioL.wind.set(lerp(this.windGain || 0, 0.28 + p.speedH * 0.01, o), lerp(1.1, 0.75, o));
     this.hud.setAltitude(p.pos.y - this.groundBelow(p));
     // the gun works up here like everywhere else, once it is out
     if (W.stowed) {
-      W.vm.updateFree(dt, 'chute', g.time);
-      if (inp.pressed('weapon1') || inp.pressed('weapon2') || inp.pressed('swap') || inp.wheel !== 0) { W.unstow(1); this.hud.hint('[Linke Maustaste] Schießen   ·   [Strg] Gleiter kappen', 3); }
+      if (T < 1.2) W.vm.updateFree(dt, 'deploy', g.time, T); else W.vm.updateFree(dt, 'chute', g.time);
+      if (T >= 1.2 && (inp.pressed('weapon1') || inp.pressed('weapon2') || inp.pressed('swap') || inp.wheel !== 0)) { W.unstow(1); this.hud.hint('[Linke Maustaste] Schießen   ·   [Strg] Gleiter kappen', 3); }
     } else W.update(dt, inp, p);
     if (inp.pressed('crouch') && p.pos.y - this.groundBelow(p) > 30) { this.cutChute(); return; }
     if (land) this.landChute();
@@ -581,7 +583,7 @@ export class BRMatch {
     const g = this.game, p = g.player, W = g.weapons;
     this.closeChute();
     this.playerState = 'fall';
-    this.camBlend = 0;
+    this.camBlend = 0; this.fallFov = g.engine.camera.fov; p.pitchKick.target = 0;
     W.lockSlot = -1;
     p.gliding = false;
     if (!W.stowed) W.stow();
@@ -592,13 +594,13 @@ export class BRMatch {
   closeChute() {
     if (this.canopy) this.canopy.visible = false;
     if (this.audioL.wind) this.audioL.wind.set(0, 1);
-    this.game.player.gliding = false;
+    this.game.player.gliding = false; this.game.player.pitchKick.target = 0;
   }
 
   landChute() {
     const g = this.game, p = g.player, W = g.weapons;
     this.closeChute();
-    this.camBlend = 0; this.avatar.setVisible(false);
+    this.camBlend = 0; this.avatar.setVisible(false); p.pitchKick.target = 0;
     this.playerState = 'ground';
     W.lockSlot = -1;
     // back on your feet: whatever you carried comes back into the hands
@@ -682,7 +684,7 @@ export class BRMatch {
     }
     const old = W.pickup(it);
     if (old) {
-      const d = this.loot.drop({ kind: 'weapon', weaponId: old.def.id, optic: old.optic, rarity: old.def.rarity || 0, mag: old.mag, reserve: old.reserve }, p.pos.x, p.pos.y, p.pos.z);
+      const d = this.loot.drop({ kind: 'weapon', weaponId: old.def.id, optic: old.optic, rarity: old.def.rarity || 0, mag: old.mag, reserve: old.reserve }, p.pos.x, p.pos.y, p.pos.z, p.yaw);
       d.claimed = p;
     }
     g.audio.play('chargeBack', { vol: 0.5 }); g.audio.play('magTouch', { vol: 0.4 });
@@ -706,7 +708,7 @@ export class BRMatch {
     p.vel.x *= 0.3; p.vel.z *= 0.3;
     W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.firingRecently = false; W.lunge = null;
     this.plateT = 0; this.hud.setProgress(0);
-    // whoever was shooting often thinks it is done: that is your chance to crawl away
+    // whoever was shooting often thinks it is done: that is your chance to crawl away, unless one of them comes over to finish it
     for (const b of g.bots) if (b.target === p && Math.random() < 0.6) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } b.peaceUntil = 0; }
     g.audio.play('hurt', { vol: 0.9, rate: 0.7 });
     g.shake.add(0.5);
@@ -813,14 +815,14 @@ export class BRMatch {
     return true;
   }
 
-  // the next one from a shuffled deck that has room to play here
+  // the next one from a shuffled deck that has room to play here (yaw: which way round, or what asks for itself whether a scene fits)
   pickFinisher(pos, y, yaw, low = false) {
-    const name = low ? 'proneDeck' : 'finDeck';
+    const name = low ? 'proneDeck' : 'finDeck', fits = typeof yaw === 'function' ? yaw : (F) => this.sceneFits(F, pos, y, yaw);
     if (!this[name] || !this[name].length) this[name] = FINISHERS.filter((f) => !!f.prone === low).sort(() => Math.random() - 0.5);
     const deck = this[name];
-    for (let i = 0; i < deck.length; i++) if (this.sceneFits(deck[i], pos, y, yaw)) return deck.splice(i, 1)[0];
+    for (let i = 0; i < deck.length; i++) if (fits(deck[i])) return deck.splice(i, 1)[0];
     // nothing left in the deck fits here, maybe one that has been played already
-    return FINISHERS.find((f) => !!f.prone === low && this.sceneFits(f, pos, y, yaw)) || null;
+    return FINISHERS.find((f) => !!f.prone === low && fits(f)) || null;
   }
 
   // Room for the bodies on ground that is more or less one plane, and somewhere for the camera to stand.
@@ -887,10 +889,11 @@ export class BRMatch {
     p.landSpring.update(dt); p.rollSpring.update(dt); p.pitchKick.update(dt);
     g.slowmo = st.speed();
     // someone else got him first: the scene ends here, he is just a body
-    if (!b.alive && !S.killed) { S.killed = true; st.interrupt(); }
+    if (!S.victimView && !b.alive && !S.killed) { S.killed = true; st.interrupt(); }
     st.pose(dt);
-    if (!S.killed) { b.soldier.updateWeaponDrop(dt); b.soldier.pelvis.getWorldPosition(_w); b.pos.x = _w.x; b.pos.z = _w.z; b.pos.y = st.o.y; }
-    S.av.pelvis.getWorldPosition(_w); p.pos.x = _w.x; p.pos.z = _w.z; p.pos.y = st.o.y; p.eyeH = 1.62;
+    if (S.victimView) { b.soldier.updateWeaponDrop(dt); S.av.pelvis.getWorldPosition(_w); S.atk.pos.x = _w.x; S.atk.pos.z = _w.z; S.atk.pos.y = st.o.y; }
+    else if (!S.killed) { b.soldier.updateWeaponDrop(dt); b.soldier.pelvis.getWorldPosition(_w); b.pos.x = _w.x; b.pos.z = _w.z; b.pos.y = st.o.y; }
+    (S.victimView ? b.soldier : S.av).pelvis.getWorldPosition(_w); p.pos.x = _w.x; p.pos.z = _w.z; p.pos.y = st.o.y; p.eyeH = 1.62;
     g.engine.film = Math.min(0.4, Math.exp(-dt / 0.012));
     // ---- what happens when
     while (S.fired < F.events.length && st.t >= F.events[S.fired][0]) this.finisherEvent(F.events[S.fired++], S);
@@ -932,6 +935,12 @@ export class BRMatch {
       g.fx.dust.spawn(_v.x, _v.y + 0.1, _v.z, _w.x * rand(1.4, 2.2), rand(1.6, 2.6), _w.z * rand(1.4, 2.2), 0.7, 0.024, 0.82, 0.62, 0.24, 1, 9.8, 0.2, 0);
       g.audio.play('imp_flesh', { vol: 1 });
       if (power >= 2) g.audio.play('sting', { vol: 0.9 });
+    } else if (name === 'kill' && S.victimView) {
+      // that was you: it only counts once the scene is over
+      if (S.killed) return;
+      S.killed = true;
+      b.soldier.head.getWorldPosition(_v);
+      S.killInfo = { part: E[4], dir: _w.set(E[2][0], E[2][1], E[2][2]).applyAxisAngle(UP3, st.yaw).normalize().clone(), strength: E[3], weapon: { name: 'FINISHER', damage: [50, 50] }, point: _v.clone(), staged: true };
     } else if (name === 'kill' && !S.killed && b.alive) {
       // the body keeps playing to the end of the scene: it only stops being anybody
       S.killed = true; b.scripted = false; b.holdDrop = true;
@@ -955,9 +964,9 @@ export class BRMatch {
       this.hud.cineFlash();
       st.bump = 1;
       // whoever stands too close gets it as well, the one walking away doesn't
-      for (const c of g.bots) if (c !== b && c.alive && !c.out && !c.sky) {
+      for (const c of g.bots) if (c !== b && c !== S.atk && c.alive && !c.out && !c.sky) {
         const d = c.pos.distanceTo(at);
-        if (d < 7) g.applyDamage(c, 200 * (1 - d / 7), p, { part: 'chest', dir: _w.subVectors(c.pos, at).setY(0.5).normalize().clone(), weapon: { name: 'FINISHER', damage: [50, 50] }, point: c.pos.clone() });
+        if (d < 7) g.applyDamage(c, 200 * (1 - d / 7), S.atk || p, { part: 'chest', dir: _w.subVectors(c.pos, at).setY(0.5).normalize().clone(), weapon: { name: 'FINISHER', damage: [50, 50] }, point: c.pos.clone() });
       }
     } else if (name === 'spurt') S.spurt = E[2];
   }
@@ -966,6 +975,7 @@ export class BRMatch {
     const g = this.game, p = g.player, W = g.weapons, S = this.finisher;
     if (!S) return;
     this.finisher = null;
+    if (S.victimView) { this.endBotFinisher(S); return; }
     g.slowmo = 0;
     this.hud.setCine(false);
     this.loot.root.visible = true;
@@ -988,6 +998,83 @@ export class BRMatch {
       if (this.alive === 1) this.checkEnd();
     }
     p.mode = 'normal'; p.onGround = true;
+  }
+
+  // A bot has you. The same scenes you play on them, from the outside, with you as the one it happens to.
+  // reach: how far off it may start. weakOnly: on your feet only if you can't take much more anyway.
+  botFinisher(bot, reach = 2.4, weakOnly = false) {
+    const g = this.game, p = g.player, W = g.weapons, s = this.playerState;
+    if ((s !== 'downed' && s !== 'ground') || this.finisher || !p.alive || !bot.alive || bot.out || bot.scripted || !bot.soldier || p.mantle) return false;
+    const low = s === 'downed' || p.stance === 'prone', dx = p.pos.x - bot.pos.x, dz = p.pos.z - bot.pos.z, d = Math.hypot(dx, dz);
+    if (d > reach || d < 0.01 || Math.abs(p.pos.y - bot.pos.y) > 0.9) return false;
+    const behind = (dx * -Math.sin(p.yaw) + dz * -Math.cos(p.yaw)) / d >= 0.4;
+    if (weakOnly && s === 'ground' && p.health + (p.armor || 0) > (behind ? TAKEN_HP : TAKEN_FRONT_HP)) return false;
+    const col = g.col, floor = col.floorBelow(p.pos.x, p.pos.z, 0.2, p.pos.y + 0.6, p.pos.y - 0.6);
+    if (!isFinite(floor)) return false;
+    // You never saw how you stood yourself: the scene turns until he starts from where he is.
+    // No room that way, then any other way round, and if there is none right here it moves over a little.
+    let yaw = 0, F = null;
+    const origin = new THREE.Vector3(), fits = (S) => {
+      const y0 = startYaw(S, bot.pos.x - origin.x, bot.pos.z - origin.z);
+      for (const q of ANY_WAY) if (this.sceneFits(S, origin, origin.y, y0 + q)) { yaw = y0 + q; return true; }
+      return false;
+    };
+    for (let i = 0; i < NEARBY.length && !F; i++) {
+      const x = p.pos.x + NEARBY[i][0], z = p.pos.z + NEARBY[i][1], f = i ? col.floorBelow(x, z, 0.2, floor + 0.5, floor - 0.5) : floor;
+      if (!isFinite(f) || (i && !col.lineClear(p.pos.x, floor + 0.6, p.pos.z, x, f + 0.6, z))) continue;
+      origin.set(x, f, z);
+      F = this.pickFinisher(origin, f, fits, low);
+    }
+    if (!F) return false;
+    W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null; W.firingRecently = false;
+    p.sprinting = false; p.tac = false; p.mount = null; p.vel.set(0, 0, 0); p.health = Math.max(p.health, 1);
+    this.plateT = 0; this.hud.setProgress(0); this.hud.setDowned(null);
+    bot.scripted = true; bot.vel.set(0, 0, 0); bot.path = null; bot.mantling = null; bot.crouching = false; bot.sliding = 0; bot.prone = false; bot.state = 'roam'; bot.target = null;
+    for (const b of g.bots) if (b.target === p) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } }
+    // you as you are right now: the scene takes over from there
+    const O = bot.soldier.outfit, av = O === OUTFITS.vanguard || O === OUTFITS.desert ? this.avatarDark : this.avatar;
+    av.resetPose(); av.setVisible(true); av.setWeapon(W.w.def, W.w.optic);
+    for (let i = 0; i < 8; i++) av.update(0.05, { yaw: p.yaw, pitch: 0, speed: 0, moveAngle: 0, downed: s === 'downed', prone: low && s !== 'downed', crouch: p.stance === 'crouch', floorY: p.pos.y }, p.pos);
+    if (F.gun && F.gun !== 'own') bot.soldier.setWeapon(WEAPONS[F.gun], 'iron');
+    const stage = new Stage(g, F, bot.soldier, av, origin, yaw, this.finTilt);
+    stage.staysOut = true;
+    if (F.prop) {
+      this.props = this.props || {};
+      const P = this.props[F.prop] || (this.props[F.prop] = makeProp(F.prop));
+      if (P.parent !== g.scene) g.scene.add(P);
+      P.visible = false; P.quaternion.identity(); stage.prop = P;
+    }
+    stage.startFrom(bot.pos);
+    stage.pose(0);
+    const cam = g.engine.camera;
+    this.finisher = { F, b: { soldier: av, alive: true }, av: bot.soldier, atk: bot, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false, victimView: true };
+    this.finishing = null;
+    this.playerState = 'finisher';
+    this.hud.setFocus(null, W); this.hud.setVehiclePrompt(null); this.hud.setPromptText('');
+    this.hud.setCine(true, F.name);
+    this.loot.root.visible = false;
+    g.audio.play('pouch', { vol: 0.7 });
+    return true;
+  }
+
+  // over: whoever did it goes on from where the scene leaves him, and you stay where it left you
+  endBotFinisher(S) {
+    const g = this.game, p = g.player, st = S.stage, bot = S.atk;
+    g.slowmo = 0; g.engine.film = 0;
+    this.hud.setCine(false);
+    this.loot.root.visible = true;
+    if (st.prop) { if (st.prop.parent) st.prop.parent.remove(st.prop); st.prop.visible = false; }
+    st.endGround(bot.pos);
+    const f = g.col.floorBelow(bot.pos.x, bot.pos.z, 0.2, st.o.y + 0.5, st.o.y - 1);
+    if (isFinite(f)) bot.pos.y = f;
+    bot.aimYaw = st.endYaw(); bot.scripted = false; bot.onGround = true; bot.path = null; bot.lastProgress.copy(bot.pos); bot.stuckT = 0; bot.peaceUntil = g.time + rand(2, 5);
+    bot.soldier.resetPose(); bot.soldier.setVisible(true); bot.soldier.setWeapon(bot.wdef, bot.optic === 'iron' ? bot.wdef.optics[0] : bot.optic);
+    this.playerState = 'ground';
+    p.mode = 'normal'; p.onGround = true;
+    // the death camera takes it from the side the scene's camera stands on
+    const cam = g.engine.camera.position;
+    p.yaw = Math.atan2(cam.x - p.pos.x, cam.z - p.pos.z);
+    g.kill(p, bot, S.killInfo || { part: 'chest', dir: new THREE.Vector3(0, -0.4, 1).normalize(), weapon: { name: 'FINISHER', damage: [50, 50] }, staged: true });
   }
 
   finisherCamera(cam) {
@@ -1114,21 +1201,33 @@ export class BRMatch {
   }
 
   // ---------------------------------------------------------------- cameras
+  // looking at the plane from behind, turning around it with the mouse
+  planeCamera(at, q, dir) {
+    const c = this.plane.position, d = 42;
+    at.set(c.x - dir.x * d, c.y - dir.y * d + 6, c.z - dir.z * d);
+    q.setFromRotationMatrix(_qm.lookAt(at, _qc.set(c.x + dir.x * 30, c.y + dir.y * 30, c.z + dir.z * 30), UP3));
+  }
+
   applyCamera(cam, dt) {
     const g = this.game, p = g.player, s = this.playerState;
     const dir = _v.set(-Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch));
     if (s === 'plane') {
-      // looking at the plane from behind, turning around it with the mouse
-      const c = this.plane.position, d = 54;
-      cam.position.set(c.x - dir.x * d, c.y - dir.y * d + 7, c.z - dir.z * d);
-      cam.lookAt(c.x + dir.x * 30, c.y + dir.y * 30, c.z + dir.z * 30);
+      this.planeCamera(cam.position, cam.quaternion, dir);
       cam.fov = 70; cam.updateProjectionMatrix();
     } else if (s === 'fall') {
       // in your own head, the wind shakes the view the faster you fall
-      const sp = -p.vel.y, e = this.camBlend / CAM_INTO_FALL, k = e * e * (3 - 2 * e), q = clamp(sp / 60, 0, 1);
-      cam.position.set(p.pos.x, p.pos.y + 1.6, p.pos.z).addScaledVector(this.camOff, k);
-      cam.rotation.set(p.pitch + Math.sin(g.time * 31) * 0.0024 * q, p.yaw + Math.sin(g.time * 27) * 0.0024 * q, Math.sin(g.time * 22) * 0.004 * q, 'YXZ');
-      cam.fov = lerp(76 + q * 14, this.camFovFrom, k); cam.updateProjectionMatrix();
+      const e = this.camBlend / CAM_INTO_FALL, k = e * e * e * (e * (e * 6 - 15) + 10), q = clamp(-p.vel.y / 60, 0, 1), w = q * (1 - k);
+      cam.position.set(p.pos.x, p.pos.y + 1.6, p.pos.z);
+      cam.rotation.set(p.pitch + Math.sin(g.time * 31) * 0.0024 * w, p.yaw + Math.sin(g.time * 27) * 0.0024 * w, Math.sin(g.time * 22) * 0.004 * w, 'YXZ');
+      this.fallFov = damp(this.fallFov, 76 + q * 14, 3, dt);
+      cam.fov = this.fallFov;
+      // on the way out: the view behind the plane flies on, the one in your head falls, and the camera goes over from one to the other. Nothing ever jumps.
+      if (k > 0) {
+        this.planeCamera(_camAt, _camQ, dir);
+        cam.position.lerp(_camAt, k); cam.quaternion.slerp(_camQ, k);
+        cam.fov = lerp(this.fallFov, 70, k);
+      }
+      cam.updateProjectionMatrix();
     } else if (s === 'finisher' && this.finisher) {
       this.finisherCamera(cam);
     } else if (s === 'vehicle' && this.vehicle) {
@@ -1158,5 +1257,6 @@ export class BRMatch {
   }
 }
 
+const _rampAt = new THREE.Vector3(), _camAt = new THREE.Vector3(), _camQ = new THREE.Quaternion();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _qc = new THREE.Vector3(), _qm = new THREE.Matrix4(), _qt = new THREE.Quaternion(), _qr = new THREE.Quaternion(), _eu = new THREE.Euler(), UP3 = new THREE.Vector3(0, 1, 0);
 export { VEHICLE_TYPES, OPTICS, makeWeaponDef, DEG };

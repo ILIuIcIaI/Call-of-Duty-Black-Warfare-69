@@ -24,6 +24,9 @@ const roll = (w) => { let r = Math.random() * w.reduce((a, b) => a + b, 0); for 
 const FLOOR_ODDS = [40, 30, 18, 9, 3], CHEST_ODDS = [14, 28, 30, 20, 8];
 const CHESTS = 170, ITEMS = 280; // on the whole island
 const SEEN = 14; // from how far what you look at tells you what it is
+// how something thrown away flies, against everything solid, and how far from any wall it comes to rest
+const TOSS_G = 15, TOSS_R = 0.14, TOSS_BOUNCE = 0.35, TOSS_RUB = 0.6, TOSS_FRAMES = 240, REST_R = 0.42, REST_RISE = 0.3;
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _hit = {};
 
 // a weapon with its rarity worked into the numbers
 export function makeWeaponDef(id, rarity = 0) {
@@ -220,12 +223,85 @@ export class Loot {
     void who;
   }
 
-  // what a dead bot leaves behind
-  drop(data, x, y, z) {
-    const a = Math.random() * 6.28, r = 0.6 + Math.random() * 1.2;
-    const tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
-    const fy = this.game.col.floorBelow(tx, tz, 0.1, y + 1, y - 40);
-    return this.addItem(data, tx, isFinite(fy) ? fy : y, tz);
+  // What a dead bot leaves behind, and what you throw away when you take something else (yaw: the way you look).
+  // It flies, bounces off whatever is in the way and comes to rest where it can be picked up.
+  drop(data, x, y, z, yaw) {
+    const s = this.tossFrom(x, y, z, yaw), A = this.flight(s[0], s[1], s[2], s[3], s[4], s[5]), it = this.addItem(data, A.x, A.y, A.z);
+    it.arc = A;
+    return it;
+  }
+
+  // from hand height (or what a low ceiling leaves of it), the way you look or just anywhere when it falls out of a body
+  tossFrom(x, y, z, yaw) {
+    const up = this.game.col.raycast(x, y + 0.2, z, 0, 1, 0, 0.8, _hit), sy = up ? y + 0.2 + Math.max(0, up.t - 0.2) : y + 1;
+    const mine = yaw !== undefined, a = mine ? yaw + (Math.random() - 0.5) * 0.5 : Math.random() * 6.28, sp = mine ? 2.2 + Math.random() * 0.6 : 0.8 + Math.random() * 1.8;
+    return [x, sy, z, -Math.sin(a) * sp, (mine ? 1.6 : 2.2) + Math.random() * 0.7, -Math.cos(a) * sp];
+  }
+
+  // Where something thrown ends up: off whatever is in the way, frame by frame, down to where it can be reached.
+  // All of it worked out at once, so it is known right away where it will lie. The model just flies along (flyItem).
+  flight(x, y, z, vx, vy, vz) {
+    const col = this.game.col, p = _p.set(x, y, z), path = [], hits = [], dt = 1 / 60;
+    col.pushOutSphere(p, TOSS_R);
+    path.push(p.x, p.y, p.z);
+    for (let i = 1; i < TOSS_FRAMES; i++) {
+      vy -= TOSS_G * dt;
+      // (a ray first: nothing is thin enough to fall through at any speed)
+      const sp = Math.hypot(vx, vy, vz), ray = sp > 1e-3 ? col.raycast(p.x, p.y, p.z, vx / sp, vy / sp, vz / sp, sp * dt, _hit) : null;
+      if (ray) p.set(ray.x + ray.nx * 0.01, ray.y + ray.ny * 0.01, ray.z + ray.nz * 0.01);
+      else p.set(p.x + vx * dt, p.y + vy * dt, p.z + vz * dt);
+      _q.copy(p);
+      col.pushOutSphere(p, TOSS_R);
+      let nx = p.x - _q.x, ny = p.y - _q.y, nz = p.z - _q.z;
+      const d = Math.hypot(nx, ny, nz);
+      if (ray) { nx = ray.nx; ny = ray.ny; nz = ray.nz; } else if (d > 1e-5) { nx /= d; ny /= d; nz /= d; }
+      path.push(p.x, p.y, p.z);
+      if (!ray && d <= 1e-5) continue;
+      // what goes into the surface comes back with a third of it, what runs along it rubs off
+      const vn = vx * nx + vy * ny + vz * nz;
+      if (vn < 0) {
+        vx = (vx - vn * nx) * TOSS_RUB - vn * TOSS_BOUNCE * nx;
+        vy = (vy - vn * ny) * TOSS_RUB - vn * TOSS_BOUNCE * ny;
+        vz = (vz - vn * nz) * TOSS_RUB - vn * TOSS_BOUNCE * nz;
+        if (vn < -1.1) hits.push(i, -vn);
+      }
+      if (ny > 0.5 && Math.hypot(vx, vy, vz) < 0.9) break;
+    }
+    // where it floats from now on: on something, with room to turn around itself
+    const fy = col.floorBelow(p.x, p.z, 0.1, p.y + 0.02, p.y - 40), floor = isFinite(fy) ? fy : p.y - TOSS_R;
+    _q.copy(p);
+    for (let i = 0; i < 3; i++) if (!col.pushOutCircle(_q, REST_R, floor + 0.2, floor + 1)) break;
+    let gy = col.floorBelow(_q.x, _q.z, 0.1, floor + 0.3, floor - 3);
+    // (pushed over an edge or through something: then it stays where it came down)
+    if (!isFinite(gy) || gy < floor - 0.4 || !col.lineClear(p.x, floor + 0.5, p.z, _q.x, floor + 0.5, _q.z)) { _q.copy(p); gy = floor; }
+    return { t: 0, path, hits, hit: 0, x: _q.x, y: gy, z: _q.z };
+  }
+
+  // on the way: it tumbles, is heard where it hits, and floats up to its place at the end
+  flyItem(it, dt) {
+    const A = it.arc, P = A.path, s = (A.t += dt) * 60, last = P.length / 3 - 1, end = last + REST_RISE * 60;
+    while (A.hit < A.hits.length && A.hits[A.hit] <= s) {
+      const i = A.hits[A.hit] * 3, v = A.hits[A.hit + 1]; A.hit += 2;
+      this.game.audio.play('magDrop', { pos: new THREE.Vector3(P[i], P[i + 1], P[i + 2]), vol: Math.min(0.9, 0.25 + v * 0.12), rate: 0.75 + Math.random() * 0.2, maxDist: 35 });
+    }
+    const U = it.obj && it.obj.userData;
+    if (s >= end) {
+      it.arc = null;
+      if (it.obj) { it.obj.position.set(it.x, it.y + 0.45, it.z); U.spin.rotation.x = U.spin.rotation.z = 0; }
+      return;
+    }
+    if (!it.obj) return;
+    if (s < last) {
+      const i = Math.floor(s), f = s - i, a = i * 3;
+      it.obj.position.set(P[a] + (P[a + 3] - P[a]) * f, P[a + 1] + (P[a + 4] - P[a + 1]) * f, P[a + 2] + (P[a + 5] - P[a + 2]) * f);
+    } else {
+      const k = (s - last) / (end - last), e = k * k * (3 - 2 * k), a = last * 3;
+      it.obj.position.set(P[a] + (it.x - P[a]) * e, P[a + 1] + (it.y + 0.45 - P[a + 1]) * e, P[a + 2] + (it.z - P[a + 2]) * e);
+    }
+    const left = 1 - s / end;
+    it.spin += dt * 7 * left;
+    U.spin.rotation.x = Math.sin(A.t * 9 + it.spin) * 0.8 * left;
+    U.spin.rotation.z = Math.cos(A.t * 11) * 0.7 * left;
   }
 
   proto(it) {
@@ -344,7 +420,8 @@ export class Loot {
     }
     for (const it of this.items) {
       if (it.taken) continue;
-      if (it.arc) {
+      if (it.arc && it.arc.path) this.flyItem(it, dt);
+      else if (it.arc) {
         it.arc.t += dt;
         const k = Math.max(0, Math.min(1, it.arc.t / it.arc.dur));
         if (it.obj) it.obj.position.set(it.arc.sx + (it.x - it.arc.sx) * k, it.arc.sy + (it.y + 0.45 - it.arc.sy) * k + Math.sin(k * Math.PI) * 0.9, it.arc.sz + (it.z - it.arc.sz) * k);
@@ -355,7 +432,7 @@ export class Loot {
       it.spin += dt * 0.9;
       it.obj.userData.spin.rotation.y = it.spin;
       const b = it.obj.userData.beam;
-      if (b) b.rotation.y = Math.atan2(cx - it.x, cz - it.z);
+      if (b) { b.rotation.y = Math.atan2(cx - it.x, cz - it.z); b.visible = !(it.arc && it.arc.path); }
     }
     // hide what's finished for good
     if (scan) this.items = this.items.filter((i) => !i.taken);

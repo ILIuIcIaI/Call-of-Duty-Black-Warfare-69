@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Bot, DIFFICULTY } from './bot.js';
 import { WEAPONS } from '../weapons/defs.js';
 import { makeWeaponDef, MAX_PLATES, PLATE_ARMOR, MAX_ARMOR, RARITY } from '../game/loot.js';
-import { rand, angleDiff } from '../core/math.js';
+import { rand, angleDiff, clamp } from '../core/math.js';
 import { moveCharacter } from '../player/physics.js';
 
 // =============================================================================
@@ -18,34 +18,63 @@ const DOWN_CHANCE = [1, 0.6, 0.3], DOWN_HP = 100, REVIVE = 6.5, SEEN = 110;
 const REACH = { pistol: 28, revolver: 32, handcannon: 32, mpistol: 26, smg: 34, pdw: 30, shotgun: 22, autoshot: 24, ar: 52, burst: 52, lmg: 52, dmr: 62, sniper: 72, amr: 72 };
 
 const _c = new THREE.Vector3();
-let canopyGeo = null, canopyMat = null;
+let canopyGeo = null, canopyMat = null, lineGeo = null;
+export const OPEN_PULL = 0.32, OPEN_BLOOM = 0.85; // the hand goes for the handle, then how long a canopy takes from the pack to full
+const SHOULDER = 1.5, CELLS = 9, SPAN = 7.2, CHORD = 2.7;
+
+// A ram-air wing: cells side by side, arched, open at the front. Everything hangs from the shoulders.
+function canopyShape() {
+  const pos = [], col = [], S = [0, 0.08, 0.2, 0.4, 0.65, 1];
+  const ribX = (i) => -SPAN / 2 + (i * SPAN) / CELLS, ribY = (x) => 5.5 - SHOULDER - 1.05 * (x / (SPAN / 2)) ** 2;
+  const top = (s, y) => y + 0.16 * (1 - s) + 0.28 * Math.sin(Math.PI * s ** 0.6), under = (s, y) => y - 0.02 * (1 - s), Z = (s) => -CHORD / 2 + s * CHORD;
+  const quad = (a, b, c, d, k) => { for (const p of [a, b, c, a, c, d]) { pos.push(p[0], p[1], p[2]); col.push(k[0], k[1], k[2]); } };
+  const ORANGE = [0.86, 0.34, 0.18], CREAM = [0.92, 0.88, 0.8], SHADE = [0.24, 0.1, 0.07];
+  for (let c = 0; c < CELLS; c++) {
+    const x0 = ribX(c), x1 = ribX(c + 1), y0 = ribY(x0), y1 = ribY(x1), k = c % 2 ? CREAM : ORANGE, u = [k[0] * 0.72, k[1] * 0.72, k[2] * 0.72];
+    for (let i = 0; i < S.length - 1; i++) {
+      const a = S[i], b = S[i + 1];
+      quad([x0, top(a, y0), Z(a)], [x1, top(a, y1), Z(a)], [x1, top(b, y1), Z(b)], [x0, top(b, y0), Z(b)], k);
+      quad([x0, under(a, y0), Z(a)], [x1, under(a, y1), Z(a)], [x1, under(b, y1), Z(b)], [x0, under(b, y0), Z(b)], u);
+    }
+    quad([x0, top(0, y0), Z(0)], [x1, top(0, y1), Z(0)], [x1, under(0, y1), Z(0)], [x0, under(0, y0), Z(0)], SHADE); // the mouth
+  }
+  for (const i of [0, CELLS]) { // the closed ends
+    const x = ribX(i), y = ribY(x);
+    for (let n = 0; n < S.length - 1; n++) quad([x, top(S[n], y), Z(S[n])], [x, top(S[n + 1], y), Z(S[n + 1])], [x, under(S[n + 1], y), Z(S[n + 1])], [x, under(S[n], y), Z(S[n])], CREAM);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  // the lines fan out from each shoulder over the underside
+  const pts = [];
+  for (const i of [0, 2, 3, 4, 5, 6, 7, 9]) for (const s of [0.12, 0.5, 0.9]) {
+    const x = ribX(i + (i < 5 ? 0 : 0));
+    pts.push(new THREE.Vector3(Math.sign(x || 1) * 0.26, 0, 0.12), new THREE.Vector3(x, under(s, ribY(x)), Z(s)));
+  }
+  lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  return g;
+}
 
 export function makeCanopy() {
   if (!canopyGeo) {
-    // arched, segmented canopy: wide in x, shallow, with lines running down to the shoulders
-    const g = new THREE.SphereGeometry(1, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
-    g.scale(3.6, 1.5, 2.1);
-    const n = g.attributes.position.count, c = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const a = Math.atan2(g.attributes.position.getZ(i), g.attributes.position.getX(i));
-      const stripe = Math.floor(((a + Math.PI) / (Math.PI * 2)) * 8) % 2;
-      const col = stripe ? [0.86, 0.34, 0.18] : [0.92, 0.88, 0.8];
-      c[i * 3] = col[0]; c[i * 3 + 1] = col[1]; c[i * 3 + 2] = col[2];
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-    canopyGeo = g;
-    canopyMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: true });
+    canopyGeo = canopyShape();
+    canopyMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: true, emissive: 0x2c2825 });
   }
-  const root = new THREE.Group();
-  const dome = new THREE.Mesh(canopyGeo, canopyMat); dome.position.y = 5.2; root.add(dome);
-  const lineMat = new THREE.LineBasicMaterial({ color: 0x2a2a2a });
-  const pts = [];
-  for (const [x, z] of [[-3.2, -1.1], [-1.6, -1.8], [1.6, -1.8], [3.2, -1.1], [-3.2, 1.1], [-1.6, 1.8], [1.6, 1.8], [3.2, 1.1]]) {
-    pts.push(new THREE.Vector3(Math.sign(x) * 0.26, 1.5, 0.12), new THREE.Vector3(x, 5.5, z)); // from the shoulders, just behind the eyes
-  }
-  root.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
+  const root = new THREE.Group(), pivot = new THREE.Group();
+  pivot.position.y = SHOULDER; root.add(pivot);
+  pivot.add(new THREE.Mesh(canopyGeo, canopyMat));
+  pivot.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: 0x2a2a2a })));
+  root.userData.pivot = pivot;
   root.traverse((o) => o.layers.set(2));
   return root;
+}
+
+// u 0..1: the lines run out first with the bundle tight on their end, up from behind the back, then it fills from the middle out and overshoots a little
+export function openCanopy(root, u) {
+  const P = root.userData.pivot, k = clamp(u, 0, 1), run = 1 - (1 - Math.min(1, k / 0.4)) ** 3, f = clamp((k - 0.28) / 0.72, 0, 1), fill = 1 + 2.4 * (f - 1) ** 3 + 1.4 * (f - 1) ** 2;
+  P.scale.set(0.045 + 0.955 * fill, 0.1 + 0.9 * run, 0.16 + 0.84 * fill);
+  P.rotation.x = (1 - run) * 0.8 - 0.28; // (it flies a little ahead of whoever hangs under it)
 }
 
 export class BRBot extends Bot {
@@ -128,7 +157,7 @@ export class BRBot extends Bot {
       hs = 34; vs = 42;
       if (agl < 90) {
         this.sky = 'chute';
-        this.canopy = makeCanopy(); this.canopy.scale.setScalar(0.5); g.scene.add(this.canopy);
+        this.canopy = makeCanopy(); this.canopyT = 0; openCanopy(this.canopy, 0); g.scene.add(this.canopy);
       }
     } else { hs = 14; vs = 7.5; }
     const k = d > 0.5 ? Math.min(hs, d / Math.max(dt, 0.01)) / d : 0;
@@ -138,8 +167,7 @@ export class BRBot extends Bot {
     this.pos.addScaledVector(this.vel, dt);
     if (d > 2) this.aimYaw = Math.atan2(-this.vel.x, -this.vel.z);
     if (this.canopy) {
-      const s = Math.min(1, this.canopy.scale.x + dt * 2);
-      this.canopy.scale.setScalar(s);
+      this.canopyT += dt; openCanopy(this.canopy, this.canopyT / OPEN_BLOOM);
       this.canopy.position.copy(this.pos); this.canopy.rotation.y = this.aimYaw;
     }
     if ((agl <= 0.05 || this.pos.y <= gy) && g.nav.nearest(this.pos.x, gy, this.pos.z, 1.2) < 0 && gy > g.mapDef.terrain.heightAt(this.pos.x, this.pos.z) + 0.5) {
@@ -188,8 +216,9 @@ export class BRBot extends Bot {
   ignoresPlayer(p, dist) {
     const g = this.game, br = g.match, st = br.playerState;
     if (st === 'plane' || st === 'fall') return true;
-    // someone crawling: only worth it when it is close by
-    if (st === 'downed') return dist > 15 || Math.random() > 0.3;
+    if (br.finisher && br.finisher.victimView) return true; // (somebody is already seeing to that)
+    // someone crawling: only worth it when it is close by, and not when someone else is already on the way
+    if (st === 'downed') return (br.finishing && br.finishing !== this) || dist > 15 || Math.random() > 0.3;
     if (p === this.target || (p === this.lastAttacker && g.time - this.lastDamage < 6)) return false;
     if (st === 'chute') return dist > 18 || Math.random() > 0.05;
     if (g.time < br.safeUntil) return dist > 6;
@@ -204,6 +233,7 @@ export class BRBot extends Bot {
     this.perceive();
     const inGas = z.outside(this.pos, 0);
     const pressed = z.urgent(this.pos);
+    if (this.goFinish(inGas)) return;
     // running from the gas goes first; out of the player's sight no duel goes on forever
     if (this.target && this.target.isBot && this.targetVisible) {
       if (this.target !== this.duelWith) { this.duelWith = this.target; this.duelT = t; }
@@ -245,6 +275,28 @@ export class BRBot extends Bot {
     if (this.state === 'chase' && this.path && this.wp >= this.path.length) { this.target = null; this.state = 'roam'; this.path = null; this.aimYaw += rand(-1.5, 1.5); }
     if (this.state === 'roam') this.roamBrain(inGas, pressed);
   }
+
+  // Someone lying there within reach: no more shooting, over there and end it by hand. One at a time.
+  goFinish(inGas) {
+    const g = this.game, t = g.time, br = g.match, P = g.player, mine = br.finishing === this;
+    const quit = () => { if (mine) br.finishing = null; if (this.state === 'finish') { this.state = 'roam'; this.path = null; } return false; };
+    if (inGas || br.playerState !== 'downed' || !P.alive) return quit();
+    if (br.finishing && !mine && br.finishing.alive && !br.finishing.out) return false;
+    const d = P.pos.distanceTo(this.pos);
+    if (!mine) {
+      if (t < (this.finishCd || 0) || this.target !== P || d > 30 || !g.col.lineClear(this.pos.x, this.pos.y + 1.4, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) return false;
+      br.finishing = this; this.finishT = t;
+      // the others leave that to him: nobody shoots you out from under his hands
+      for (const b of g.bots) if (b !== this && b.target === P) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } }
+    } else if (t - this.finishT > 9) { this.finishCd = t + 12; return quit(); }
+    this.state = 'finish'; this.target = P; this.lastSeen = P.pos.clone(); this.lastSeenT = t; this.prone = false; this.lootGoal = null;
+    if (d < 12 && g.col.lineClear(this.pos.x, this.pos.y + 0.5, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) { this.path = [{ x: P.pos.x, y: P.pos.y, z: P.pos.z, type: 0 }]; this.wp = 0; }
+    else if (this.repathT <= 0 || !this.path) { this.pathTo(P.pos); this.repathT = 0.7; }
+    return true;
+  }
+
+  // standing right next to someone who can't take much more
+  execute() { return this.target === this.game.player && this.game.match.botFinisher(this, 2.4, true); }
 
   roamBrain(inGas, pressed) {
     const g = this.game, br = g.match, L = br.loot, z = br.zone;
@@ -406,6 +458,10 @@ export class BRBot extends Bot {
     if (this.plateT > 0) {
       this.plateT -= dt;
       if (this.plateT <= 0 && this.plates > 0) { this.plates--; this.armor = Math.min(MAX_ARMOR, this.armor + PLATE_ARMOR); }
+    }
+    if (this.state === 'finish' && this.onGround && g.player.pos.distanceTo(this.pos) < 2) {
+      if (g.match.botFinisher(this)) return;
+      this.finishT = -99; this.state = 'roam'; this.path = null; // no room for it here: then the normal way
     }
     super.update(dt);
   }

@@ -326,6 +326,7 @@ export class Bot {
     this.updateAim(dt, engaging);
     // ---- weapon
     this.updateWeapon(dt, engaging);
+    if (this.scripted) return; // (that last hit started a scene: the pose is the scene's now)
     if (this.meleeT > 0) this.meleeT -= dt;
     // ---- health regen
     if (this.health < this.maxHealth && t - this.lastDamage > 4.5) this.health = Math.min(this.maxHealth, this.health + 70 * dt);
@@ -440,6 +441,7 @@ export class Bot {
     }
     if (this.reactT > 0 || this.mantling) return;
     if (t >= (this.meleeCd || 0) && this.target && this.target.pos.distanceTo(this.pos) < 1.75 && this.onGround) {
+      if (this.execute && this.execute()) return;
       this.meleeCd = t + 1.15; this.meleeT = 0.5; this.meleeHitAt = t + 0.17; this.nextShot = Math.max(this.nextShot, t + 0.48);
       g.audio.play('swing', { pos: this.pos, vol: 0.7, maxDist: 25 });
       return;

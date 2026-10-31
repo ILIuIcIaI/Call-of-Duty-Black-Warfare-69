@@ -1822,6 +1822,8 @@ export const FINISHERS = [
 ];
 
 export function bakeFinishers() { for (const F of FINISHERS) clipOf(F); }
+// which way round a scene has to stand for the attacker to start at dx, dz from the victim
+export function startYaw(F, dx, dz) { const P = clipOf(F).a.pos; return Math.atan2(dx, dz) - Math.atan2(P[0], P[2]); }
 // where the victim's hips look at a time in the scene
 export function victimYaw(F, t) {
   const C = clipOf(F).v, k = Math.min(C.pos.length / 3 - 1, Math.round(t * HZ)) * JOINTS.length * 4;
@@ -1885,7 +1887,7 @@ export class Stage {
   startFrom(feet) {
     const P = this.clip.a.pos, i = Math.round(this.t0 * HZ);
     this.world(P[i * 3], 0, P[i * 3 + 2], _a).sub(feet).setY(0).negate();
-    this.slide = _a.length() < 1.5 ? _a.clone() : null;
+    this.slide = _a.length() < (this.staysOut ? 4 : 1.5) ? _a.clone() : null;
   }
   // what is left of that right now
   slideLeft(t) { return this.slide ? 1 - quint(clamp01((t - this.t0) / 0.45)) : 0; }
@@ -2032,7 +2034,7 @@ export class Stage {
       this.bump = Math.max(0, this.bump - this.dt * 1.8);
     }
     // into the scene from your head, back into your head at the end: all the way keeping an eye on whatever it looked at
-    const ie = quint(clamp01((t - this.t0) / ENTER)), oe = quint(clamp01((t - this.exit) / EXIT));
+    const ie = quint(clamp01((t - this.t0) / ENTER)), oe = this.staysOut ? 0 : quint(clamp01((t - this.exit) / EXIT));
     if (ie < 1) {
       if (!this.fromLook) {
         this.v.chest.getWorldPosition(_c);
@@ -2049,7 +2051,12 @@ export class Stage {
     _m.lookAt(pos, look, UP);
     _q.setFromRotationMatrix(_m);
     cam.position.copy(pos); cam.quaternion.copy(_q); cam.fov = fov; cam.updateProjectionMatrix();
-    // the camera starts and ends inside this head
+    // the camera starts and ends inside this head (with you as the victim it starts low down in your own body)
+    if (this.staysOut) {
+      this.v.head.getWorldPosition(_d); this.v.chest.getWorldPosition(_c);
+      this.v.setVisible(Math.min(_d.distanceTo(pos), _c.distanceTo(pos)) > 0.8);
+      return;
+    }
     this.a.head.getWorldPosition(_d);
     this.a.setVisible(_d.distanceTo(pos) > 0.5);
   }

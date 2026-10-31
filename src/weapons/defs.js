@@ -2,7 +2,7 @@
 // Weapon definitions. Health is 150 (like modern CoD), so the numbers below
 // produce ~250-350ms time-to-kill for automatics at close range.
 // damage: [near, far] linear falloff between range[0] and range[1] (meters)
-// recoil: up/side in degrees per shot; pattern makes the first shots predictable. snap: how far a small gun jumps at the face (looks only)
+// recoil: up/side in degrees per shot; pattern makes the first shots predictable. snap: how hard a small gun jerks straight back at the face (looks only, it doesn't move the aim)
 // =============================================================================
 export const WEAPONS = {
   ar: {

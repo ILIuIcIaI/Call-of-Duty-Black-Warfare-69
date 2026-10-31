@@ -87,6 +87,14 @@ export class Viewmodel {
     this.lhandOpen.visible = false; this.rhandOpen.visible = false;
     this.ledge = null; this.ledgeK = 0;
     this.freeW = 0;
+    // for the parachute: the handle in the right hand, its cable, and the lines the hands hold on to
+    this.ripcord = new THREE.Group();
+    const rc = new THREE.Mesh(new THREE.TorusGeometry(0.021, 0.0055, 5, 10).scale(1, 0.72, 1), new THREE.MeshLambertMaterial({ color: 0xd8a818 })); rc.rotation.x = 0.5; this.ripcord.add(rc);
+    this.ripcord.position.set(0.0, 0.03, -0.06); this.ripcord.visible = false;
+    this.rhandOpen.add(this.ripcord);
+    this.freeLines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(18), 3)), new THREE.LineBasicMaterial({ color: 0x20201c }));
+    this.freeLines.frustumCulled = false; this.freeLines.visible = false;
+    this.root.add(this.freeLines);
     // knife arm: a third hand in camera space, only there during a melee
     this.knifeArm = buildHands(this.mats).left;
     const kb = new THREE.Group();
@@ -122,6 +130,7 @@ export class Viewmodel {
     // ---- springs (physical units: meters / radians)
     this.recoilPos = new Spring3(520, 26);
     this.recoilRot = new Spring3(420, 22);
+    this.jerk = new Spring(2500, 70); // quick enough to be back before the next round
     this.clipPos = new Spring3(620, 36);
     this.clipRot = new Spring3(620, 36);
     this.joltPos = new Spring3(240, 16);
@@ -163,6 +172,7 @@ export class Viewmodel {
     this.smoke.points.renderOrder = 10;
     this.heat = 0;
     this.drive = 0; this.driveS = 0; // sustained fire: how far the gun is pressed back
+    this.sinceShot = 9; this.wispT = 0; this.wispN = 0;
 
     this.casings = [];
     this.clip = null; this.clipT = 0; this.clipFired = new Set();
@@ -212,7 +222,7 @@ export class Viewmodel {
     this.flash.position.copy(w.anchors.muzzle);
     this.flash.scale.setScalar(def.flash ? def.flash : def.id === 'shotgun' || def.id === 'sniper' || def.id === 'revolver' ? 1.6 : def.id === 'smg' ? 0.8 : def.id === 'lmg' ? 1.25 : 1.1);
     w.root.add(this.wings); this.wings.position.copy(w.anchors.muzzle); this.wings.position.z -= 0.02; this.wings.scale.copy(this.flash.scale);
-    this.drive = 0; this.driveS = 0;
+    this.drive = 0; this.driveS = 0; this.heat = 0; this.jerk.x = 0; this.jerk.v = 0;
     this.persist.slide = 0;
     this.clip = null;
     this.setMagState('gun');
@@ -315,9 +325,10 @@ export class Viewmodel {
   }
 
   // -------------------------------------------------------------- no gun out: only the hands
-  // kind: 'fall' arms spread in free fall, 'chute' hands up on the lines, 'crawl' pulling along the ground, 'revive' on the wound
-  updateFree(dt, kind, t, amount = 1) {
+  // kind: 'fall' arms spread in free fall, 'deploy' the parachute opening, 'chute' hands up on the lines, 'crawl' pulling along the ground, 'revive' on the wound
+  updateFree(dt, kind, t, amount = 1, enter = 1) {
     this.pivot.visible = false;
+    this.ripcord.visible = false; this.freeLines.visible = false;
     const L = this.lhandOpen, R = this.rhandOpen;
     L.visible = R.visible = true;
     this.knifeArm.visible = false;
@@ -326,12 +337,33 @@ export class Viewmodel {
     // how far the screen reaches sideways at arm's length: hands stay in the picture on any aspect ratio
     const vc = this.game.engine.vmCamera, hw = Math.tan(vc.fov * Math.PI / 360) * vc.aspect * 0.46;
     if (kind === 'fall') {
-      lp = [-hw * 0.74 + f, -0.17 + g, -0.46]; rp = [hw * 0.74 - g, -0.17 + f, -0.46];
+      const low = (1 - enter) * 0.42; // (coming up into the picture)
+      lp = [-hw * 0.74 + f, -0.17 + g - low, -0.46]; rp = [hw * 0.74 - g, -0.17 + f - low, -0.46];
       lr = [0.5, 0.35, 0.5]; rr = [0.5, -0.35, -0.5];
-    } else if (kind === 'chute') {
+    } else if (kind === 'chute' || kind === 'deploy') {
       const s = Math.sin(t * 1.3) * 0.01;
-      lp = [-hw * 0.68, 0.07 + s, -0.46]; rp = [hw * 0.68, 0.07 - s, -0.46];
-      lr = [1.35, 0.25, 0.2]; rr = [1.35, -0.25, -0.2];
+      lp = [-hw * 0.8, 0.135 + s, -0.5]; rp = [hw * 0.8, 0.135 - s, -0.5];
+      lr = [0.98, -0.8, -1.3]; rr = [0.98, 0.8, 1.3];
+      if (kind === 'deploy') {
+        // amount: seconds since the hand went for it. Down to the handle on the chest, out with it, then both up on the lines.
+        const T = amount, A = sampleKeys([
+          [0, -hw * 0.74, -0.17, -0.46, 0.5, 0.35, 0.5], [0.32, -hw * 0.74, -0.19, -0.46, 0.5, 0.35, 0.5], [0.72, -hw * 0.76, -0.02, -0.47, 0.8, -0.3, -0.6], [1.15, lp[0], lp[1], lp[2], lr[0], lr[1], lr[2]],
+        ], T, 1, 6, tmpC);
+        lp = [A[0], A[1], A[2]]; lr = [A[3], A[4], A[5]];
+        const B = sampleKeys([
+          [0, hw * 0.74, -0.17, -0.46, 0.5, -0.35, -0.5], [0.12, 0.2, -0.19, -0.4, 0.8, 0.1, -0.5], [0.23, 0.095, -0.2, -0.36, 1.0, 0.55, -0.35], [0.31, 0.1, -0.195, -0.36, 1.0, 0.6, -0.35],
+          [0.46, 0.25, -0.1, -0.43, 0.7, 0.6, -0.3], [0.8, hw * 0.74, 0.06, -0.48, 0.95, 0.75, 0.9], [1.15, rp[0], rp[1], rp[2], rr[0], rr[1], rr[2]],
+        ], T, 1, 6, tmpC);
+        rp = [B[0], B[1], B[2]]; rr = [B[3], B[4], B[5]];
+        this.ripcord.visible = T > 0.2 && T < 0.52;
+      }
+      // the lines run up from the hands, once they have something to pull on
+      const taut = kind === 'chute' ? 1 : smoother(clamp((amount - 0.55) / 0.3, 0, 1)), P = this.freeLines.geometry.attributes.position, reach = hw * 0.42;
+      this.freeLines.visible = taut > 0.01;
+      P.setXYZ(0, lp[0], lp[1] + 0.03, lp[2]); P.setXYZ(1, lerp(lp[0], -reach, taut), lerp(lp[1] + 0.03, 0.9, taut), lerp(lp[2], -0.5, taut));
+      P.setXYZ(2, rp[0], rp[1] + 0.03, rp[2]); P.setXYZ(3, lerp(rp[0], reach, taut), lerp(rp[1] + 0.03, 0.9, taut), lerp(rp[2], -0.5, taut));
+      P.setXYZ(4, 0, 0, 0); P.setXYZ(5, 0, 0, 0);
+      P.needsUpdate = true;
     } else if (kind === 'crawl') {
       // arms reach forward in turn; amount = crawl speed
       const a = Math.sin(t), b = Math.sin(t + Math.PI);
@@ -345,7 +377,7 @@ export class Viewmodel {
     L.position.set(lp[0], lp[1], lp[2]); R.position.set(rp[0], rp[1], rp[2]);
     L.rotation.set(lr[0], lr[1], lr[2], 'YXZ'); R.rotation.set(rr[0], rr[1], rr[2], 'YXZ');
   }
-  endFree() { this.pivot.visible = true; this.lhandOpen.visible = false; this.rhandOpen.visible = false; }
+  endFree() { this.pivot.visible = true; this.lhandOpen.visible = false; this.rhandOpen.visible = false; this.ripcord.visible = false; this.freeLines.visible = false; }
 
   // -------------------------------------------------------------- clips & jolts
   play(clip) {
@@ -423,11 +455,12 @@ export class Viewmodel {
   // -------------------------------------------------------------- per-shot
   onShot(def, ads) {
     const r = def.recoil;
-    const k = r.vis * (ads ? 0.55 : 1), back = Math.pow(r.vis, 0.75) * (ads ? 0.72 : 1), sn = (r.snap || 0) * (ads ? 0.4 : 1);
+    const snap = r.snap || 0, k = r.vis * (ads ? 0.55 : 1) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.75) * (ads ? 0.72 : 1) * (1 - snap * 0.5);
     // the gun is shoved back at the shooter with every round and springs forward again, the view itself stays calm;
-    // the small ones have no weight to hold them down: every round throws them up and back, right at the face
-    this.recoilPos.impulse(rand(-0.07, 0.07) * k + rand(-0.3, 0.3) * sn, rand(0.02, 0.1) * k + (0.45 + Math.random() * 0.5) * sn, (2.0 + Math.random() * 0.6) * back + (1.0 + Math.random() * 0.6) * sn);
-    this.recoilRot.impulse((1.9 + Math.random() * 0.8) * k + (2.6 + Math.random() * 1.4) * sn, rand(-0.5, 0.5) * k + rand(-1.2, 1.2) * sn, rand(-1.1, 1.1) * k + rand(-1.8, 1.8) * sn);
+    // the small ones jerk straight back on top of that, the sight jumps at the face and the aim stays where it is
+    this.recoilPos.impulse(rand(-0.07, 0.07) * k, rand(0.02, 0.1) * k, (2.0 + Math.random() * 0.6) * back);
+    this.recoilRot.impulse((1.9 + Math.random() * 0.8) * k, rand(-0.5, 0.5) * k, rand(-1.1, 1.1) * k);
+    this.jerk.impulse((8 + Math.random() * 1.5) * snap * (ads ? 0.8 : 1));
     this.drive = Math.min(1, this.drive + (def.fire === 'auto' || def.fire === 'burst' ? 0.17 : 0.5));
     this.vib = Math.min(1, this.vib + 0.45);
     this.shotKick = 1;
@@ -441,15 +474,9 @@ export class Viewmodel {
     this.wings.visible = Math.random() < 0.86; this.wings.rotation.z = rand(-0.3, 0.3);
     for (const m of this.wings.children) m.scale.set(m.userData.sg * (0.55 + Math.random() * 0.75) * look, (Math.random() < 0.5 ? -1 : 1) * (0.65 + Math.random() * 0.7) * look, 1);
     this.flashLight.intensity = 6;
-    this.heat = Math.min(1.5, this.heat + (def.fire === 'auto' || def.fire === 'burst' ? 0.09 : 0.35));
-    // a breath of smoke out of the muzzle with every round, a thinner one at the ejection port
-    const a = (ads ? 0.45 : 1) * clamp(0.5 + r.vis * 0.35, 0.6, 1.3), bore = this.model && this.model.anchors;
-    this.flash.getWorldPosition(_v2);
-    for (let i = 0; i < 3; i++) this.smoke.spawn(_v2.x, _v2.y, _v2.z, rand(-0.14, 0.14), rand(-0.02, 0.14), rand(-0.6, -0.14), rand(0.3, 0.65), rand(0.03, 0.06), 0.84, 0.84, 0.82, 0.34 * a, -0.05, 6, 6);
-    if (bore && bore.eject) {
-      _v.copy(bore.eject); this.model.root.localToWorld(_v); this.root.worldToLocal(_v);
-      this.smoke.spawn(_v.x, _v.y, _v.z, rand(0.03, 0.12), rand(0.04, 0.14), rand(-0.03, 0.03), rand(0.3, 0.6), rand(0.016, 0.028), 0.82, 0.82, 0.8, 0.24 * a, -0.05, 3, 5);
-    }
+    if (this.heat <= 0) this.wispT = Math.random() * 6;
+    this.heat = Math.min(0.8, this.heat + (def.fire === 'auto' || def.fire === 'burst' ? 0.07 : 0.4));
+    this.sinceShot = 0;
   }
 
   ejectCasing() {
@@ -652,21 +679,19 @@ export class Viewmodel {
     this.land.update(dt);
 
     // ---- recoil + vibration
-    this.recoilPos.update(dt); this.recoilRot.update(dt);
+    this.recoilPos.update(dt); this.recoilRot.update(dt); this.jerk.update(dt);
     this.vib = Math.max(0, this.vib - dt * 7);
-    const snap = ((this.def && this.def.recoil.snap) || 0) * (1 - adsE * 0.6), vb = this.vib * (1 - adsE * 0.5) * (1 + snap * 2.2);
+    const snap = (this.def && this.def.recoil.snap) || 0, vb = this.vib * (1 - adsE * 0.5) * (1 + snap * (1 - adsE * 0.6));
     // holding the trigger keeps the gun pressed back into the shoulder, it comes forward again when it stops
     this.drive = Math.max(0, this.drive - dt * 1.5);
     this.driveS = damp(this.driveS, this.drive, 14, dt);
     const dr = this.driveS;
-    pos.y -= dr * 0.012 * (1 - adsE); rx += dr * 0.035 * (1 - adsE * 0.85); pos.z += dr * 0.055 * (1 - adsE * 0.45);
-    // (a small gun climbs and stays up while the trigger is held, into the middle of the picture)
-    pos.y += dr * 0.05 * snap; rx += dr * 0.15 * snap; pos.z += dr * 0.035 * snap; pos.x -= dr * 0.03 * snap;
+    pos.y -= dr * 0.012 * (1 - adsE); rx += dr * 0.035 * (1 - adsE * 0.85) * (1 - snap * 0.6); pos.z += dr * 0.055 * (1 - adsE * 0.45) * (1 - snap * 0.5);
     this.game.engine.filmShot = dr > 0.03 ? (0.05 + dr * 0.11) * (1 - adsE * 0.6) : 0; // a touch of smear on the kick
 
     pos.x += this.clipPos.vx + this.joltPos.vx + this.swayPos.vx + this.recoilPos.vx + (Math.random() - 0.5) * 0.0035 * vb;
     pos.y += this.clipPos.vy + this.joltPos.vy + this.swayPos.vy + this.recoilPos.vy + this.land.x * 0.055 + (Math.random() - 0.5) * 0.0035 * vb;
-    pos.z += this.clipPos.vz + this.joltPos.vz + this.recoilPos.vz;
+    pos.z += this.clipPos.vz + this.joltPos.vz + this.recoilPos.vz + this.jerk.x;
     rx += this.clipRot.vx + this.joltRot.vx + this.swayRot.vx + this.moveRot.vx + this.recoilRot.vx + this.land.x * 0.14 + (Math.random() - 0.5) * 0.008 * vb;
     ry += this.clipRot.vy + this.joltRot.vy + this.swayRot.vy + this.recoilRot.vy + (Math.random() - 0.5) * 0.006 * vb;
     rz += this.clipRot.vz + this.joltRot.vz + this.swayRot.vz + this.moveRot.vz + this.recoilRot.vz + (Math.random() - 0.5) * 0.016 * vb;
@@ -802,11 +827,14 @@ export class Viewmodel {
     this.flashLight.intensity = Math.max(0, this.flashLight.intensity - dt * 110);
     if (this.flashLight.intensity > 0) this.flash.getWorldPosition(this.flashLight.position);
 
-    // ---- the hot barrel keeps smoking for a while after the last round
-    this.heat = Math.max(0, this.heat - dt * 0.42);
-    if (this.heat > 0.1 && Math.random() < dt * 26 * Math.min(1, this.heat + 0.2)) {
+    // ---- when the firing stops a thin wisp curls up out of the muzzle, only for a moment
+    this.sinceShot += dt;
+    if (this.heat > 0 && this.sinceShot > 0.09) {
+      this.heat = Math.max(0, this.heat - dt);
+      this.wispT += dt; this.wispN += dt * 75;
       this.flash.getWorldPosition(_v2);
-      this.smoke.spawn(_v2.x + rand(-0.008, 0.008), _v2.y, _v2.z + rand(0, 0.12), rand(-0.012, 0.012), rand(0.04, 0.1), rand(-0.015, 0.015), rand(0.9, 1.7), rand(0.018, 0.034), 0.8, 0.8, 0.8, 0.3 * Math.min(1, this.heat + 0.15) * (1 - adsE * 0.6), -0.02, 0.5, 4.5);
+      const drift = Math.sin(this.wispT * 7) * 0.016 + Math.sin(this.wispT * 2.9) * 0.01, a = 0.24 * Math.min(1, this.heat * 5 + 0.2) * (1 - adsE * 0.6);
+      for (; this.wispN >= 1; this.wispN--) this.smoke.spawn(_v2.x, _v2.y, _v2.z, drift, 0.2, 0, 0.6, 0.0075, 0.88, 0.88, 0.87, a, -0.03, 0.4, 1.1);
     }
     this.smoke.update(dt);
     const vmc = this.game.engine.vmCamera;
