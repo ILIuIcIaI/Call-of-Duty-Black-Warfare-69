@@ -23,8 +23,8 @@ export class Match {
     this.mode = cfg.mode;
     this.cfg = cfg;
     this.score = [0, 0];
-    this.limit = cfg.mode === 'ffa' ? 25 : 50 + cfg.bots * 5;
-    this.timeLeft = 600;
+    this.limit = cfg.net ? cfg.limit : cfg.mode === 'ffa' ? 25 : 50 + cfg.bots * 5;
+    this.timeLeft = cfg.net ? cfg.leftMs / 1000 : 600;
     this.ended = false;
     this.lastUsed = new Map();
     this.spawnPoints = this.collectSpawns();
@@ -45,8 +45,14 @@ export class Match {
     return pts;
   }
 
+  // ---- in a network match the room has decided who is who
+  makeNetBot(e) { return new Bot(this.game, { name: e.name, team: e.team, difficulty: this.cfg.difficulty, outfit: OUTFITS[e.outfit], weapon: e.weapon || pickWeapon() }); }
+  adoptAt(b, was) { b.spawn(was.pos.x, was.pos.y, was.pos.z, was.aimYaw); b.health = Math.max(1, was.health); }
+  adoptDead(b) { b.alive = false; b.deathT = this.game.time - 2; b.soldier.setVisible(false); }
+
   createBots() {
     const g = this.game, cfg = this.cfg;
+    if (cfg.net) return g.net.buildCombatants((e) => this.makeNetBot(e));
     const names = [...NAMES].sort(() => Math.random() - 0.5);
     const n = cfg.bots;
     const bots = [];
@@ -101,8 +107,8 @@ export class Match {
   }
 
   onKill(killer, victim) {
-    if (this.ended) return;
-    if (this.mode === 'tdm' && killer && killer !== victim) this.score[killer.team]++;
+    if (this.ended || this.cfg.net) return;
+    if (this.mode === 'tdm' && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
   }
 
   update(dt) {
@@ -110,7 +116,8 @@ export class Match {
     const g = this.game;
     this.timeLeft -= dt;
     // bot respawns
-    for (const b of g.bots) if (!b.alive && g.time - b.deathT > 3.2) this.spawn(b);
+    for (const b of g.bots) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) this.spawn(b);
+    if (this.cfg.net) return; // the room keeps the score
     // win conditions
     let winner = null;
     if (this.mode === 'tdm') {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { esc } from '../net/net.js';
 import { RARITY, PLATE_ARMOR, MAX_PLATES, MAX_ARMOR } from '../game/loot.js';
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
 import { clamp } from '../core/math.js';
@@ -307,17 +308,27 @@ export class BRHud {
     x.restore();
   }
 
-  result(won, place, kills) {
+  // while you watch the others at the end of a network match: who that is
+  setWatching(name) {
+    if (!this.watchEl) { this.watchEl = document.createElement('div'); this.watchEl.id = 'br-watch'; document.getElementById('app').appendChild(this.watchEl); this.nodes.push(this.watchEl); }
+    this.watchEl.style.display = name === null ? 'none' : '';
+    if (name !== null) this.watchEl.innerHTML = (name ? 'DU SCHAUST <b>' + esc(name) + '</b> ZU' : 'NIEMAND MEHR DA') + '<small>KLICK: NÄCHSTER · ESC: MENÜ</small>';
+  }
+
+  result(won, place, kills, watch) {
     const app = document.getElementById('menu');
-    const g = this.game;
+    const g = this.game, total = this.br.cfg.net ? this.br.cfg.roster.length : 20, lasted = g.player.alive || this.br.deadAt === undefined ? g.time : this.br.deadAt;
     app.innerHTML = '<div class="menu-bg"></div>';
     const d = this.resultEl = document.createElement('div');
     d.id = 'br-result';
-    d.innerHTML = `<div class="logo" style="color:${won ? 'var(--accent)' : '#fff'}">${won ? 'SIEG' : 'PLATZ ' + place}<small>${won ? 'LETZTER ÜBERLEBENDER VON 20' : 'VON 20 SPIELERN'}</small></div>
-      <div class="rs"><div><b>${kills}</b><span>KILLS</span></div><div><b>${place}</b><span>PLATZ</span></div><div><b>${Math.floor(g.time / 60)}:${String(Math.floor(g.time % 60)).padStart(2, '0')}</b><span>ÜBERLEBT</span></div></div>
-      <div class="bt"><button class="btn" id="br-again">NOCHMAL</button><button class="btn ghost" id="br-home">HAUPTMENÜ</button></div>`;
+    d.innerHTML = `<div class="logo" style="color:${won ? 'var(--accent)' : '#fff'}">${won ? 'SIEG' : 'PLATZ ' + place}<small>${won ? 'LETZTER ÜBERLEBENDER VON ' + total : 'VON ' + total + ' SPIELERN'}</small></div>
+      <div class="rs"><div><b>${kills}</b><span>KILLS</span></div><div><b>${place}</b><span>PLATZ</span></div><div><b>${Math.floor(lasted / 60)}:${String(Math.floor(lasted % 60)).padStart(2, '0')}</b><span>ÜBERLEBT</span></div></div>
+      <div class="bt">${g.net && g.net.status !== 'off' ? (watch ? '<button class="btn ghost" id="br-watch-go">ZUSCHAUEN</button>' : '') + '<button class="btn" id="br-home">ZUR LOBBY</button>' : '<button class="btn" id="br-again">NOCHMAL</button><button class="btn ghost" id="br-home">HAUPTMENÜ</button>'}</div>`;
     app.appendChild(d);
-    d.querySelector('#br-again').addEventListener('click', () => { g.audio.play('uiClick', { vol: 0.4 }); g.restartWarzone(); });
+    const again = d.querySelector('#br-again');
+    if (again) again.addEventListener('click', () => { g.audio.play('uiClick', { vol: 0.4 }); g.restartWarzone(); });
+    const look = d.querySelector('#br-watch-go');
+    if (look) look.addEventListener('click', () => { g.audio.play('uiClick', { vol: 0.4 }); watch(); });
     d.querySelector('#br-home').addEventListener('click', () => { g.audio.play('uiClick', { vol: 0.4 }); g.quitToMenu(); });
   }
 }

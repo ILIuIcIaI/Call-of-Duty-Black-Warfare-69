@@ -21,8 +21,18 @@ import { IslandNav } from './bots/islandNav.js';
 import { Match } from './game/match.js';
 import { BRMatch } from './game/br.js';
 import { Autopilot } from './dev/autopilot.js';
+import { Net } from './net/net.js';
+import { Lobby } from './ui/lobby.js';
 
 const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _p = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
+
+// everybody in a network match builds the same world: for as long as this is on, chance is the same everywhere
+function seededRandom(seed) {
+  const real = Math.random;
+  let s = seed >>> 0;
+  Math.random = () => { s = (s + 0x6d2b79f5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  return () => { Math.random = real; };
+}
 
 // ray vs sphere / capsule (returns distance or -1)
 function raySphere(ro, rd, c, r) {
@@ -144,6 +154,8 @@ export class Game {
     this.hud = new HUD(this);
     this.weapons = new PlayerWeapons(this);
     this.menu = new Menu(this);
+    this.net = new Net(this);
+    this.lobby = new Lobby(this);
     document.getElementById('loading').classList.add('hidden');
     this.lastT = performance.now();
     requestAnimationFrame((t) => this.frame(t));
@@ -151,7 +163,8 @@ export class Game {
     // (dev only, so hidden player tabs never burn GPU in the background)
     if (this.dev) setInterval(() => { if (performance.now() - this.lastT > 250) this.frame(performance.now(), true); }, 100);
     if (this.dev && this.params.has('manual')) this.debugManual = true; // dev tooling drives the frames from the start
-    if (this.dev && this.params.has('br')) this.startMatch({ mode: 'br', map: 'island', bots: +(this.params.get('bots') ?? 19), difficulty: this.settings.match.difficulty });
+    if (this.dev && this.params.has('mp')) { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
+    else if (this.dev && this.params.has('br')) this.startMatch({ mode: 'br', map: 'island', bots: +(this.params.get('bots') ?? 19), difficulty: this.settings.match.difficulty });
     else if (this.dev) this.startMatch({ ...this.settings.match, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
     else { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
   }
@@ -196,6 +209,7 @@ export class Game {
 
   onPause() {
     if (this.state !== 'playing' || this.paused) return;
+    if (this.br && this.br.netDead && !this.br.watchOn) return; // (the result is up, it has its own way out)
     this.paused = true;
     this.menu.show('controls', 'pause');
   }
@@ -208,7 +222,33 @@ export class Game {
     this.input.lock();
   }
 
+  // ---- multiplayer: from a match back into the room
+  leaveNetMatch(tell = false) {
+    const net = this.net;
+    if (tell) net.send({ t: 'tolobby' });
+    this.paused = false; this.netWait = false; this.showNetWait(false);
+    if (this.br) this.br.dispose();
+    this.clearBots();
+    this.match = null;
+    document.getElementById('death-screen').classList.add('hidden');
+    this.menu.hide();
+    this.loadMenuMap(this.settings.match.map);
+    net.teardownMatch();
+    if (net.status === 'match') net.status = net.ws ? 'lobby' : 'search';
+    this.lobby.open = true;
+    net.onChange = () => this.lobby.draw();
+    this.lobby.draw();
+    this.input.unlock();
+  }
+
+  showNetWait(on) {
+    let el = document.getElementById('net-wait');
+    if (on && !el) { el = document.createElement('div'); el.id = 'net-wait'; el.textContent = 'WARTE AUF DIE ANDEREN SPIELER'; document.getElementById('app').appendChild(el); }
+    if (el) el.style.display = on ? '' : 'none';
+  }
+
   quitToMenu() {
+    if (this.net && this.net.status !== 'off') return this.leaveNetMatch(this.net.status === 'match');
     this.paused = false;
     if (this.br) this.br.dispose();
     if (this.clearBots) this.clearBots();
@@ -269,9 +309,16 @@ export class Game {
 
   startMatch(cfg) {
     this.cfg = cfg;
+    if (this.match && this.br) this.br.dispose();
+    this.match = null;
+    const undoMap = cfg.net ? seededRandom(cfg.seed) : null;
     this.loadMap(cfg.map);
+    if (undoMap) undoMap();
     this.clearBots();
+    // (from a clean start again: how much the map drew may depend on the graphics settings here)
+    const undoMatch = cfg.net ? seededRandom(cfg.seed + 1) : null;
     this.match = cfg.mode === 'br' ? new BRMatch(this, cfg) : new Match(this, cfg);
+    if (undoMatch) undoMatch();
     this.player.team = cfg.mode === 'ffa' ? 1 : 0;
     this.player.kills = 0; this.player.deaths = 0; this.player.score = 0;
     this.combatants = [this.player];
@@ -315,8 +362,10 @@ export class Game {
 
   // --------------------------------------------------------------- combat
   // Fires one hitscan bullet. Returns hit info.
-  fireBullet(origin, dir, def, shooter, tracerFrom, first = true) {
+  // visual: someone else's shot, seen here. What it hit is his business.
+  fireBullet(origin, dir, def, shooter, tracerFrom, first = true, visual = false) {
     const col = this.col;
+    if (first && !visual && this.net && this.net.inMatch && !shooter.remote) this.net.sendShot(shooter, origin, dir, def);
     let ox = origin.x, oy = origin.y, oz = origin.z;
     let remaining = 300, dmgMul = 1, travelled = 0;
     const isPlayer = shooter === this.player;
@@ -328,6 +377,7 @@ export class Game {
       let best = null, bestT = worldT;
       _o.set(ox, oy, oz);
       for (const c of this.combatants) {
+        if (visual) break;
         if (c === shooter || !c.alive) continue;
         if (this.match && this.match.mode === 'tdm' && c.team === shooter.team) continue;
         // broad phase: distance from ray to body center
@@ -354,7 +404,11 @@ export class Game {
           _p.set(ox + dir.x * bestT, oy + dir.y * bestT, oz + dir.z * bestT);
           this.fx.impact(_p, _n.copy(dir).negate(), 'metal', isPlayer ? 1 : 0.6);
           if (Math.random() < 0.5) this.audio.play('imp_metal', { pos: _p, vol: 0.55, maxDist: 50, occlude: false });
-          car.damage(damageAt(def, travelled + bestT) * dmgMul * (def.pellets ? 0.5 : 0.7), shooter);
+          if (!visual) {
+            const hurt = damageAt(def, travelled + bestT) * dmgMul * (def.pellets ? 0.5 : 0.7);
+            car.damage(hurt, shooter);
+            if (this.net && this.net.inMatch) this.net.send({ t: 'ev', k: 'vdmg', i: this.br.vehicles.list.indexOf(car), a: +hurt.toFixed(1) });
+          }
           endPoint = _p.clone();
           break;
         }
@@ -429,8 +483,17 @@ export class Game {
 
   applyDamage(victim, dmg, attacker, info) {
     if (!victim.alive) return;
-    // in a scene with you as the victim nothing else can happen to either of you any more
-    if (this.br && this.br.finisher && this.br.finisher.victimView && (victim === this.player || victim === this.br.finisher.atk)) return;
+    // someone who runs somewhere else: he gets told, and says what it did to him
+    if (victim.remote) {
+      if (this.net && this.net.inMatch && attacker && !attacker.remote) this.net.sendHit(victim, dmg, attacker, info);
+      if (attacker === this.player) {
+        victim.soldier.flinchHit(Math.min(1.5, dmg / 40));
+        this.hud.hitmarker(victim.armor > 0 ? 'armor' : info.part === 'head' ? 'head' : 'hit');
+        this.audio.play(info.part === 'head' ? 'hitHead' : 'hit', { vol: 0.5, rate: victim.armor > 0 ? 1.35 : 1 });
+      }
+      return;
+    }
+    if (this.br && this.br.untouchable(victim)) return;
     if (this.br && attacker && attacker.isBot) dmg = victim.isBot ? dmg * this.match.botDamageOn(victim) : Math.min(dmg * this.match.zone.now.toPlayer, 60); // no bot one-shots you
     // armor plates take the hit first
     let armorHit = false, armorBroke = false;
@@ -456,7 +519,7 @@ export class Game {
     }
     if (killed && victim === this.player && this.br && this.br.playerGoesDown(attacker, info)) return;
     // the last shot from close by: the one who fired it comes over and does it by hand
-    if (killed && victim === this.player && this.br && attacker && attacker.isBot && this.br.botFinisher(attacker)) return;
+    if (killed && victim === this.player && this.br && attacker && attacker.isBot && !attacker.remote && this.br.botFinisher(attacker)) return;
     if (killed && !felled) this.kill(victim, attacker, info);
   }
 
@@ -474,11 +537,14 @@ export class Game {
   }
 
   kill(victim, killer, info) {
+    const net = this.net && this.net.inMatch;
+    if (net && !(info && info.fromNet) && (!victim.remote || (info && info.staged))) this.net.sendDied(victim, killer, info);
     victim.alive = false;
     victim.health = 0;
-    victim.deaths = (victim.deaths || 0) + 1;
+    // (in a network match the room does the counting and tells everyone)
+    if (!net) victim.deaths = (victim.deaths || 0) + 1;
     const head = info && info.part === 'head';
-    if (killer && killer !== victim) {
+    if (killer && killer !== victim && !net) {
       killer.kills = (killer.kills || 0) + 1;
       killer.score = (killer.score || 0) + 100 + (head ? 25 : 0);
     }
@@ -580,7 +646,7 @@ export class Game {
 
   // --------------------------------------------------------------- loop
   frame(now, fallback) {
-    if (!fallback) requestAnimationFrame((t) => this.frame(t));
+    if (!fallback) { requestAnimationFrame((t) => this.frame(t)); this.drawnAt = performance.now(); }
     if (this.debugManual) { this.lastT = now; return; } // dev tooling drives frames by hand
     let dt = (now - this.lastT) / 1000;
     this.lastT = now;
@@ -600,12 +666,21 @@ export class Game {
   updatePlaying(dt) {
     this.engine.filmShot = 0;
     if (this.state === 'ended') { this.engine.render(this.scene, this.vmScene); return; } // freeze the world on the end screen
+    const inp = this.input, p = this.player, W = this.weapons;
+    // loaded, and waiting for everyone else to be
+    if (this.netWait) {
+      const cam = this.engine.camera;
+      if (this.br && this.br.cameraOverride) this.br.applyCamera(cam, 0); else p.applyCamera(cam, W.punch, this.shake);
+      cam.updateMatrixWorld();
+      this.engine.render(this.scene, this.vmScene);
+      return;
+    }
     if (this.slowmo) dt *= this.slowmo;
     this.time += dt;
     this.frameId = (this.frameId || 0) + 1;
-    const inp = this.input, p = this.player, W = this.weapons;
     if (this.autopilot && !this.paused) this.autopilot.tick(dt);
-    const paused = this.paused;
+    // (in a network match the world doesn't stop for one person looking at the menu)
+    const paused = this.paused && !(this.net && this.net.inMatch);
     // ---- look
     const zoom = this.currentZoom || 1;
     const adsK = W.adsAmount > 0.5 ? this.settings.adsSens / zoom : 1;
@@ -642,6 +717,7 @@ export class Game {
     for (const b of this.bots) b.update(dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
     if (inp.pressed('loadout') && !br) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
+    if (this.net) this.net.tick(dt);
     if (this.match) {
       this.match.update(dt);
       const sc = this.match.scores();
@@ -666,6 +742,7 @@ export class Game {
     const punch = W.punch;
     if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
     else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
+    else if (br && br.watchOn) br.watchCam(cam, dt);
     else this.deathCam(dt);
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;

@@ -2,6 +2,23 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-31
+
+The multiplayer update: play every mode with your friends over the local network.
+
+### Added
+
+**Multiplayer over the local network**
+- A Multiplayer button in the main menu. Pick a name and the game looks for a room on your network. The first player opens it, everybody after that lands in it automatically.
+- Nobody runs the room: everybody votes on the mode (Team Deathmatch, Free for All or Warzone), the map and whether bots fill the free slots. The lobby has a chat.
+- All three modes with bots or without. Bots keep running if the player they ran on leaves.
+- Warzone with shared loot, chests, vehicles, gas and finishers on other players. After you die you can watch the others.
+- Join a running Team Deathmatch or Free for All at any time, or leave it and come back with your score.
+- If the computer with the room goes away, the others find a new room by themselves.
+
+**Bot finishers on every player**
+- In a Warzone match bots now finish all players, not only the one whose computer runs them. One bot comes over to someone lying on the ground and the others leave that player alone. The player sees the scene through the film camera, everyone else sees the same scene from outside, and the body stays where the scene leaves it. From outside the sounds of a finisher now come from where it happens, and a grenade finisher shows its blast.
+
 ## [0.2.0] - 2026-10-31
 
 The Warzone update: a battle royale mode on a new island, finishers that work both ways, and a much bigger arsenal.
@@ -98,5 +115,6 @@ The first release.
 - Main menu, pause menu, settings and controls overview (in German).
 - HUD with minimap, score bar, kill feed, ammo counter and hit markers.
 
+[0.3.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.1.0

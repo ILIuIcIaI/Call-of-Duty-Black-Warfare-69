@@ -93,7 +93,7 @@ export class BRBot extends Bot {
     this.gear = TIER.pistol;
     this.soldier.setVisible(false);
     this.lootGoal = null; this.goalKind = null; this.plateT = 0; this.zoneRepath = 0; this.pending = null; this.peaceUntil = 0;
-    this.downed = false; this.downs = 0; this.prone = false; this.seen = false;
+    this.downed = false; this.downs = 0; this.prone = false; this.seen = false; this.finishOn = null;
     this.animEvery = 1;
     this.hiddenBody = false;
   }
@@ -214,14 +214,14 @@ export class BRBot extends Bot {
 
   // the player is a fair target, not everybody's: whoever is shot at answers, otherwise only a few hunt at a time
   ignoresPlayer(p, dist) {
-    const g = this.game, br = g.match, st = br.playerState;
+    const g = this.game, br = g.match, st = p.remote ? p.sky || (p.downed ? 'downed' : 'ground') : br.playerState;
     if (st === 'plane' || st === 'fall') return true;
-    if (br.finisher && br.finisher.victimView) return true; // (somebody is already seeing to that)
+    if (p.remote ? p.scripted : br.finisher && br.finisher.victimView) return true; // (somebody is already seeing to that)
     // someone crawling: only worth it when it is close by, and not when someone else is already on the way
-    if (st === 'downed') return (br.finishing && br.finishing !== this) || dist > 15 || Math.random() > 0.3;
+    if (st === 'downed') { const by = br.onTheWay(p); return (by && by !== this) || dist > 15 || Math.random() > 0.3; }
     if (p === this.target || (p === this.lastAttacker && g.time - this.lastDamage < 6)) return false;
     if (st === 'chute') return dist > 18 || Math.random() > 0.05;
-    if (g.time < br.safeUntil) return dist > 6;
+    if (g.time < (p.remote ? p.safeUntil || 0 : br.safeUntil)) return dist > 6;
     if (br.hunters >= br.zone.now.hunters && dist > 8) return true;
     return Math.random() > (dist < 14 ? 0.4 : br.zone.now.notice);
   }
@@ -229,7 +229,8 @@ export class BRBot extends Bot {
   think() {
     const g = this.game, t = g.time, br = g.match, z = br.zone;
     const cam = g.engine.camera.position;
-    this.seen = Math.hypot(this.pos.x - cam.x, this.pos.z - cam.z) < SEEN;
+    // (in a network match someone else may be standing right there)
+    this.seen = Math.hypot(this.pos.x - cam.x, this.pos.z - cam.z) < SEEN || (br.cfg.net && g.combatants.some((c) => c.remote && !c.isBot && c.alive && Math.hypot(this.pos.x - c.pos.x, this.pos.z - c.pos.z) < SEEN));
     this.perceive();
     const inGas = z.outside(this.pos, 0);
     const pressed = z.urgent(this.pos);
@@ -276,18 +277,18 @@ export class BRBot extends Bot {
     if (this.state === 'roam') this.roamBrain(inGas, pressed);
   }
 
-  // Someone lying there within reach: no more shooting, over there and end it by hand. One at a time.
+  // Someone lying there within reach, here or on another computer: no more shooting, over there and end it by hand. One for each of them.
   goFinish(inGas) {
-    const g = this.game, t = g.time, br = g.match, P = g.player, mine = br.finishing === this;
-    const quit = () => { if (mine) br.finishing = null; if (this.state === 'finish') { this.state = 'roam'; this.path = null; } return false; };
-    if (inGas || br.playerState !== 'downed' || !P.alive) return quit();
-    if (br.finishing && !mine && br.finishing.alive && !br.finishing.out) return false;
+    const g = this.game, t = g.time, br = g.match, P = this.finishOn || this.target, mine = !!this.finishOn;
+    const quit = () => { if (mine) { br.finishing.delete(P); this.finishOn = null; } if (this.state === 'finish') { this.state = 'roam'; this.path = null; } return false; };
+    if (inGas || !br.lyingThere(P)) return quit();
+    if (!mine && br.onTheWay(P)) return false;
     const d = P.pos.distanceTo(this.pos);
     if (!mine) {
-      if (t < (this.finishCd || 0) || this.target !== P || d > 30 || !g.col.lineClear(this.pos.x, this.pos.y + 1.4, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) return false;
-      br.finishing = this; this.finishT = t;
+      if (t < (this.finishCd || 0) || d > 30 || !g.col.lineClear(this.pos.x, this.pos.y + 1.4, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) return false;
+      br.finishing.set(P, this); this.finishOn = P; this.finishT = t;
       // the others leave that to him: nobody shoots you out from under his hands
-      for (const b of g.bots) if (b !== this && b.target === P) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } }
+      br.letGo(P);
     } else if (t - this.finishT > 9) { this.finishCd = t + 12; return quit(); }
     this.state = 'finish'; this.target = P; this.lastSeen = P.pos.clone(); this.lastSeenT = t; this.prone = false; this.lootGoal = null;
     if (d < 12 && g.col.lineClear(this.pos.x, this.pos.y + 0.5, this.pos.z, P.pos.x, P.pos.y + 0.5, P.pos.z)) { this.path = [{ x: P.pos.x, y: P.pos.y, z: P.pos.z, type: 0 }]; this.wp = 0; }
@@ -296,7 +297,7 @@ export class BRBot extends Bot {
   }
 
   // standing right next to someone who can't take much more
-  execute() { return this.target === this.game.player && this.game.match.botFinisher(this, 2.4, true); }
+  execute() { const T = this.target; return !!T && !T.isBot && this.game.match.botFinisherOn(this, T, 2.4, true); }
 
   roamBrain(inGas, pressed) {
     const g = this.game, br = g.match, L = br.loot, z = br.zone;
@@ -362,6 +363,7 @@ export class BRBot extends Bot {
     if (Math.random() > DOWN_CHANCE[Math.min(this.downs, DOWN_CHANCE.length - 1)]) return false;
     const g = this.game;
     this.downs++;
+    if (this.finishOn) { g.match.finishing.delete(this.finishOn); this.finishOn = null; }
     this.downed = true; this.prone = false;
     this.health = DOWN_HP; this.armor = 0; this.plateT = 0; this.downT = 0; this.reviveK = 0;
     this.bleedRate = DOWN_HP / rand(24, 38);
@@ -459,8 +461,8 @@ export class BRBot extends Bot {
       this.plateT -= dt;
       if (this.plateT <= 0 && this.plates > 0) { this.plates--; this.armor = Math.min(MAX_ARMOR, this.armor + PLATE_ARMOR); }
     }
-    if (this.state === 'finish' && this.onGround && g.player.pos.distanceTo(this.pos) < 2) {
-      if (g.match.botFinisher(this)) return;
+    if (this.state === 'finish' && this.onGround && this.finishOn.pos.distanceTo(this.pos) < 2) {
+      if (g.match.botFinisherOn(this, this.finishOn)) return;
       this.finishT = -99; this.state = 'roam'; this.path = null; // no room for it here: then the normal way
     }
     super.update(dt);

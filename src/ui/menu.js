@@ -26,7 +26,7 @@ export class Menu {
     const g = this.game, S = g.settings;
     const tabs = mode === 'pause'
       ? (g.br ? [['resume', 'FORTSETZEN'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']] : [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']])
-      : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG']];
+      : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['multi', 'MULTIPLAYER'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG']];
     let body = '';
     if (tab === 'play') body = this.playTab();
     else if (tab === 'warzone') body = this.warzoneTab();
@@ -42,6 +42,7 @@ export class Menu {
       this.sfx();
       if (t === 'resume') return g.resume();
       if (t === 'quit') return g.quitToMenu();
+      if (t === 'multi') return g.lobby.ask();
       this.show(t, this.mode);
     }));
     this.bind();

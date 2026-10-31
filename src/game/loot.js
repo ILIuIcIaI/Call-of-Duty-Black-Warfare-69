@@ -193,16 +193,31 @@ export class Loot {
     this.chests.push({ x: s.x, y: s.y, z: s.z, yaw: Math.floor(Math.random() * 4) * Math.PI / 2, open: false, openT: 0, obj: null, lid: null, claimed: null });
   }
 
-  addItem(data, x, y, z) {
+  addItem(data, x, y, z, nid) {
     const it = { ...data, x, y, z, gy: y, taken: false, obj: null, spin: Math.random() * 6, arc: null, claimed: null };
+    // (what was there from the start has the same name everywhere, anything later gets one from whoever made it)
+    it.nid = nid || 's' + this.items.length;
     this.items.push(it);
     return it;
   }
+
+  // ---- in a network match
+  get net() { const n = this.game.net; return n && n.inMatch ? n : null; }
+  netChest(i, items) {
+    const c = this.chests[i];
+    if (!c || c.open) return;
+    c.open = true; c.openT = 0;
+    this.game.audio.play('coverOpen', { pos: new THREE.Vector3(c.x, c.y, c.z), vol: 0.9, maxDist: 45 });
+    items.forEach((e, n) => { const it = this.addItem(e.d, e.x, e.y, e.z, e.nid); it.arc = { t: -0.12 * n - 0.12, dur: 0.42, sx: c.x, sy: c.y + 0.6, sz: c.z }; });
+  }
+  netItem(m) { const it = this.addItem(m.d, m.x, m.y, m.z, m.nid); if (m.toss) it.arc = this.flight(m.toss[0], m.toss[1], m.toss[2], m.toss[3], m.toss[4], m.toss[5]); }
+  netTake(nid) { const it = this.items.find((o) => o.nid === nid); if (it && !it.taken) this.removeItem(it, true); }
 
   // chest content: always a weapon, usually plates, often a second gun or ammo
   openChest(c, who) {
     if (c.open) return;
     c.open = true; c.openT = 0;
+    const net = this.net, sent = net ? [] : null;
     this.game.audio.play('coverOpen', { pos: new THREE.Vector3(c.x, c.y, c.z), vol: 0.9, maxDist: 45 });
     this.game.audio.play('magDrop', { pos: new THREE.Vector3(c.x, c.y, c.z), vol: 0.5, maxDist: 45, delay: 0.1 });
     const list = [rollWeapon(CHEST_ODDS)];
@@ -217,17 +232,21 @@ export class Loot {
       // never into a wall: fall back to right next to the chest
       if (!col.lineClear(c.x, c.y + 0.6, c.z, tx, c.y + 0.6, tz)) { tx = c.x + (tx - c.x) * 0.45; tz = c.z + (tz - c.z) * 0.45; }
       const fy = col.floorBelow(tx, tz, 0.1, c.y + 0.7, c.y - 3);
-      const it = this.addItem(d, tx, isFinite(fy) ? fy : c.y, tz);
+      const y = isFinite(fy) ? fy : c.y, it = this.addItem(d, tx, y, tz, net ? net.newId() : undefined);
       it.arc = { t: -0.12 * i - 0.12, dur: 0.42, sx: c.x, sy: c.y + 0.6, sz: c.z };
+      if (net) sent.push({ nid: it.nid, d, x: +tx.toFixed(2), y: +y.toFixed(2), z: +tz.toFixed(2) });
     });
+    if (net) net.send({ t: 'ev', k: 'chest', i: this.chests.indexOf(c), items: sent });
     void who;
   }
 
   // What a dead bot leaves behind, and what you throw away when you take something else (yaw: the way you look).
   // It flies, bounces off whatever is in the way and comes to rest where it can be picked up.
   drop(data, x, y, z, yaw) {
-    const s = this.tossFrom(x, y, z, yaw), A = this.flight(s[0], s[1], s[2], s[3], s[4], s[5]), it = this.addItem(data, A.x, A.y, A.z);
+    const net = this.net, s = this.tossFrom(x, y, z, yaw), A = this.flight(s[0], s[1], s[2], s[3], s[4], s[5]);
+    const it = this.addItem(data, A.x, A.y, A.z, net ? net.newId() : undefined);
     it.arc = A;
+    if (net) net.send({ t: 'ev', k: 'item', nid: it.nid, d: data, x: +A.x.toFixed(2), y: +A.y.toFixed(2), z: +A.z.toFixed(2), toss: s.map((v) => +v.toFixed(3)) });
     return it;
   }
 
@@ -373,8 +392,9 @@ export class Loot {
     for (const h of U.hulls) h.visible = true;
   }
 
-  removeItem(it) {
+  removeItem(it, fromNet = false) {
     it.taken = true;
+    if (!fromNet && this.net) this.net.send({ t: 'take', nid: it.nid });
     if (it.obj) { this.root.remove(it.obj); it.obj = null; }
     const i = this.near.indexOf(it); if (i >= 0) this.near.splice(i, 1);
   }

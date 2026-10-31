@@ -50,6 +50,11 @@ const PHASES = [
 
 const PLAN = [[0, 19], [60, 18], [120, 15], [180, 12], [240, 9], [300, 6], [360, 4], [420, 2], [470, 0]];
 
+function seededChance(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s + 0x6d2b79f5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
 // ---------------------------------------------------------------------------
 // The safe zone
 // ---------------------------------------------------------------------------
@@ -59,6 +64,8 @@ class Zone {
     this.cur = { x: 0, z: 0, r: 470 };
     this.from = { ...this.cur };
     this.phase = 0; this.mode = 'wait'; this.time = 0; this.elapsed = 0;
+    // (the circles have to come out the same for everyone in a network match, whenever they are drawn)
+    this.chance = game.cfg && game.cfg.net ? seededChance(game.cfg.seed + 2) : Math.random;
     this.dps = PHASES[0].dps;
     this.next = this.pickNext(this.cur, PHASES[0].r);
     // wall of light where the gas begins
@@ -82,7 +89,7 @@ class Zone {
 
   pickNext(c, r) {
     for (let i = 0; i < 40; i++) {
-      const a = Math.random() * Math.PI * 2, q = Math.sqrt(Math.random()) * Math.max(0, c.r - r) * 0.92;
+      const a = this.chance() * Math.PI * 2, q = Math.sqrt(this.chance()) * Math.max(0, c.r - r) * 0.92;
       const x = c.x + Math.cos(a) * q, z = c.z + Math.sin(a) * q;
       if (Math.hypot(x, z) + r * 0.45 > 275) continue;
       if (this.t.heightAt(x, z) < 2 || this.t.slopeAt(x, z) > 0.6) continue;
@@ -187,12 +194,31 @@ export class BRMatch {
     this.camBlend = 0; this.fallFov = 70;
     this.downs = 0; this.bleedRate = 0; this.reviveK = 0; this.reviveTime = 0; this.crawlT = 0; this.reviveLock = 0;
     this.finisher = null;
+    this.finishing = new Map(); // who is lying there: the bot on its way to end it
     bakeFinishers();
     this.audioL = {};
   }
 
   // ---- the interface the rest of the game expects from a match
+  // ---- in a network match the room has decided who is who
+  makeNetBot(e) { return new BRBot(this.game, { name: e.name, team: e.team, difficulty: this.cfg.difficulty, outfit: OUTFITS[e.outfit] }); }
+  adoptAt(b, was) {
+    if (was.sky === 'plane' || was.pos.y < -400) { b.alive = false; this.planBotDrops([b]); return; }
+    // on the way down: just on down from where it is
+    if (was.sky) { b.planJump(new THREE.Vector3(was.pos.x, 0, was.pos.z), 0); b.startFall(was.pos); b.health = Math.max(1, was.health); return; }
+    b.sky = null; b.alive = true; b.onGround = true; b.pos.copy(was.pos); b.aimYaw = was.aimYaw; b.aimPitch = 0; b.health = Math.max(1, was.health); b.armor = was.armor;
+    b.vel.set(0, 0, 0); b.state = 'roam'; b.path = null; b.wp = 0; b.repathT = 0; b.lastProgress = b.pos.clone(); b.stuckT = 0; b.crouching = false; b.crouchT = 0; b.sliding = 0; b.burst = 0; b.burstPause = 0; b.nextShot = 0; b.strafeDir = 1; b.strafeT = 0; b.heardT = -99; b.lastSeenT = -99; b.reactT = 0;
+    b.soldier.setVisible(true); b.soldier.root.position.copy(b.pos);
+    if (was.wdef && was.wdef.id !== 'pistol') b.equipLoot({ weaponId: was.wdef.id, optic: was.optic, rarity: 1 });
+  }
+  adoptDead(b) { b.alive = false; b.out = true; b.sky = null; b.deathT = this.game.time - 20; b.hiddenBody = true; b.soldier.setVisible(false); }
+
   createBots() {
+    if (this.cfg.net) {
+      const list = this.game.net.buildCombatants((e) => this.makeNetBot(e)), real = list.filter((b) => !b.remote);
+      if (real.length) this.planBotDrops(real);
+      return list;
+    }
     const n = this.cfg.bots ?? 19, bots = [];
     const names = [...NAMES].sort(() => Math.random() - 0.5);
     for (let i = 0; i < n; i++) {
@@ -258,12 +284,13 @@ export class BRMatch {
     W.setStartLoadout();
     g.hud.setScope(null);
     W.vm.root.visible = false;
-    this.avatar = new Soldier(g, OUTFITS.vanguard);
+    const mine = this.cfg.net ? OUTFITS[this.cfg.roster.find((r) => r.id === g.net.you).outfit] : null;
+    this.avatar = new Soldier(g, mine || OUTFITS.vanguard);
     this.avatar.root.rotation.order = 'YXZ'; // leans with the car
     this.avatar.setWeapon(WEAPONS.pistol, 'iron');
     this.avatar.setVisible(false);
     // in a finisher: never two men in the same clothes in one shot
-    this.avatarDark = new Soldier(g, OUTFITS.raven);
+    this.avatarDark = new Soldier(g, mine || OUTFITS.raven);
     this.avatarDark.setWeapon(WEAPONS.pistol, 'iron');
     this.avatarDark.setVisible(false);
     this.canopy = makeCanopy(); this.canopy.visible = false; g.scene.add(this.canopy);
@@ -292,10 +319,11 @@ export class BRMatch {
     this.zone.update(dt);
     this.updatePlane(dt);
     this.loot.update(dt);
+    this.updateNetStages(dt);
     // sea moves a little
     if (this.def.sea) { const m = this.def.sea.material.map; m.offset.x += dt * 0.004; m.offset.y += dt * 0.002; }
     // ---- empty vehicles keep rolling
-    for (const v of this.vehicles.list) if (v !== this.vehicle) v.update(dt, null);
+    for (const v of this.vehicles.list) if (v !== this.vehicle) { if (v.netOwner) v.netUpdate(dt); else v.update(dt, null); }
     this.runOver(dt);
     // ---- gas
     this.gasTick -= dt;
@@ -303,7 +331,7 @@ export class BRMatch {
       this.gasTick = 0.5;
       const dmg = this.zone.dps * 0.5;
       if (p.alive && this.playerState !== 'plane' && this.zone.outside(p.pos)) this.gasDamage(p, dmg);
-      for (const b of g.bots) if (b.alive && !b.sky && this.zone.outside(b.pos)) this.gasDamage(b, dmg);
+      for (const b of g.bots) if (!b.remote && b.alive && !b.sky && this.zone.outside(b.pos)) this.gasDamage(b, dmg);
       let fighting = 0, hunters = 0;
       for (const b of g.bots) {
         if (!b.alive || !b.target) continue;
@@ -323,6 +351,7 @@ export class BRMatch {
     // ---- on foot: pick things up, plates
     if (p.alive && this.playerState === 'ground') this.updateOnFoot(dt);
     if (p.alive && (this.playerState === 'ground' || this.playerState === 'vehicle')) this.updateVehicleUse(dt);
+    if (this.watchOn) this.updateWatching(dt);
     // ---- the end
     this.checkEnd();
     this.timeLeft = this.zone.countdown;
@@ -339,7 +368,7 @@ export class BRMatch {
 
   gasDamage(c, dmg) {
     const g = this.game;
-    if (this.finisher && this.finisher.victimView && (c === g.player || c === this.finisher.atk)) return;
+    if (this.untouchable(c)) return;
     c.health -= dmg; c.lastDamage = g.time;
     if (c === g.player) { g.audio.play('hurt', { vol: 0.32, rate: 0.85 }); g.hud.dmgFlash = Math.min(0.55, g.hud.dmgFlash + 0.14); }
     if (c.health <= 0 && !(c === g.player && this.playerGoesDown(null, null))) g.kill(c, null, { part: 'chest', weapon: { name: 'GAS', damage: [20, 20] }, zone: true, dir: new THREE.Vector3(0, -0.4, 1).normalize() });
@@ -347,6 +376,11 @@ export class BRMatch {
 
   checkEnd() {
     const g = this.game, p = g.player;
+    if (this.cfg.net) {
+      // the room says when it is over, for you it is now: watch the others, or back to the lobby
+      if (!p.alive && !this.netDead && g.time > this.deadAt + 3.6) this.showNetDead();
+      return;
+    }
     if (!p.alive) {
       if (g.time > this.deadAt + 3.6 && !this.ended) this.finish(false);
       return;
@@ -369,11 +403,17 @@ export class BRMatch {
     if (this.vehicle) this.leaveVehicle(true);
     this.closeChute();
     if (this.finisher) this.endFinisher();
-    this.finishing = null;
+    this.finishing.delete(p);
     p.downed = false;
     this.hud.setDowned(null);
     this.playerState = 'dead';
-    document.getElementById('death-timer').textContent = 'PLATZ ' + this.stats.placed + ' VON 20';
+    document.getElementById('death-timer').textContent = 'PLATZ ' + this.stats.placed + ' VON ' + (this.cfg.net ? this.cfg.roster.length : 20);
+    // what you had is there for whoever finds it
+    if (this.cfg.net) {
+      const W = this.game.weapons, L = this.loot;
+      for (const s of W.slots) if (s && s.def.id !== 'pistol') L.drop({ kind: 'weapon', weaponId: s.def.id, optic: s.optic, rarity: s.def.rarity || 0, mag: s.mag, reserve: s.reserve }, p.pos.x, p.pos.y, p.pos.z);
+      if (p.plates > 0) L.drop({ kind: 'plate', count: p.plates }, p.pos.x, p.pos.y, p.pos.z);
+    }
     void killer;
   }
 
@@ -387,6 +427,171 @@ export class BRMatch {
     g.input.unlock();
     document.getElementById('death-screen').classList.add('hidden');
     this.hud.result(won, won ? 1 : this.stats.placed, g.player.kills);
+  }
+
+  // ---- out of it in a network match, and the others go on
+  showNetDead() {
+    const g = this.game;
+    this.netDead = true;
+    g.input.unlock();
+    document.getElementById('death-screen').classList.add('hidden');
+    this.hud.result(false, this.stats.placed, g.player.kills, () => this.startWatching());
+  }
+
+  startWatching() {
+    document.getElementById('menu').innerHTML = '';
+    this.watchOn = true;
+    this.nextWatched();
+    this.game.input.lock();
+  }
+
+  // the people first, then whoever else is still around
+  nextWatched() {
+    const all = this.game.bots.filter((b) => b.alive && !b.out && b.sky !== 'plane' && b.pos.y > -400);
+    const list = [...all.filter((b) => !b.isBot), ...all.filter((b) => b.isBot)];
+    this.watching = list.length ? list[(list.indexOf(this.watching) + 1) % list.length] : null;
+    this.watchWait = 1.6; this.watchCut = true;
+    this.hud.setWatching(this.watching ? this.watching.name : '');
+  }
+
+  updateWatching(dt) {
+    const c = this.watching;
+    if (this.game.input.firePressed) { this.nextWatched(); return; }
+    if (c && c.alive && !c.out && this.game.bots.includes(c)) return;
+    this.watchWait -= dt;
+    if (this.watchWait <= 0) this.nextWatched();
+  }
+
+  watchCam(cam, dt) {
+    const c = this.watching;
+    if (!c) return;
+    // over the shoulder, and never through a wall
+    const tx = c.pos.x, ty = c.pos.y + 1.5, tz = c.pos.z, yaw = c.aimYaw || 0;
+    const dx = Math.sin(yaw) * 3.1, dy = 0.55, dz = Math.cos(yaw) * 3.1, L = Math.hypot(dx, dy, dz);
+    const hit = this.game.col.raycast(tx, ty, tz, dx / L, dy / L, dz / L, L, this.watchHit || (this.watchHit = {}));
+    const k = hit ? Math.max(0.12, (hit.t - 0.25) / L) : 1;
+    _w.set(tx + dx * k, ty + dy * k, tz + dz * k);
+    if (this.watchCut) { cam.position.copy(_w); this.watchCut = false; } else cam.position.lerp(_w, 1 - Math.exp(-dt * 9));
+    cam.lookAt(tx, ty, tz);
+  }
+
+  // ---- the room says it is over
+  netFinish(won, m) {
+    if (this.ended) return;
+    if (this.finisher) this.endFinisher();
+    if (this.watchOn) this.hud.setWatching(null);
+    this.ended = true;
+    const g = this.game;
+    this.stopLoops();
+    this.hud.setGas(false);
+    g.state = 'ended';
+    g.input.unlock();
+    document.getElementById('death-screen').classList.add('hidden');
+    const place = won ? 1 : this.stats.placed || 2;
+    g.lobby.lastBoard = { title: won ? 'Letztes Match: gewonnen' : 'Letztes Match: Platz ' + place, rows: m.board };
+    this.hud.result(!!won, place, g.player.kills);
+  }
+
+  // ---- everything the network has to say in a Warzone match
+  get netTime() { return this.zone.elapsed; }
+  netCatchUp(diff) {
+    if (diff > 0) { this.zone.update(diff); this.planeT += diff; } else { this.zone.time = Math.max(0, this.zone.time + diff); this.zone.elapsed += diff; }
+  }
+  onItemLost() { this.hud.hint('Das war schon weg', 1.2); }
+
+  onNetEvent(m) {
+    const g = this.game, L = this.loot, V = this.vehicles.list;
+    switch (m.k) {
+      case 'chest': L.netChest(m.i, m.items); break;
+      case 'item': L.netItem(m); break;
+      case 'veh': { const v = V[m.i]; if (v && v !== this.vehicle) v.netState(m.s, g.net.byId.get(m.from)); break; }
+      case 'vout': { const v = V[m.i]; if (v && v !== this.vehicle) v.netOut(); break; }
+      case 'vdmg': { const v = V[m.i]; if (v && !v.dead) v.damage(m.a, null); break; }
+      case 'fin': this.netFinisher(m); break;
+      default: break;
+    }
+  }
+
+  // Someone started a scene. Everybody plays it with the bodies he has: the one in it from the inside, everyone else from wherever he stands.
+  netFinisher(m) {
+    const g = this.game, net = g.net, F = FINISHERS[m.f], atk = net.byId.get(m.by || m.from), mine = m.v === net.you, v = mine ? g.player : net.byId.get(m.v);
+    if (!F || !atk || !atk.soldier || !v) return;
+    if (!mine && v.remote === undefined && !v.soldier) return;
+    // (someone else got there first, the message crossed his)
+    if (!v.alive || v.out || (mine ? this.finisher && this.finisher.victimView : v.scripted)) return;
+    const origin = new THREE.Vector3(m.o[0], m.o[1], m.o[2]), tilt = new THREE.Quaternion(m.tilt[0], m.tilt[1], m.tilt[2], m.tilt[3]);
+    // (the gun the scene asks for, unless it is his own)
+    if (F.gun && F.gun !== 'own') atk.soldier.setWeapon(WEAPONS[F.gun], 'iron');
+    if (mine) {
+      const p = g.player, W = g.weapons, av = atk.outfit === OUTFITS.vanguard ? this.avatarDark : this.avatar;
+      if (this.finisher) this.endFinisher(); // (one of your own is cut short)
+      if (this.vehicle) this.leaveVehicle(true);
+      W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null;
+      p.sprinting = false; p.tac = false; p.mount = null; p.vel.set(0, 0, 0);
+      this.poseAvatar(av);
+      this.plateT = 0; this.hud.setProgress(0); this.hud.setDowned(null);
+      const stage = new Stage(g, F, atk.soldier, av, origin, m.yaw, tilt, m.t0, m.turn);
+      stage.staysOut = true;
+      if (m.by) stage.startFrom(atk.pos);
+      this.addProp(stage, F);
+      atk.scripted = true;
+      const cam = g.engine.camera;
+      stage.pose(0);
+      this.finisher = { F, b: { soldier: av, alive: true }, av: atk.soldier, atk, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false, victimView: true };
+      const S = this.finisher;
+      while (S.fired < F.events.length && F.events[S.fired][0] < m.t0) { const E = F.events[S.fired++]; if (E[1] === 'prop') this.finisherEvent(E, S); }
+      this.playerState = 'finisher';
+      this.hud.setFocus(null, W); this.hud.setVehiclePrompt(null); this.hud.setPromptText('');
+      this.hud.setCine(true, F.name);
+      this.loot.root.visible = false;
+      g.audio.play('pouch', { vol: 0.7 });
+      return;
+    }
+    // ---- from the outside. The one who runs a bot stops it as well: in the scene or doing it, and then it is up to him to say when it is over.
+    if (atk.soldier === v.soldier) return;
+    const byBot = atk.isBot && !atk.remote;
+    v.scripted = true; atk.scripted = true;
+    if (!v.remote) { v.vel.set(0, 0, 0); v.path = null; v.target = null; v.crouching = false; v.mantling = null; v.sliding = 0; v.prone = false; }
+    if (byBot) this.holdBot(atk);
+    const stage = new Stage(g, F, atk.soldier, v.soldier, origin, m.yaw, tilt, m.t0, m.turn);
+    stage.camera = () => {};
+    // (a bot walks into it from wherever it stands)
+    if (m.by) { stage.staysOut = true; stage.startFrom(atk.pos); }
+    this.addProp(stage, F);
+    const S = { F, b: v, av: atk.soldier, atk, stage, fired: 0, spurt: 0, spurtT: 0, spect: true, killed: false, byBot };
+    while (S.fired < F.events.length && F.events[S.fired][0] < m.t0) { const E = F.events[S.fired++]; if (E[1] === 'prop') this.finisherEvent(E, S); }
+    (this.netStages || (this.netStages = [])).push(S);
+  }
+
+  addProp(stage, F) {
+    if (!F.prop) return;
+    const g = this.game, P = makeProp(F.prop);
+    g.scene.add(P);
+    P.visible = false;
+    stage.prop = P; stage.ownProp = true;
+  }
+
+  updateNetStages(dt) {
+    const list = this.netStages;
+    if (!list || !list.length) return;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const S = list[i], st = S.stage, F = S.F;
+      st.t += dt;
+      // (he is gone, or someone else got there first: the scene closes from here)
+      if (S.byBot && !S.b.alive && !S.killed) { S.killed = true; st.interrupt(); }
+      st.pose(dt);
+      if (!S.b.soldier.dead) S.b.soldier.updateWeaponDrop(dt);
+      if (S.byBot) { S.av.pelvis.getWorldPosition(_w); S.atk.pos.set(_w.x, st.o.y, _w.z); }
+      while (S.fired < F.events.length && st.t >= F.events[S.fired][0]) this.finisherEvent(F.events[S.fired++], S);
+      if (st.t < st.exit + 0.6) continue;
+      // back to being themselves
+      list.splice(i, 1);
+      if (st.prop && st.prop.parent) st.prop.parent.remove(st.prop);
+      if (!S.atk.alive) S.atk.scripted = false; // (he died while it ran: just a body)
+      else if (S.byBot) this.releaseBot(st, S.atk);
+      else { S.atk.scripted = false; S.atk.soldier.resetPose(); S.atk.soldier.setWeapon(S.atk.wdef, S.atk.optic); }
+      if (S.b.alive && !S.b.out) { S.b.scripted = false; S.b.soldier.resetPose(); if (!S.b.soldier.weapon) S.b.soldier.setWeapon(S.b.wdef, S.b.optic === 'iron' ? S.b.wdef.optics[0] : S.b.optic); S.b.soldier.weaponDrop = null; } else S.b.scripted = false;
+    }
   }
 
   stopLoops() { for (const k of Object.keys(this.audioL)) { if (this.audioL[k]) this.audioL[k].stop(); this.audioL[k] = null; } }
@@ -419,7 +624,7 @@ export class BRMatch {
       this.audioL.plane.set(this.playerState === 'plane' ? 0.5 : clamp(1 - d / 900, 0, 1) * 0.3, 1);
     }
     // bots leave one by one
-    for (const b of g.bots) if (b.sky === 'plane' && this.planeT >= b.jumpT) { b.startFall(this.rampEdge()); b.vel.addScaledVector(F.dir, PLANE_SPEED * 0.85); }
+    for (const b of g.bots) if (!b.remote && b.sky === 'plane' && this.planeT >= b.jumpT) { b.startFall(this.rampEdge()); b.vel.addScaledVector(F.dir, PLANE_SPEED * 0.85); }
     // out of island: everyone still inside has to go
     if (s > F.len - 40 && this.playerState === 'plane') this.jump();
     if (s > F.len + 900) { g.scene.remove(this.plane); this.planeLife = false; }
@@ -709,7 +914,7 @@ export class BRMatch {
     W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.firingRecently = false; W.lunge = null;
     this.plateT = 0; this.hud.setProgress(0);
     // whoever was shooting often thinks it is done: that is your chance to crawl away, unless one of them comes over to finish it
-    for (const b of g.bots) if (b.target === p && Math.random() < 0.6) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } b.peaceUntil = 0; }
+    this.letGo(p, 0.6);
     g.audio.play('hurt', { vol: 0.9, rate: 0.7 });
     g.shake.add(0.5);
     p.landSpring.impulse(-3);
@@ -868,6 +1073,7 @@ export class BRMatch {
     // both of them where the scene has them before the next frame is drawn
     stage.startFrom(p.pos);
     stage.pose(0);
+    if (g.net && g.net.inMatch) g.net.send({ t: 'ev', k: 'fin', v: b.netId, f: FINISHERS.indexOf(F), o: [origin.x, origin.y, origin.z], yaw, t0, turn, tilt: this.finTilt ? [this.finTilt.x, this.finTilt.y, this.finTilt.z, this.finTilt.w] : [0, 0, 0, 1] });
     const cam = g.engine.camera;
     this.finisher = { F, b, av, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false };
     // what the skipped part of the scene had done already
@@ -891,8 +1097,9 @@ export class BRMatch {
     // someone else got him first: the scene ends here, he is just a body
     if (!S.victimView && !b.alive && !S.killed) { S.killed = true; st.interrupt(); }
     st.pose(dt);
-    if (S.victimView) { b.soldier.updateWeaponDrop(dt); S.av.pelvis.getWorldPosition(_w); S.atk.pos.x = _w.x; S.atk.pos.z = _w.z; S.atk.pos.y = st.o.y; }
-    else if (!S.killed) { b.soldier.updateWeaponDrop(dt); b.soldier.pelvis.getWorldPosition(_w); b.pos.x = _w.x; b.pos.z = _w.z; b.pos.y = st.o.y; }
+    if (S.victimView) b.soldier.updateWeaponDrop(dt);
+    if (S.byBot) { S.av.pelvis.getWorldPosition(_w); S.atk.pos.x = _w.x; S.atk.pos.z = _w.z; S.atk.pos.y = st.o.y; }
+    else if (!S.killed && !S.victimView) { b.soldier.updateWeaponDrop(dt); b.soldier.pelvis.getWorldPosition(_w); b.pos.x = _w.x; b.pos.z = _w.z; b.pos.y = st.o.y; }
     (S.victimView ? b.soldier : S.av).pelvis.getWorldPosition(_w); p.pos.x = _w.x; p.pos.z = _w.z; p.pos.y = st.o.y; p.eyeH = 1.62;
     g.engine.film = Math.min(0.4, Math.exp(-dt / 0.012));
     // ---- what happens when
@@ -910,22 +1117,34 @@ export class BRMatch {
     const g = this.game, p = g.player, st = S.stage, b = S.b, name = E[1];
     const place = (i) => st.point([E[i], E[i + 1], E[i + 2], E[i + 3]], _v);
     const dir = (i) => _w.set(E[i], E[i + 1], E[i + 2]).applyAxisAngle(UP3, st.yaw).normalize();
+    // (from the outside it happens over there, and the film music is for the people in it)
+    const sound = (id, o) => { if (!S.spect) g.audio.play(id, o); else if (id !== 'sting') g.audio.play(id, { ...o, pos: st.o, maxDist: 60 }); };
+    if (S.spect && (name === 'sfx' || name === 'spurt' || name === 'pin' || (name === 'kill' && !S.byBot))) return; // (that one is up to the people in it, the kill to whoever runs the one who does it)
+    if (S.victimView && name === 'kill') {
+      // That was you. It only counts here once the scene is over, the others hear it now: they play the same scene.
+      if (!S.byBot || S.killed) return;
+      S.killed = true;
+      b.soldier.head.getWorldPosition(_v);
+      S.killInfo = { part: E[4], dir: _w.set(E[2][0], E[2][1], E[2][2]).applyAxisAngle(UP3, st.yaw).normalize().clone(), strength: E[3], weapon: { name: 'FINISHER', damage: [50, 50] }, point: _v.clone(), staged: true };
+      if (g.net && g.net.inMatch) { g.net.sendDied(p, S.atk, S.killInfo); S.killInfo.fromNet = true; }
+      return;
+    }
     if (name === 'sfx') g.audio.play(E[2], E[3]);
     else if (name === 'hit') {
       const power = E[9], at = place(2).clone(), d = dir(6).clone();
       if (power > 0) g.fx.bloodBurst(at, d, power);
-      if (E[10]) g.audio.play(E[10], { vol: 1 });
-      if (power >= 1) g.audio.play('sting', { vol: 0.8 });
+      if (E[10]) sound(E[10], { vol: 1 });
+      if (power >= 1) sound('sting', { vol: 0.8 });
     } else if (name === 'slam') {
       st.bone(E[2]).getWorldPosition(_v); _v.y = this.finFloor(_v, st) + 0.05;
       g.fx.impact(_v, _w.set(0, 1, 0), 'dirt', 0.8 * E[3]);
-      g.audio.play('thud', { vol: 1 });
-    } else if (name === 'thud') g.audio.play('thud', { vol: 0.9 });
+      sound('thud', { vol: 1 });
+    } else if (name === 'thud') sound('thud', { vol: 0.9 });
     else if (name === 'shot') {
       const av = S.av, m = av.muzzleWorld(new THREE.Vector3()), at = place(2).clone(), power = E[9];
       g.fx.muzzleWorld(m, E[10] || 1.3, E[10] ? 1 : 2);
       g.fx.tracer(m, at);
-      g.audio.gunshot(av.weapon.def.id);
+      g.audio.gunshot(av.weapon.def.id, S.spect ? { pos: st.o } : undefined);
       g.fx.bloodBurst(at, dir(6).clone(), power);
       if (E[2][0] === 'v') b.soldier.addWound(st.bone(E[2]), E[3], E[4], E[5]);
       // what the gun lets out: smoke at the muzzle, the brass to the right
@@ -933,19 +1152,13 @@ export class BRMatch {
       av.arms[1].hand.getWorldPosition(_v);
       _w.set(1, 0, 0).applyAxisAngle(UP3, st.yaw);
       g.fx.dust.spawn(_v.x, _v.y + 0.1, _v.z, _w.x * rand(1.4, 2.2), rand(1.6, 2.6), _w.z * rand(1.4, 2.2), 0.7, 0.024, 0.82, 0.62, 0.24, 1, 9.8, 0.2, 0);
-      g.audio.play('imp_flesh', { vol: 1 });
-      if (power >= 2) g.audio.play('sting', { vol: 0.9 });
-    } else if (name === 'kill' && S.victimView) {
-      // that was you: it only counts once the scene is over
-      if (S.killed) return;
-      S.killed = true;
-      b.soldier.head.getWorldPosition(_v);
-      S.killInfo = { part: E[4], dir: _w.set(E[2][0], E[2][1], E[2][2]).applyAxisAngle(UP3, st.yaw).normalize().clone(), strength: E[3], weapon: { name: 'FINISHER', damage: [50, 50] }, point: _v.clone(), staged: true };
+      sound('imp_flesh', { vol: 1 });
+      if (power >= 2) sound('sting', { vol: 0.9 });
     } else if (name === 'kill' && !S.killed && b.alive) {
       // the body keeps playing to the end of the scene: it only stops being anybody
       S.killed = true; b.scripted = false; b.holdDrop = true;
       b.soldier.head.getWorldPosition(_v);
-      g.kill(b, p, { part: E[4], dir: _w.set(E[2][0], E[2][1], E[2][2]).applyAxisAngle(UP3, st.yaw).normalize().clone(), strength: E[3], weapon: { name: 'FINISHER', damage: [50, 50] }, point: _v.clone(), staged: true });
+      g.kill(b, S.atk || p, { part: E[4], dir: _w.set(E[2][0], E[2][1], E[2][2]).applyAxisAngle(UP3, st.yaw).normalize().clone(), strength: E[3], weapon: { name: 'FINISHER', damage: [50, 50] }, point: _v.clone(), staged: true, rest: Math.max(0, st.exit - st.t) });
     } else if (name === 'pool') {
       st.bone(E[2]).getWorldPosition(_v); _v.y = this.finFloor(_v, st);
       g.fx.pool(_v, E[3]);
@@ -960,22 +1173,43 @@ export class BRMatch {
       const at = _v.clone();
       g.fx.explosion(at); g.fx.bloodBurst(at, _w.set(0, 0.6, 0), 2.4);
       if (st.prop) st.prop.visible = false;
-      g.audio.play('boom', { vol: 1 }); g.audio.play('sting', { vol: 1 });
-      this.hud.cineFlash();
-      st.bump = 1;
-      // whoever stands too close gets it as well, the one walking away doesn't
-      for (const c of g.bots) if (c !== b && c !== S.atk && c.alive && !c.out && !c.sky) {
+      sound('boom', { vol: 1 }); sound('sting', { vol: 1 });
+      if (!S.spect) { this.hud.cineFlash(); st.bump = 1; }
+      // whoever stands too close gets it as well, the one walking away doesn't (from the outside that is up to whoever runs him)
+      if (!S.spect || S.byBot) for (const c of g.combatants) if (c !== b && c !== S.atk && (S.spect || c !== p) && c.alive && !c.out && !c.sky) {
         const d = c.pos.distanceTo(at);
         if (d < 7) g.applyDamage(c, 200 * (1 - d / 7), S.atk || p, { part: 'chest', dir: _w.subVectors(c.pos, at).setY(0.5).normalize().clone(), weapon: { name: 'FINISHER', damage: [50, 50] }, point: c.pos.clone() });
       }
     } else if (name === 'spurt') S.spurt = E[2];
   }
 
+  // the scene with me in it is over, the way the one who started it said
+  endVictimView(S) {
+    const g = this.game, p = g.player, st = S.stage, av = S.b.soldier;
+    g.slowmo = 0;
+    this.hud.setCine(false);
+    g.engine.film = 0;
+    this.loot.root.visible = true;
+    if (st.prop && st.prop.parent) st.prop.parent.remove(st.prop);
+    S.atk.scripted = false; S.atk.soldier.resetPose(); S.atk.soldier.setWeapon(S.atk.wdef, S.atk.optic);
+    // (if that was the end of you, you stay where it left you)
+    if (!(S.killPending && S.killPending.info.staged)) { av.resetPose(); av.setVisible(false); }
+    this.playerState = 'ground';
+    p.mode = 'normal'; p.onGround = true;
+    if (S.killPending && p.alive) {
+      // the death camera takes it from the side the scene's camera stands on
+      const cam = g.engine.camera.position;
+      p.yaw = Math.atan2(cam.x - p.pos.x, cam.z - p.pos.z);
+      g.kill(p, S.killPending.k, S.killPending.info);
+    } else if (p.alive) { g.weapons.vm.endFree(); g.weapons.equip(false); }
+  }
+
   endFinisher() {
     const g = this.game, p = g.player, W = g.weapons, S = this.finisher;
     if (!S) return;
     this.finisher = null;
-    if (S.victimView) { this.endBotFinisher(S); return; }
+    if (S.byBot) return this.endBotFinisher(S);
+    if (S.victimView) return this.endVictimView(S);
     g.slowmo = 0;
     this.hud.setCine(false);
     this.loot.root.visible = true;
@@ -1000,17 +1234,31 @@ export class BRMatch {
     p.mode = 'normal'; p.onGround = true;
   }
 
-  // A bot has you. The same scenes you play on them, from the outside, with you as the one it happens to.
-  // reach: how far off it may start. weakOnly: on your feet only if you can't take much more anyway.
-  botFinisher(bot, reach = 2.4, weakOnly = false) {
-    const g = this.game, p = g.player, W = g.weapons, s = this.playerState;
-    if ((s !== 'downed' && s !== 'ground') || this.finisher || !p.alive || !bot.alive || bot.out || bot.scripted || !bot.soldier || p.mantle) return false;
-    const low = s === 'downed' || p.stance === 'prone', dx = p.pos.x - bot.pos.x, dz = p.pos.z - bot.pos.z, d = Math.hypot(dx, dz);
-    if (d > reach || d < 0.01 || Math.abs(p.pos.y - bot.pos.y) > 0.9) return false;
-    const behind = (dx * -Math.sin(p.yaw) + dz * -Math.cos(p.yaw)) / d >= 0.4;
-    if (weakOnly && s === 'ground' && p.health + (p.armor || 0) > (behind ? TAKEN_HP : TAKEN_FRONT_HP)) return false;
-    const col = g.col, floor = col.floorBelow(p.pos.x, p.pos.z, 0.2, p.pos.y + 0.6, p.pos.y - 0.6);
-    if (!isFinite(floor)) return false;
+  // who is lying there and can be finished by a bot: you, or a person on another computer
+  lyingThere(c) { return c === this.game.player ? this.playerState === 'downed' && c.alive : !!c && c.remote && !c.isBot && c.downed && c.alive && !c.out && !c.scripted; }
+  // the bot on its way to end it for someone lying there
+  onTheWay(c) { const b = this.finishing.get(c); return b && b.alive && !b.out ? b : null; }
+
+  // whoever has him in their sights lets go, or some of them
+  letGo(c, chance = 1) {
+    for (const b of this.game.bots) if (!b.remote && b.target === c && Math.random() < chance) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } b.peaceUntil = 0; }
+  }
+
+  // in a scene with you as the victim nothing else can happen to either of you any more, nor to a bot of mine that has someone on another computer
+  untouchable(c) {
+    const S = this.finisher;
+    if (S && S.victimView && (c === this.game.player || c === S.atk)) return true;
+    return !!this.netStages && this.netStages.some((s) => s.byBot && s.atk === c);
+  }
+
+  // Can this bot start a scene on him, and where would it play. look: where he looks, low: he is lying down, standing: he is on his feet and not down.
+  botScene(bot, v, look, low, standing, reach, weakOnly) {
+    const dx = v.pos.x - bot.pos.x, dz = v.pos.z - bot.pos.z, d = Math.hypot(dx, dz);
+    if (d > reach || d < 0.01 || Math.abs(v.pos.y - bot.pos.y) > 0.9) return null;
+    const behind = (dx * -Math.sin(look) + dz * -Math.cos(look)) / d >= 0.4;
+    if (weakOnly && standing && v.health + (v.armor || 0) > (behind ? TAKEN_HP : TAKEN_FRONT_HP)) return null;
+    const col = this.game.col, floor = col.floorBelow(v.pos.x, v.pos.z, 0.2, v.pos.y + 0.6, v.pos.y - 0.6);
+    if (!isFinite(floor)) return null;
     // You never saw how you stood yourself: the scene turns until he starts from where he is.
     // No room that way, then any other way round, and if there is none right here it moves over a little.
     let yaw = 0, F = null;
@@ -1020,21 +1268,55 @@ export class BRMatch {
       return false;
     };
     for (let i = 0; i < NEARBY.length && !F; i++) {
-      const x = p.pos.x + NEARBY[i][0], z = p.pos.z + NEARBY[i][1], f = i ? col.floorBelow(x, z, 0.2, floor + 0.5, floor - 0.5) : floor;
-      if (!isFinite(f) || (i && !col.lineClear(p.pos.x, floor + 0.6, p.pos.z, x, f + 0.6, z))) continue;
+      const x = v.pos.x + NEARBY[i][0], z = v.pos.z + NEARBY[i][1], f = i ? col.floorBelow(x, z, 0.2, floor + 0.5, floor - 0.5) : floor;
+      if (!isFinite(f) || (i && !col.lineClear(v.pos.x, floor + 0.6, v.pos.z, x, f + 0.6, z))) continue;
       origin.set(x, f, z);
       F = this.pickFinisher(origin, f, fits, low);
     }
-    if (!F) return false;
+    return F && { F, origin, yaw };
+  }
+
+  holdBot(bot) { bot.scripted = true; bot.vel.set(0, 0, 0); bot.path = null; bot.mantling = null; bot.crouching = false; bot.sliding = 0; bot.prone = false; bot.state = 'roam'; bot.target = null; }
+
+  // you as you are right now: the scene takes over from there
+  poseAvatar(av) {
+    const p = this.game.player, W = this.game.weapons, s = this.playerState;
+    av.resetPose(); av.setVisible(true); av.setWeapon(W.w.def, W.w.optic);
+    for (let i = 0; i < 8; i++) av.update(0.05, { yaw: p.yaw, pitch: 0, speed: 0, moveAngle: 0, downed: s === 'downed', prone: p.stance === 'prone' && s !== 'downed', crouch: p.stance === 'crouch', floorY: p.pos.y }, p.pos);
+  }
+
+  // A bot has someone who runs on another computer. The scene is looked for here, around where he is, then he gets told and plays it
+  // from the inside, the same way a scene of his own would come in. Here it plays from the outside like for everybody else.
+  botFinisherOn(bot, v, reach = 2.4, weakOnly = false) {
+    const g = this.game;
+    if (v === g.player) return this.botFinisher(bot, reach, weakOnly);
+    if (!v.remote || v.isBot || !v.alive || v.out || v.sky || v.scripted || v.st.seat || v.st.mantle || !bot.alive || bot.out || bot.remote || bot.scripted || !bot.soldier) return false;
+    const S = this.botScene(bot, v, v.aimYaw, v.downed || v.prone, !v.downed, reach, weakOnly);
+    if (!S) return false;
+    this.finishing.delete(v); bot.finishOn = null;
+    this.letGo(v);
+    // (he lies however he lay: on the way into the scene he gets yanked around)
+    const T = this.finTilt, inScene = victimYaw(S.F, 0), m = { t: 'ev', k: 'fin', by: bot.netId, v: v.netId, f: FINISHERS.indexOf(S.F), o: [S.origin.x, S.origin.y, S.origin.z], yaw: S.yaw, t0: 0, turn: inScene + angleDiff(inScene, v.soldier.root.rotation.y - S.yaw), tilt: [T.x, T.y, T.z, T.w] };
+    g.net.send(m);
+    this.netFinisher(m);
+    return true;
+  }
+
+  // A bot has you. The same scenes you play on them, from the outside, with you as the one it happens to.
+  // reach: how far off it may start. weakOnly: on your feet only if you can't take much more anyway.
+  botFinisher(bot, reach = 2.4, weakOnly = false) {
+    const g = this.game, p = g.player, W = g.weapons, s = this.playerState;
+    if ((s !== 'downed' && s !== 'ground') || this.finisher || !p.alive || !bot.alive || bot.out || bot.remote || bot.scripted || !bot.soldier || p.mantle) return false;
+    const scene = this.botScene(bot, p, p.yaw, s === 'downed' || p.stance === 'prone', s === 'ground', reach, weakOnly);
+    if (!scene) return false;
+    const { F, origin, yaw } = scene;
     W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null; W.firingRecently = false;
     p.sprinting = false; p.tac = false; p.mount = null; p.vel.set(0, 0, 0); p.health = Math.max(p.health, 1);
     this.plateT = 0; this.hud.setProgress(0); this.hud.setDowned(null);
-    bot.scripted = true; bot.vel.set(0, 0, 0); bot.path = null; bot.mantling = null; bot.crouching = false; bot.sliding = 0; bot.prone = false; bot.state = 'roam'; bot.target = null;
-    for (const b of g.bots) if (b.target === p) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } }
-    // you as you are right now: the scene takes over from there
+    this.holdBot(bot);
+    this.letGo(p);
     const O = bot.soldier.outfit, av = O === OUTFITS.vanguard || O === OUTFITS.desert ? this.avatarDark : this.avatar;
-    av.resetPose(); av.setVisible(true); av.setWeapon(W.w.def, W.w.optic);
-    for (let i = 0; i < 8; i++) av.update(0.05, { yaw: p.yaw, pitch: 0, speed: 0, moveAngle: 0, downed: s === 'downed', prone: low && s !== 'downed', crouch: p.stance === 'crouch', floorY: p.pos.y }, p.pos);
+    this.poseAvatar(av);
     if (F.gun && F.gun !== 'own') bot.soldier.setWeapon(WEAPONS[F.gun], 'iron');
     const stage = new Stage(g, F, bot.soldier, av, origin, yaw, this.finTilt);
     stage.staysOut = true;
@@ -1046,9 +1328,10 @@ export class BRMatch {
     }
     stage.startFrom(bot.pos);
     stage.pose(0);
+    if (g.net && g.net.inMatch) g.net.send({ t: 'ev', k: 'fin', by: bot.netId, v: g.net.you, f: FINISHERS.indexOf(F), o: [origin.x, origin.y, origin.z], yaw, t0: 0, turn: 0, tilt: this.finTilt ? [this.finTilt.x, this.finTilt.y, this.finTilt.z, this.finTilt.w] : [0, 0, 0, 1] });
     const cam = g.engine.camera;
-    this.finisher = { F, b: { soldier: av, alive: true }, av: bot.soldier, atk: bot, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false, victimView: true };
-    this.finishing = null;
+    this.finisher = { F, b: { soldier: av, alive: true }, av: bot.soldier, atk: bot, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false, victimView: true, byBot: true };
+    this.finishing.delete(p); bot.finishOn = null;
     this.playerState = 'finisher';
     this.hud.setFocus(null, W); this.hud.setVehiclePrompt(null); this.hud.setPromptText('');
     this.hud.setCine(true, F.name);
@@ -1057,18 +1340,24 @@ export class BRMatch {
     return true;
   }
 
-  // over: whoever did it goes on from where the scene leaves him, and you stay where it left you
+  // whoever did it goes on from where the scene leaves him
+  releaseBot(st, bot) {
+    const g = this.game;
+    st.endGround(bot.pos);
+    const f = g.col.floorBelow(bot.pos.x, bot.pos.z, 0.2, st.o.y + 0.5, st.o.y - 1);
+    if (isFinite(f)) bot.pos.y = f;
+    bot.aimYaw = st.endYaw(); bot.scripted = false; bot.onGround = true; bot.path = null; bot.lastProgress.copy(bot.pos); bot.stuckT = 0; bot.peaceUntil = g.time + rand(2, 5);
+    bot.soldier.resetPose(); bot.soldier.setVisible(true); bot.soldier.setWeapon(bot.wdef, bot.optic === 'iron' ? bot.wdef.optics[0] : bot.optic);
+  }
+
+  // over, and you stay where it left you
   endBotFinisher(S) {
     const g = this.game, p = g.player, st = S.stage, bot = S.atk;
     g.slowmo = 0; g.engine.film = 0;
     this.hud.setCine(false);
     this.loot.root.visible = true;
     if (st.prop) { if (st.prop.parent) st.prop.parent.remove(st.prop); st.prop.visible = false; }
-    st.endGround(bot.pos);
-    const f = g.col.floorBelow(bot.pos.x, bot.pos.z, 0.2, st.o.y + 0.5, st.o.y - 1);
-    if (isFinite(f)) bot.pos.y = f;
-    bot.aimYaw = st.endYaw(); bot.scripted = false; bot.onGround = true; bot.path = null; bot.lastProgress.copy(bot.pos); bot.stuckT = 0; bot.peaceUntil = g.time + rand(2, 5);
-    bot.soldier.resetPose(); bot.soldier.setVisible(true); bot.soldier.setWeapon(bot.wdef, bot.optic === 'iron' ? bot.wdef.optics[0] : bot.optic);
+    this.releaseBot(st, bot);
     this.playerState = 'ground';
     p.mode = 'normal'; p.onGround = true;
     // the death camera takes it from the side the scene's camera stands on
@@ -1086,7 +1375,7 @@ export class BRMatch {
   nearestVehicle(p) {
     let best = null, bd = 3.6;
     for (const v of this.vehicles.list) {
-      if (v.dead) continue;
+      if (v.dead || v.netOwner) continue;
       const d = Math.hypot(p.pos.x - v.pos.x, p.pos.z - v.pos.z) - v.def.len * 0.36;
       if (d < bd && Math.abs(p.pos.y - v.pos.y) < 2.4) { bd = d; best = v; }
     }
@@ -1127,6 +1416,7 @@ export class BRMatch {
     if (!v) return;
     v.driver = null; v.doorOpenT = 0.5;
     this.vehicle = null;
+    if (g.net && g.net.inMatch) g.net.send({ t: 'ev', k: 'vout', i: this.vehicles.list.indexOf(v) });
     this.playerState = p.alive ? 'ground' : 'dead';
     this.avatar.setVisible(false);
     if (this.audioL.engine) this.audioL.engine.set(0, 0.5);
@@ -1147,6 +1437,7 @@ export class BRMatch {
     const m = this.readMove(inp, p.moveInput);
     const th = m.y, st = m.x;
     v.update(dt, { throttle: th, steer: st, handbrake: inp.down('jump') });
+    if (g.net && g.net.inMatch && (this.vehSendT = (this.vehSendT || 0) - dt) <= 0) { this.vehSendT = 0.066; g.net.send({ t: 'ev', k: 'veh', i: this.vehicles.list.indexOf(v), s: v.netPack() }); }
     // passenger physics: you are where the seat is
     const seat = v.seatWorld(_v);
     p.pos.copy(seat); p.pos.y = seat.y - 0.2;
@@ -1176,7 +1467,7 @@ export class BRMatch {
   runOver() {
     const g = this.game;
     for (const v of this.vehicles.list) {
-      if (v.dead || v.speed < 4) continue;
+      if (v.dead || v.speed < 4 || v.netOwner) continue;
       for (const c of g.combatants) {
         if (!c.alive || c === v.driver || c.sky) continue;
         if (Math.abs(c.pos.y - v.pos.y) > 2.2) continue;

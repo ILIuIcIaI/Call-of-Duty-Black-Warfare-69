@@ -2,13 +2,13 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. No code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter that runs in your browser. Jump out of a plane in Warzone, a battle royale for 20 players, or pick a loadout, add up to 8 bots and play Team Deathmatch or Free for All on three maps.
+A fast military first-person shooter that runs in your browser. Jump out of a plane in Warzone, a battle royale for 20 players, or pick a loadout, add up to 8 bots and play Team Deathmatch or Free for All on three maps. All of it also works together with your friends over the local network.
 
 The game has no model, texture or audio files: every soldier, weapon, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
 ![Firefight on Drydock with the in-game HUD: a soldier goes down while the rifle fires](docs/screenshots/firefight-hud.jpg)
 
-**Current version: [0.2.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases).
+**Current version: [0.3.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases).
 
 ## Features
 
@@ -43,6 +43,10 @@ There are no motion files behind them. Every scene is written as keys and baked 
 | The suplex | The axe |
 |---|---|
 | ![One soldier lifting another over backward](docs/screenshots/finisher-suplex.jpg) | ![A soldier raising an axe over an enemy on their knees](docs/screenshots/finisher-axe.jpg) |
+
+When a bot gets you, you see it from the scene's camera:
+
+![A bot standing over you as you lie on the ground, with black bars and the name of the scene](docs/screenshots/finisher-bot.jpg)
 
 ### Fast movement
 
@@ -158,7 +162,7 @@ npm install
 npm start
 ```
 
-Then open <http://localhost:8069> and click into the game to capture the mouse. The server only accepts connections from your own computer. Set the `PORT` environment variable to use a different port.
+Then open <http://localhost:8069> and click into the game to capture the mouse. Until you open Multiplayer, the server only accepts connections from your own computer. Set the `PORT` environment variable to use a different port.
 
 Good to know:
 
@@ -166,6 +170,26 @@ Good to know:
 - Your settings stay in your browser's local storage. The only outside requests are for the two interface fonts (Teko and Rajdhani) from Google Fonts. Without internet access the game uses system fonts instead.
 - Browsers don't let a page block `Ctrl+W`. If you crouch with `Ctrl` while walking forward, the browser may try to close the tab, so the game asks for confirmation first. `C` crouches too.
 - Where a browser can't capture the mouse, the camera follows the cursor and keeps turning at the window edge.
+
+## Multiplayer
+
+Play over your local network, with no account and no internet connection.
+
+| The lobby: everybody votes, and there is a chat | Friends with their names above their heads |
+|---|---|
+| ![The multiplayer lobby with three players, the vote on the game mode and the chat](docs/screenshots/multiplayer-lobby.jpg) | ![A teammate with a name tag in a Team Deathmatch](docs/screenshots/multiplayer-match.jpg) |
+
+1. Everybody starts the game and clicks **MULTIPLAYER**, then picks a name.
+2. The first player finds no room and opens one. Everybody after that lands in it automatically.
+3. Nobody runs the room. Everybody votes: the mode (Team Deathmatch, Free for All or Warzone), the map, and whether bots fill the free slots. The lobby has a chat.
+
+If you die in Warzone you can watch the others or go back to the lobby. In Team Deathmatch and Free for All you can join a running match at any time.
+
+Good to know:
+
+- The first time, Windows asks whether Node.js may use the network. Allow it, or nobody will find the room.
+- If a computer doesn't find the room, open the address shown in the lobby in its browser. That computer doesn't need Node.js at all.
+- The room lives on the computer that opened it. If that one goes away, everybody else looks for a new room.
 
 ## Controls
 

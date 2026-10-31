@@ -272,6 +272,34 @@ export class Vehicle {
     return p;
   }
 
+  // ---- someone else is driving this: it goes where he says
+  netPack() { return [+this.pos.x.toFixed(3), +this.pos.y.toFixed(3), +this.pos.z.toFixed(3), +this.yaw.toFixed(3), +this.pitch.toFixed(3), +this.roll.toFixed(3), +this.vel.x.toFixed(2), +this.vel.y.toFixed(2), +this.vel.z.toFixed(2), +this.speed.toFixed(2), this.hp | 0]; }
+  netState(s, who) {
+    if (this.dead) return;
+    this.netOwner = who || true; this.driver = who || null;
+    this.netTo = s; this.netAt = performance.now();
+    this.hp = Math.min(this.hp, s[10]);
+    if (!this.netSeen) { this.netSeen = true; this.pos.set(s[0], s[1], s[2]); this.yaw = s[3]; this.pitch = s[4]; this.roll = s[5]; this.doorOpenT = 0.42; }
+  }
+  netOut() { this.netOwner = null; this.driver = null; this.netSeen = false; this.doorOpenT = 0.5; this.grounded = false; if (this.netTo) this.vel.set(this.netTo[6], this.netTo[7], this.netTo[8]); }
+  netUpdate(dt) {
+    const s = this.netTo;
+    if (!s) return;
+    // (he hasn't said anything for a while: he is gone, the car rolls out)
+    if (performance.now() - this.netAt > 1500) { this.netOut(); return; }
+    const k = Math.min(1, dt * 14);
+    this.pos.x += (s[0] - this.pos.x) * k; this.pos.y += (s[1] - this.pos.y) * k; this.pos.z += (s[2] - this.pos.z) * k;
+    let dy = s[3] - this.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+    this.yaw += dy * k; this.pitch += (s[4] - this.pitch) * k; this.roll += (s[5] - this.roll) * k;
+    this.vel.set(s[6], s[7], s[8]); this.speed = s[9];
+    if (this.doorOpenT > 0) { this.doorOpenT -= dt; this.doorWant = 1; } else this.doorWant = 0;
+    this.doorT = damp(this.doorT, this.doorWant, 9, dt);
+    if (this.door) this.door.rotation.y = -this.doorT * 1.05;
+    const cam = this.game.engine.camera.position;
+    this.root.visible = (this.pos.x - cam.x) ** 2 + (this.pos.z - cam.z) ** 2 < 430 * 430;
+    this.syncVisual(dt);
+  }
+
   get frontVec() { return _f.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
   get rightVec() { return _r.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
 
@@ -477,7 +505,7 @@ export class Vehicle {
     for (const c of g.combatants) {
       if (!c.alive) continue;
       const q = c.pos.distanceTo(this.pos);
-      if (q < 7) g.applyDamage(c, (1 - q / 7) * 180 + (c === this.driver ? 200 : 0), attacker || c, { part: 'chest', dir: _v2.copy(c.pos).sub(this.pos).normalize().clone(), weapon: { name: 'FAHRZEUG', damage: [40, 40] }, point: c.pos.clone() });
+      if (q < 7 && !c.remote) g.applyDamage(c, (1 - q / 7) * 180 + (c === this.driver ? 200 : 0), attacker || c, { part: 'chest', dir: _v2.copy(c.pos).sub(this.pos).normalize().clone(), weapon: { name: 'FAHRZEUG', damage: [40, 40] }, point: c.pos.clone() });
     }
     if (this.driver === g.player && g.match.leaveVehicle) g.match.leaveVehicle(true);
   }

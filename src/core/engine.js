@@ -73,6 +73,7 @@ export class Engine {
   }
 
   render(scene, vmScene, extraBefore) {
+    if (this.noDraw) return; // (nobody is looking)
     const r = this.renderer;
     r.info.reset();
     r.clear();

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math.js';
 import { drawScope } from './scopes.js';
+import { esc } from '../net/net.js';
 const _p = new THREE.Vector3(), _f = new THREE.Vector3();
 
 // =============================================================================
@@ -57,6 +58,7 @@ export class HUD {
   }
 
   clearTags() { for (const t of this.tags.values()) t.remove(); this.tags.clear(); }
+  dropTag(c) { const t = this.tags.get(c); if (t) { t.remove(); this.tags.delete(c); } }
 
   // friendly names over heads (CoD style, faded behind walls) + enemy name under the crosshair
   updateNameTags() {
@@ -304,7 +306,7 @@ export class HUD {
     const g = this.game, p = g.player;
     const cls = (c) => (c === p ? 'me' : g.isFriendly(c, p) ? 'f' : 'e');
     const d = document.createElement('div'); d.className = 'kf';
-    d.innerHTML = `<span class="${cls(killer)}">${killer === victim ? '' : killer.name}</span><span class="w">[${weapon}]</span>${head ? '<span class="hs">⊕</span>' : ''}<span class="${cls(victim)}">${victim.name}</span>`;
+    d.innerHTML = `<span class="${cls(killer)}">${killer === victim ? '' : esc(killer.name)}</span><span class="w">[${esc(weapon)}]</span>${head ? '<span class="hs">⊕</span>' : ''}<span class="${cls(victim)}">${esc(victim.name)}</span>`;
     this.el.kf.prepend(d);
     while (this.el.kf.children.length > 5) this.el.kf.lastChild.remove();
     setTimeout(() => d.remove(), 6000);
@@ -407,7 +409,7 @@ export class HUD {
     if (!m) return;
     b.classList.remove('hidden');
     const rows = [...g.combatants].sort((a, c) => c.score - a.score || c.kills - a.kills);
-    const row = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${g.isFriendly(c, g.player) ? 'tf' : 'te'}">${c.name}</td><td>${c.score}</td><td>${c.kills}</td><td>${c.deaths}</td><td>${c.deaths ? (c.kills / c.deaths).toFixed(2) : c.kills.toFixed(2)}</td></tr>`;
+    const row = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${g.isFriendly(c, g.player) ? 'tf' : 'te'}">${esc(c.name)}</td><td>${esc(c.score)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td><td>${c.deaths ? (c.kills / c.deaths).toFixed(2) : c.kills.toFixed(2)}</td></tr>`;
     const head = '<tr><th>NAME</th><th>PUNKTE</th><th>KILLS</th><th>TODE</th><th>K/D</th></tr>';
     if (m.mode === 'br') {
       const alive = rows.filter((c) => (c.isPlayer ? c.alive : !c.out));
