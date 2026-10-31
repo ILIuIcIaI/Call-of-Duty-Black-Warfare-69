@@ -2,7 +2,7 @@
 // Weapon definitions. Health is 150 (like modern CoD), so the numbers below
 // produce ~250-350ms time-to-kill for automatics at close range.
 // damage: [near, far] linear falloff between range[0] and range[1] (meters)
-// recoil: up/side in degrees per shot; pattern makes the first shots predictable
+// recoil: up/side in degrees per shot; pattern makes the first shots predictable. snap: how far a small gun jumps at the face (looks only)
 // =============================================================================
 export const WEAPONS = {
   ar: {
@@ -17,7 +17,7 @@ export const WEAPONS = {
     id: 'smg', name: 'VEKTOR-9', cls: 'Maschinenpistole', slot: 'primary', model: 'smg', fire: 'auto',
     rpm: 920, damage: [28, 18], range: [12, 32], head: 1.3, limb: 0.95, mag: 32, reserve: 160,
     reload: 2.2, reloadEmpty: 1.9, ads: 0.085, sprintToFire: 0.11, tacToFire: 0.22, mobility: 1.06, adsMoveMul: 0.78,
-    hip: 3.0, adsSpread: 0.12, moveSpread: 1.4, recoil: { up: 0.45, side: 0.36, bias: -0.05, recover: 9, kick: 0.75, vis: 0.8 },
+    hip: 3.0, adsSpread: 0.12, moveSpread: 1.4, recoil: { up: 0.45, side: 0.36, bias: -0.05, recover: 9, kick: 0.75, vis: 0.8, snap: 0.7 },
     optics: ['iron', 'micro', 'reflex', 'reddot', 'chevron', 'holo', 'prism'], sound: 'smg', reloadStyle: 'mag', pen: 0.6,
     stats: { dmg: 50, rof: 90, rng: 38, acc: 60, mob: 88, hnd: 86 },
   },
@@ -73,8 +73,8 @@ export const WEAPONS = {
     id: 'mpistol', name: 'SK-18 WASP', cls: 'Maschinenpistole (Sek.)', slot: 'secondary', model: 'mpistol', fire: 'auto',
     rpm: 1050, damage: [24, 15], range: [8, 20], head: 1.25, limb: 1.0, mag: 22, reserve: 88,
     reload: 1.6, reloadEmpty: 1.85, ads: 0.07, sprintToFire: 0.09, tacToFire: 0.18, mobility: 1.08, adsMoveMul: 0.85,
-    hip: 3.0, adsSpread: 0.3, moveSpread: 0.8, recoil: { up: 0.5, side: 0.5, bias: 0, recover: 10, kick: 0.7, vis: 0.9 },
-    optics: ['iron', 'micro', 'reflex'], sound: 'mpistol', reloadStyle: 'pistol', pen: 0.4,
+    hip: 3.0, adsSpread: 0.3, moveSpread: 0.8, recoil: { up: 0.5, side: 0.5, bias: 0, recover: 10, kick: 0.7, vis: 0.9, snap: 1 },
+    optics: ['iron', 'micro', 'reflex'], sound: 'mpistol', reloadStyle: 'pistol', pen: 0.4, flash: 0.8,
     stats: { dmg: 38, rof: 98, rng: 20, acc: 42, mob: 96, hnd: 94 },
   },
   burst: {
@@ -89,7 +89,7 @@ export const WEAPONS = {
     id: 'pdw', name: 'PX-4 HORNET', cls: 'Maschinenpistole', slot: 'primary', model: 'pdw', fire: 'auto',
     rpm: 1080, damage: [23, 14], range: [9, 24], head: 1.25, limb: 1.0, mag: 40, reserve: 160,
     reload: 2.0, reloadEmpty: 1.75, ads: 0.075, sprintToFire: 0.09, tacToFire: 0.2, mobility: 1.08, adsMoveMul: 0.82,
-    hip: 2.6, adsSpread: 0.18, moveSpread: 1.1, recoil: { up: 0.34, side: 0.34, bias: -0.03, recover: 10, kick: 0.6, vis: 0.7 },
+    hip: 2.6, adsSpread: 0.18, moveSpread: 1.1, recoil: { up: 0.34, side: 0.34, bias: -0.03, recover: 10, kick: 0.6, vis: 0.7, snap: 0.85 },
     optics: ['iron', 'micro', 'reflex', 'chevron', 'holo'], sound: 'pdw', reloadStyle: 'mag', reloadTail: 'charge', pen: 0.45, flash: 0.7,
     stats: { dmg: 38, rof: 98, rng: 26, acc: 54, mob: 96, hnd: 92 },
   },

@@ -599,6 +599,9 @@ export class Player {
   ledgeAt(hx, hz, nx, nz, dir, top, vault) {
     const col = this.game.col, r = MOVE.radius, px = this.pos.x, py = this.pos.y, pz = this.pos.z;
     const hgt = top - py;
+    // the way up has to be free: a ceiling between here and there means this is the floor above, not a ledge
+    const rr = r * 0.85, head = py + this.height - 0.02, up = Math.max(py, top) + H.slide;
+    if (up > head && col.overlaps(px - rr, head, pz - rr, px + rr, up, pz + rr)) return null;
     // the floor right in front of the face: just a stair step or curb is not a ledge
     const fy = col.floorBelow(hx + nx * 0.06, hz + nz * 0.06, 0.04, top - 0.02, py - 4);
     if (top - fy < STEP_HEIGHT + 0.03) return null;

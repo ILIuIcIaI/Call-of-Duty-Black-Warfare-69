@@ -155,10 +155,10 @@ export class Effects {
     t.d = 0; t.speed = speed; t.life = 1; t.w = width; t.seg = Math.min(6, 2 + t.len * 0.05);
   }
 
-  muzzleWorld(pos, size = 0.5) {
+  muzzleWorld(pos, size = 0.5, puffs = 2) {
     const f = this.flashes[this.flashNext]; this.flashNext = (this.flashNext + 1) % this.flashes.length;
     f.s.position.copy(pos); f.s.scale.setScalar(size * rand(0.8, 1.2)); f.s.visible = true; f.t = 0.05;
-    for (let i = 0; i < 2; i++) this.dust.spawn(pos.x, pos.y, pos.z, rand(-0.3, 0.3), rand(0.1, 0.5), rand(-0.3, 0.3), 0.6, 0.25, 0.7, 0.7, 0.7, 0.18, -0.2, 1.2, 2.5);
+    for (let i = 0; i < puffs; i++) this.dust.spawn(pos.x, pos.y, pos.z, rand(-0.3, 0.3), rand(0.1, 0.5), rand(-0.3, 0.3), 0.6, 0.25, 0.7, 0.7, 0.7, 0.18, -0.2, 1.2, 2.5);
   }
 
   impact(p, n, surface, power = 1) {

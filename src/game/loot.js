@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WEAPONS, OPTICS, PRIMARIES, SECONDARIES } from '../weapons/defs.js';
-import { buildWeapon, weaponMaterials } from '../weapons/models.js';
+import { buildWeapon, weaponMaterials, buildPlate } from '../weapons/models.js';
 
 // =============================================================================
 // Warzone loot. Weapons and optics are rolled completely independently, so a
@@ -23,6 +23,7 @@ const ALL_OPTICS = Object.keys(OPTICS);
 const roll = (w) => { let r = Math.random() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i; } return 0; };
 const FLOOR_ODDS = [40, 30, 18, 9, 3], CHEST_ODDS = [14, 28, 30, 20, 8];
 const CHESTS = 170, ITEMS = 280; // on the whole island
+const SEEN = 14; // from how far what you look at tells you what it is
 
 // a weapon with its rarity worked into the numbers
 export function makeWeaponDef(id, rarity = 0) {
@@ -45,8 +46,6 @@ export function rollWeapon(odds) {
 
 const mats = {
   chest: new THREE.MeshLambertMaterial({ vertexColors: true }),
-  plate: new THREE.MeshLambertMaterial({ color: 0x2c3036 }),
-  plateTrim: new THREE.MeshLambertMaterial({ color: 0x46c8e0 }),
   ammo: new THREE.MeshLambertMaterial({ color: 0x6a6238 }),
   ammoTop: new THREE.MeshLambertMaterial({ color: 0xc8b060 }),
 };
@@ -81,6 +80,16 @@ function boxes(list) {
     return g;
   });
   return mergeGeometries(parts);
+}
+// what is being looked at gets a line around it in its color: its own surface a little further out, seen from behind
+const outlineMats = new Map();
+function outlineMat(hex) {
+  if (!outlineMats.has(hex)) {
+    const m = new THREE.MeshBasicMaterial({ color: hex, side: THREE.BackSide, fog: false });
+    m.onBeforeCompile = (s) => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normalize(normal) * 0.011;'); };
+    outlineMats.set(hex, m);
+  }
+  return outlineMats.get(hex);
 }
 const OLIVE = 0x4f5a42, OLIVE2 = 0x5d6950, STEEL = 0x24262a, BRASS = 0xd8ae48, STENCIL = 0xc9b45a;
 let chestGeo = null;
@@ -220,17 +229,19 @@ export class Loot {
   }
 
   proto(it) {
+    const p = this.protos.get(it.weaponId + '|' + it.optic);
+    if (p) return p;
+    if (this.buildsThisFrame > 0) return null; // one new model per frame keeps walking into town smooth
+    this.buildsThisFrame++;
+    return this.buildProto(it);
+  }
+  buildProto(it) {
     const key = it.weaponId + '|' + it.optic;
-    let p = this.protos.get(key);
-    if (!p) {
-      if (this.buildsThisFrame > 0) return null; // one new model per frame keeps walking into town smooth
-      this.buildsThisFrame++;
-      const w = buildWeapon(WEAPONS[it.weaponId].model, it.optic, weaponMaterials(this.game.tex));
-      w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
-      const root = bake(w.root);
-      p = { root, center: new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3()) };
-      this.protos.set(key, p);
-    }
+    if (this.protos.has(key)) return this.protos.get(key);
+    const w = buildWeapon(WEAPONS[it.weaponId].model, it.optic, weaponMaterials(this.game.tex));
+    w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
+    const root = bake(w.root), p = { root, center: new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3()) };
+    this.protos.set(key, p);
     return p;
   }
 
@@ -246,10 +257,7 @@ export class Loot {
       g.add(holder); g.userData.spin = holder;
       hex = RARITY[it.rarity].hex;
     } else if (it.kind === 'plate') {
-      const h = new THREE.Group();
-      const a = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.36, 0.05), mats.plate); h.add(a);
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.055), mats.plateTrim); b.position.y = 0.08; h.add(b);
-      const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.055), mats.plateTrim); b2.position.y = -0.08; h.add(b2);
+      const h = new THREE.Group(); h.add(buildPlate());
       g.add(h); g.userData.spin = h; hex = 0x46c8e0;
     } else {
       const h = new THREE.Group();
@@ -261,6 +269,32 @@ export class Loot {
     g.traverse((o) => o.layers.set(2));
     this.root.add(g);
     return g;
+  }
+
+  // what the thing looks like on its own, for the picture on the card
+  model(o, kind) {
+    if (kind === 'chest') return chestMesh().g;
+    if (o.kind === 'weapon') { const p = this.proto(o) || this.buildProto(o); const r = p.root.clone(true); r.position.copy(p.center).negate(); const h = new THREE.Group(); h.add(r); return h; }
+    if (o.kind === 'plate') return buildPlate();
+    const h = new THREE.Group();
+    h.add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.2), mats.ammo));
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.16), mats.ammoTop); b.position.y = 0.12; h.add(b);
+    return h;
+  }
+
+  // the line around what is being looked at
+  highlight(o, kind) {
+    if (this.lit === o) return;
+    if (this.lit && this.lit.obj && this.lit.obj.userData.hulls) for (const h of this.lit.obj.userData.hulls) h.visible = false;
+    this.lit = o && o.obj ? o : null;
+    if (!this.lit) return;
+    const U = o.obj.userData;
+    if (!U.hulls) {
+      const hex = kind === 'chest' ? 0xd8ae48 : o.kind === 'weapon' ? RARITY[o.rarity].hex : o.kind === 'plate' ? 0x46c8e0 : 0xe8d890, meshes = [];
+      o.obj.traverse((m) => { if (m.isMesh && m !== U.beam) meshes.push(m); });
+      U.hulls = meshes.map((m) => { const h = new THREE.Mesh(m.geometry, outlineMat(hex)); h.layers.set(2); m.add(h); return h; });
+    }
+    for (const h of U.hulls) h.visible = true;
   }
 
   removeItem(it) {
@@ -327,20 +361,22 @@ export class Loot {
     if (scan) this.items = this.items.filter((i) => !i.taken);
   }
 
-  // what the player would use right now: looked at first, close second
-  focus(eye, fwd) {
+  // What the player is really looking at, as in Warzone: how big it is in the view decides how exactly it has to be
+  // looked at, what already has the card keeps it a little longer. far: seen, but out of reach (its name, nothing more).
+  focus(eye, fwd, keep = null) {
     let best = null, bs = Infinity;
     const col = this.game.col;
     const test = (o, kind, reach, y) => {
       const dx = o.x - eye.x, dy = y - eye.y, dz = o.z - eye.z, d = Math.hypot(dx, dy, dz);
-      if (d > reach) return;
-      const cosA = d > 1e-3 ? (dx * fwd.x + dy * fwd.y + dz * fwd.z) / d : 1;
-      if (cosA < 0.5 && d > 1.3) return;
-      const s = (1 - cosA) * 8 + d * 0.5;
-      if (s < bs && col.lineClear(eye.x, eye.y, eye.z, o.x, y + 0.05, o.z)) { bs = s; best = { o, kind }; }
+      if (d > SEEN) return;
+      const a = d > 1e-3 ? Math.acos(Math.max(-1, Math.min(1, (dx * fwd.x + dy * fwd.y + dz * fwd.z) / d))) : 0;
+      const lim = Math.max(0.055, Math.atan2(d > reach ? 0.36 : 0.56, d)) * (o === keep ? 1.35 : 1);
+      if (a > lim) return;
+      const s = a / lim + d * 0.04;
+      if (s < bs && col.lineClear(eye.x, eye.y, eye.z, o.x, y + 0.05, o.z)) { bs = s; best = { o, kind, far: d > reach }; }
     };
-    for (const it of this.items) if (!it.taken && !it.arc && Math.abs(it.x - eye.x) < 3 && Math.abs(it.z - eye.z) < 3) test(it, 'item', 2.8, it.y + 0.45);
-    for (const c of this.chests) if (!c.open && Math.abs(c.x - eye.x) < 3.2 && Math.abs(c.z - eye.z) < 3.2) test(c, 'chest', 3.0, c.y + 0.55);
+    for (const it of this.items) if (!it.taken && !it.arc && Math.abs(it.x - eye.x) < SEEN && Math.abs(it.z - eye.z) < SEEN) test(it, 'item', 2.8, it.y + 0.45);
+    for (const c of this.chests) if (!c.open && Math.abs(c.x - eye.x) < SEEN && Math.abs(c.z - eye.z) < SEEN) test(c, 'chest', 3.0, c.y + 0.55);
     return best;
   }
 

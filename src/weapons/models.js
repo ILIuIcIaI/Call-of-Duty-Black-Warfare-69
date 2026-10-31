@@ -483,6 +483,29 @@ export function buildHands(mats) {
   return { right: r, left: l, leftOpen: lo, rightOpen: ro };
 }
 
+// a ballistic plate, the same one in the hand and on the ground: chamfered at the top, thick, a little worn
+let plateParts = null;
+export function buildPlate() {
+  if (!plateParts) {
+    const W = 0.125, H = 0.165, C = 0.05, R = 0.016, s = new THREE.Shape();
+    s.moveTo(-W + R, -H); s.lineTo(W - R, -H); s.quadraticCurveTo(W, -H, W, -H + R); s.lineTo(W, H - C); s.quadraticCurveTo(W, H - C * 0.4, W - C, H);
+    s.lineTo(-W + C, H); s.quadraticCurveTo(-W, H - C * 0.4, -W, H - C); s.lineTo(-W, -H + R); s.quadraticCurveTo(-W, -H, -W + R, -H);
+    const body = new THREE.ExtrudeGeometry(s, { depth: 0.02, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2, curveSegments: 5 }).translate(0, 0, -0.01);
+    plateParts = {
+      body, stripe: new THREE.BoxGeometry(0.19, 0.016, 0.004), tag: new THREE.BoxGeometry(0.07, 0.036, 0.003), strap: new THREE.BoxGeometry(0.02, 0.2, 0.004),
+      mBody: new THREE.MeshLambertMaterial({ color: 0x3a3f42 }), mStripe: new THREE.MeshLambertMaterial({ color: 0x4a93a6 }), mTag: new THREE.MeshLambertMaterial({ color: 0x8f8b7a }), mStrap: new THREE.MeshLambertMaterial({ color: 0x24272a }),
+    };
+  }
+  const P = plateParts, g = new THREE.Group();
+  g.add(new THREE.Mesh(P.body, P.mBody));
+  for (const z of [0.018, -0.018]) {
+    const a = new THREE.Mesh(P.stripe, P.mStripe); a.position.set(0, 0.075, z); g.add(a);
+    const t = new THREE.Mesh(P.tag, P.mTag); t.position.set(0, -0.06, z); g.add(t);
+    for (const x of [-0.07, 0.07]) { const b = new THREE.Mesh(P.strap, P.mStrap); b.position.set(x, -0.02, z * 0.95); g.add(b); }
+  }
+  return g;
+}
+
 // orientation helpers for hand anchors (columns = images of fist local axes in weapon space)
 export function basisQuat(xAxis, yAxis, zAxis) {
   const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(...xAxis).normalize(), new THREE.Vector3(...yAxis).normalize(), new THREE.Vector3(...zAxis).normalize());

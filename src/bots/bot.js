@@ -50,7 +50,7 @@ export class Bot {
     this.prefDist = { smg: 8, pdw: 7, shotgun: 5, autoshot: 6, ar: 16, burst: 18, lmg: 22, dmr: 28, sniper: 38, amr: 42 }[id] || 15;
   }
 
-  get eyeH() { return this.crouching ? 1.12 : 1.6; }
+  get eyeH() { return this.downed ? 0.42 : this.prone ? 0.3 : this.crouching ? 1.12 : 1.6; }
   eyePos(out = new THREE.Vector3()) { return out.set(this.pos.x, this.pos.y + this.eyeH, this.pos.z); }
 
   spawn(x, y, z, yaw) {
@@ -115,7 +115,8 @@ export class Bot {
       if (c === this || !c.alive || g.isFriendly(c, this)) continue;
       const dx = c.pos.x - this.pos.x, dz = c.pos.z - this.pos.z, dy = c.pos.y - this.pos.y;
       const dist = Math.hypot(dx, dy, dz);
-      if (dist > D.view || (this.ignores && this.ignores(c, dist))) continue;
+      const shotBy = c === this.lastAttacker && g.time - this.lastDamage < 5;
+      if (dist > (shotBy ? Math.max(D.view, 110) : D.view) || (this.ignores && this.ignores(c, dist))) continue;
       const yawTo = Math.atan2(-dx, -dz);
       const off = Math.abs(angleDiff(this.aimYaw, yawTo));
       const recentAttacker = c === this.lastAttacker && g.time - this.lastDamage < 2.5;
@@ -276,6 +277,7 @@ export class Bot {
     } else if (this.state === 'cover') {
       this.crouchT = 0.3; speed = 0;
     }
+    if (this.prone) { wish.set(0, 0, 0); speed = 0; this.sprinting = false; this.tac = false; }
     if (wish.lengthSq() > 1e-4) {
       wish.normalize();
       this.moveYaw = Math.atan2(-wish.x, -wish.z);
@@ -302,7 +304,7 @@ export class Bot {
       }
       this.vel.y -= 19.5 * dt;
       const wasGround = this.onGround;
-      const res = moveCharacter(g.col, this.pos, this.vel, dt, 0.3, this.crouching || this.sliding > 0 ? 1.2 : 1.8, wasGround);
+      const res = moveCharacter(g.col, this.pos, this.vel, dt, 0.25, this.prone ? 0.7 : this.crouching || this.sliding > 0 ? 1.2 : 1.8, wasGround);
       this.onGround = res.ground;
       if (res.hitWall && this.path && !engaging) this.handleBlocked(wish);
       g.separate(this);
@@ -494,7 +496,7 @@ export class Bot {
     if (sp > 0.3) moveAngle = angleDiff(this.aimYaw, Math.atan2(-this.vel.x, -this.vel.z));
     return {
       yaw: this.aimYaw, pitch: this.aimPitch, speed: sp, moveAngle: -moveAngle,
-      crouch: this.crouching && this.sliding <= 0, slide: this.sliding > 0, dive: false, prone: false, supine: false,
+      crouch: this.crouching && this.sliding <= 0, slide: this.sliding > 0, dive: false, prone: !!this.prone, supine: false,
       air: !this.onGround && !this.mantling, tac: this.tac && sp > 6, sprint: this.sprinting && sp > 5, melee: this.meleeT > 0 ? 1 - this.meleeT / 0.5 : 0, reloadK: this.reloadT > 0 ? 1 - this.reloadT / (this.reloadTotal || 1) : 0, reload: this.reloadT > 0, mantle: !!this.mantling, floorY: this.pos.y,
     };
   }

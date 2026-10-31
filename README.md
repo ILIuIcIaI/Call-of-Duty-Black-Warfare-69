@@ -2,15 +2,47 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. No code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter that runs in your browser. Pick a loadout, add up to 8 bots and play Team Deathmatch or Free for All on three maps.
+A fast military first-person shooter that runs in your browser. Jump out of a plane in Warzone, a battle royale for 20 players, or pick a loadout, add up to 8 bots and play Team Deathmatch or Free for All on three maps.
 
 The game has no model, texture or audio files: every soldier, weapon, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
 ![Firefight on Drydock with the in-game HUD: a soldier goes down while the rifle fires](docs/screenshots/firefight-hud.jpg)
 
-**Current version: [0.1.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases).
+**Current version: [0.2.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases).
 
 ## Features
+
+### Warzone
+
+A battle royale for you and 19 bots on Serena, an island with a town, a harbor, an airfield, a military base, villages and mountains. Jump when you like, steer your parachute and shoot your sidearm on the way down. Then find a weapon before someone finds you, because the safe zone keeps shrinking until only one is left.
+
+| Over the island | Under the canopy |
+|---|---|
+| ![The transport plane over the island of Serena](docs/screenshots/warzone-plane.jpg) | ![Holding the parachute lines high above the town](docs/screenshots/warzone-parachute.jpg) |
+
+- **Loot:** 170 chests and 280 items on the ground. Any weapon can come with any optic, in five rarity levels from Common to Legendary. Higher rarities hit harder, hold more rounds, reload faster and kick less.
+- **Armor:** carry up to 5 plates and wear up to 3. Each one takes 50 damage.
+- **Vehicles:** hatchback, sedan, pickup, jeep and off-roader, with a first- and third-person camera.
+- **Going down:** at zero health you crawl, bleed out and can revive yourself, a little slower each time.
+- **Bots:** they loot, fight each other and come after you as the zone closes in.
+
+| Compact item card | Armor plate |
+|---|---|
+| ![A card above a rifle on the ground with its name, rarity and picture, and a colored outline around the rifle](docs/screenshots/warzone-loot.jpg) | ![An armor plate held up in first person with the rifle moved aside](docs/screenshots/warzone-plate.jpg) |
+
+| Map with the zone | Floor plans on the minimap |
+|---|---|
+| ![The full map with place names, the safe zone and the next zone](docs/screenshots/warzone-map.jpg) | ![The minimap showing the rooms of the upper floor while standing inside a building](docs/screenshots/warzone-floorplan.jpg) |
+
+### Finishers
+
+Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end.
+
+There are no motion files behind them. Every scene is written as keys and baked once when the match starts. That step works out what a body would really do: the weight goes onto the standing foot before a step, heads stay level and keep their eyes on the target, hands travel in arcs around the shoulder, and when the muscles let go, physics takes over.
+
+| The suplex | The axe |
+|---|---|
+| ![One soldier lifting another over backward](docs/screenshots/finisher-suplex.jpg) | ![A soldier raising an axe over an enemy on their knees](docs/screenshots/finisher-axe.jpg) |
 
 ### Fast movement
 
@@ -49,25 +81,34 @@ Jump at almost any edge. Low cover is vaulted in one motion. For ledges above he
 
 ### Weapons and optics
 
-Nine weapons, each with its own stats and handling. You can change your loadout in the middle of a round: press `L`, and the new weapons are in your hands as soon as you resume.
+Fourteen weapons, each with its own stats and handling. You can change your loadout in the middle of a round: press `L`, and the new weapons are in your hands as soon as you resume.
 
 | Weapon | Type | Fire mode | Rounds per minute | Magazine |
 |---|---|---|---|---|
 | AR-77 Valkyr | Assault rifle | Automatic | 760 | 30 |
+| KR-3 Triad | Burst rifle | 3-round burst | 900 | 30 |
 | Vektor-9 | Submachine gun | Automatic | 920 | 32 |
+| PX-4 Hornet | Submachine gun | Automatic | 1080 | 40 |
 | HMG-90 Bulwark | Light machine gun | Automatic | 680 | 75 |
 | MK-14 Warden | Marksman rifle | Semi-automatic | 340 | 15 |
 | Longbow .338 | Sniper rifle | Bolt action | 50 | 5 |
+| Titan .50 | Anti-materiel rifle | Semi-automatic | 95 | 7 |
 | Breacher-12 | Shotgun | Pump action | 75 | 7 |
+| Siege-8 | Automatic shotgun | Semi-automatic | 210 | 8 |
 | P-11 Sidearm | Pistol | Semi-automatic | 420 | 15 |
 | .44 Judge | Revolver | Semi-automatic | 165 | 6 |
+| M-50 Bastion | Heavy pistol | Semi-automatic | 125 | 7 |
 | SK-18 Wasp | Machine pistol | Automatic | 1050 | 22 |
 
-Optics: iron sights, reflex sight, holographic sight, the 3x TAC-3 with a picture-in-picture lens, and an 8x sniper scope. Which ones are available depends on the weapon.
+Fourteen optics, from iron sights and red dots through 2x to 12x scopes to thermal sights. Scopes use a picture-in-picture lens. Which ones are available in the loadout menu depends on the weapon.
+
+Aiming against an edge rests the weapon on it for less recoil, and at corners you lean out.
 
 ![Loadout menu with weapon stats and a 3D preview of the selected rifle](docs/screenshots/menu-loadout.jpg)
 
-### Three maps
+### Maps
+
+Besides the island of Serena, three maps for Team Deathmatch and Free for All:
 
 | Map | Size | Setting |
 |---|---|---|
@@ -141,6 +182,13 @@ Good to know:
 | `Space` (while sliding) | Slide cancel: keeps your speed and refills the tactical sprint |
 | `R` | Reload |
 | `1` / `2` / `Q` / mouse wheel | Switch weapon |
+| `V` / `E` | Melee; finisher next to a hurt enemy |
+| Aim + `W` against an edge | Rest the weapon on it; lean out at corners |
+| `T` | Rest the weapon by hand, on or off |
+| `F` | Warzone: pick up, open a chest, get in and out of a vehicle |
+| `G` | Warzone: put on an armor plate |
+| `M` | Warzone: full map |
+| `V` (in a vehicle) | Warzone: change the camera |
 | `I` | Inspect weapon |
 | `Tab` | Scoreboard |
 | `L` | Change loadout, also in the middle of a round |
@@ -149,6 +197,7 @@ Good to know:
 ## For developers
 
 - `?dev=1&map=citadel&bots=5` skips the menu and starts a match straight away.
+- `?dev=1&br=1&bots=19` does the same for Warzone.
 - `&autopilot=1` lets an AI control the player for a hands-free playtest.
 
 ## Credits and license

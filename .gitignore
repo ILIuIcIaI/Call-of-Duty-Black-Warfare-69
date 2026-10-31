@@ -22,3 +22,5 @@ desktop.ini
 /src/dev/brsim.js
 /src/dev/fincheck.js
 /src/dev/finfuzz.js
+/src/dev/mapcheck.js
+/src/dev/fightcheck.js

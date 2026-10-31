@@ -10,6 +10,7 @@ import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
 // sprint-to-fire, weapon swapping. Drives the viewmodel and asks the game to
 // trace bullets.
 // =============================================================================
+export const PLATE_TIME = 1.15;
 const _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _v = new THREE.Vector3();
 
 export class PlayerWeapons {
@@ -36,6 +37,15 @@ export class PlayerWeapons {
   get w() { return this.slots[this.cur]; }
   get def() { return this.w.def; }
   get busy() { return this.state !== 'idle'; }
+
+  // A new match. Its clock starts at zero, so the next shot can't wait for a time from the last one.
+  startOver() {
+    clearTimeout(this._boltDelay);
+    this.nextShot = 0; this.lastShotT = -9; this.fireBuffer = 0; this.raiseT = 0; this.recoilIndex = 0; this.bloom = 0;
+    this.state = 'idle'; this.burstLeft = 0; this.pendingSlot = -1; this.shellLoop = false; this.lunge = null;
+    this.stowed = false; this.lockSlot = -1; this.adsAmount = 0; this.wantsAds = false; this.firingRecently = false;
+    this.vm.stop(); this.vm.endFree();
+  }
 
   setLoadout(lo) {
     const mk = (id, optic) => {
@@ -103,7 +113,7 @@ export class PlayerWeapons {
     if (this.state === 'holster' || this.state === 'draw') return false;
     this.vm.stop(); this.shellLoop = false;
     this.state = 'plate';
-    this.vm.play(plateClip(1.05));
+    this.vm.play(plateClip(PLATE_TIME));
     return true;
   }
   plateDone() { if (this.state === 'plate') this.state = 'idle'; }
@@ -253,6 +263,13 @@ export class PlayerWeapons {
     muzzle.applyMatrix4(cam.matrixWorld);
     const muzzleW = muzzle.clone();
     const scoped = vm.model.optic && vm.model.optic.overlay && this.adsAmount > 0.9;
+    if (!scoped) {
+      const n = def.pellets || def.recoil.vis > 1.5 ? 4 : 2, sm = g.fx.dust, a = (this.adsAmount > 0.5 ? 0.12 : 0.22);
+      for (let i = 0; i < n; i++) {
+        const s = 0.5 + Math.random() * 2;
+        sm.spawn(muzzleW.x, muzzleW.y, muzzleW.z, _dir.x * s + (Math.random() - 0.5) * 0.3, _dir.y * s + 0.05 + Math.random() * 0.3, _dir.z * s + (Math.random() - 0.5) * 0.3, 0.7 + Math.random() * 0.9, 0.09 + Math.random() * 0.1, 0.68, 0.68, 0.66, a, -0.12, 2.2, 2.6);
+      }
+    }
     for (let i = 0; i < pellets; i++) {
       // uniform disc sample in the spread cone
       const r = Math.sqrt(Math.random()) * (pellets > 1 ? def.pelletSpread * DEG * (1 - this.adsAmount * 0.25) : spread) * 0.5;
@@ -274,11 +291,12 @@ export class PlayerWeapons {
     this.punchP.impulse(up * DEG * 26 * adsP);
     this.punchY.impulse(-side * DEG * 18 * adsP);
     this.punchR.impulse((Math.random() * 2 - 1) * rc.kick * DEG * 30);
-    this.fovPunch.impulse(rc.kick * 9 * (this.adsAmount > 0.5 ? 0.5 : 1));
+    this.fovPunch.impulse((rc.kick + (rc.snap || 0) * 0.5) * 9 * (this.adsAmount > 0.5 ? 0.5 : 1));
+    if (rc.snap) this.punchP.impulse(rc.snap * DEG * 9 * adsP);
     this.recoilIndex++;
     this.bloom = Math.min(def.hip * 0.8, this.bloom + def.hip * 0.12);
     vm.onShot(def, this.adsAmount > 0.5);
-    g.shake.add(rc.kick * (this.adsAmount > 0.5 ? 0.05 : 0.08));
+    g.shake.add((rc.kick + (rc.snap || 0) * 0.5) * (this.adsAmount > 0.5 ? 0.05 : 0.08));
     g.audio.gunshot(def.sound);
     g.onPlayerShot(def);
     if (def.fire !== 'bolt' && def.fire !== 'pump' && !this.vm.model.revolver) {
@@ -411,6 +429,9 @@ export class PlayerWeapons {
     else if (name === 'loaderIn') J.jolt(0, -0.1, 0.06, -0.8, 0, 0.2);
     if (name === 'swing') { g.audio.play('swing', { vol: 0.8 }); J.jolt(0, -0.02, 0, -0.3, 0.3, 0); }
     if (name === 'meleeHit') this.meleeStrike(g.player);
+    if (name === 'plateIn') { J.jolt(0.02, -0.3, 0.06, -1.6, 0.2, 0.6); if (g.br) g.br.plateIn(); }
+    if (name === 'platePat') { J.jolt(0, -0.1, 0, -0.5, 0, 0.2); g.audio.play('magTouch', { vol: 0.5, rate: 0.8 }); }
+    if (name === 'plateOut') g.audio.play('magTouch', { vol: 0.4 });
     if (name === 'refill') {
       const n = Math.min(def.mag - w.mag, w.reserve);
       w.mag += n; w.reserve -= n; this.refilled = true;

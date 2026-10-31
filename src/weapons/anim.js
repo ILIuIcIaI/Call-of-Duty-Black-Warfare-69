@@ -259,12 +259,30 @@ export function holsterClip(dur) {
   return { name: 'holster', dur, W: [[0, ...Z6], [1, 0.03, -0.24, 0.06, -1.0, 0.3, -0.5]], S: {}, E: [[0.05, 'holster']] };
 }
 // armor plate: the gun dips away, the left hand goes to the vest and shoves the plate in
+// Warzone's plate, frame by frame: the gun sinks to the lower left and stays there in the left hand. The right hand brings the plate
+// up from the lower right, big and tilted, holds it a moment, drives it down into the vest, and pats it home with the open hand.
+// P: the plate hand, H: the open hand, both in camera space [t, x, y, z, pitch, yaw, roll]. free: while the right hand is off the gun.
 export function plateClip(dur) {
   return {
-    name: 'plate', dur,
-    W: [[0, ...Z6], [0.16, 0.01, -0.1, 0.04, -0.42, 0.16, 0.26], [0.72, 0.01, -0.11, 0.04, -0.44, 0.18, 0.28], [0.9, 0, -0.02, 0.01, -0.06, 0.02, 0.04], [1, ...Z6]],
-    L: [H(0, 'home'), H(0.2, 'vest', 0, 0.02, -0.02), H(0.42, 'vest', 0, 0.14, -0.05), H(0.62, 'vest', 0, 0.1, -0.03, 0.3), H(0.85, 'home'), H(1, 'home')],
-    S: {}, E: [[0.14, 'pouch'], [0.55, 'magKnock']],
+    name: 'plate', dur, free: [0.1, 0.86],
+    W: [[0, ...Z6], [0.15, -0.44, -0.115, 0, 0.35, 0.6, 0.35], [0.78, -0.45, -0.125, 0, 0.33, 0.62, 0.37], [1, ...Z6]],
+    P: [
+      [0.1, 0.42, -0.5, -0.28, 0.2, -0.3, -0.75],
+      [0.22, 0.34, -0.26, -0.33, 0.1, -0.22, -0.62],
+      [0.3, 0.3, -0.14, -0.35, 0.03, -0.18, -0.54],
+      [0.52, 0.27, -0.15, -0.35, 0.02, -0.14, -0.5],
+      // into the vest
+      [0.6, 0.24, -0.27, -0.3, -0.3, -0.1, -0.42],
+      [0.66, 0.24, -0.55, -0.24, -0.7, -0.1, -0.36],
+    ],
+    H: [
+      [0.6, 0.4, -0.36, -0.28, 0.5, 1.2, 0.1],
+      [0.68, 0.22, -0.12, -0.35, 0.45, 1.25, 0.1],
+      [0.75, 0.13, -0.085, -0.36, 0.42, 1.3, 0.1],
+      [0.82, 0.24, -0.16, -0.34, 0.45, 1.2, 0.15],
+      [0.9, 0.4, -0.36, -0.28, 0.5, 1.1, 0.2],
+    ],
+    S: {}, E: [[0.05, 'pouch'], [0.2, 'plateOut'], [0.58, 'plateIn'], [0.72, 'platePat']],
   };
 }
 // knife: the gun drops down to the right, the knife comes across the screen from the upper left.

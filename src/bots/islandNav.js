@@ -5,7 +5,7 @@ import { NavGraph } from './nav.js';
 // around buildings, a coarse 5 m grid over open ground, both stitched together.
 // Plain NavGraph API, so bots don't need to know the difference.
 // =============================================================================
-const R = 0.3, HEIGHT = 1.7, COARSE = 5, STEP = 0.46;
+const R = 0.25, HEIGHT = 1.8, COARSE = 5, STEP = 0.46;
 
 export class IslandNav extends NavGraph {
   constructor(col, bounds, rects, terrain, hub = [0, 12.2, 40]) {
@@ -162,7 +162,7 @@ export class IslandNav extends NavGraph {
       const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
       const f = col.floorBelow(x, z, 0.1, prevY + STEP + 0.02, prevY - STEP - 0.05);
       if (!isFinite(f) || Math.abs(f - prevY) > STEP + 0.02) return false;
-      if (this.boxesBlock(x - R + 0.04, f + STEP + 0.03, z - R + 0.04, x + R - 0.04, f + HEIGHT, z + R - 0.04)) return false;
+      if (this.boxesBlock(x - R, f + STEP + 0.03, z - R, x + R, f + HEIGHT, z + R)) return false;
       prevY = f;
     }
     return Math.abs(prevY - by) < STEP + 0.05;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { crate, barrel, container, stairs, sandbags, car, tree, truck, forklift, railing } from './props.js';
 import {
   Kit, Plan, BASE, T, SLAB, rnd, pick, chance, PLAIN, WALL, mtx, bays,
-  straightStair, switchStair, stairLen, stairHouse, topRail, fireEscape,
+  straightStair, switchStair, stairLen, stairRun, stairHouse, topRail, fireEscape, sideRail,
   gableRoof, hipRoof, shedRoof, flatRoof, ceiling, foundation, band, quoins, chimney, roofClutter, acUnit, awning, sign, columns,
 } from './kit.js';
 import { ITEMS } from './furniture.js';
@@ -48,6 +48,7 @@ export function cottage(b, out, o) {
   const wins = [{ end: 'min', c: 0, w: 1.3, y: 0.8, h: 1.0 }, { end: 'max', c: 0, w: 1.3, y: 0.8, h: 1.0 }];
   A.win(attic, 'w', { at: [0], w: 1.3, y: 0.8, h: 1.0 }); A.win(attic, 'e', { at: [0], w: 1.3, y: 0.8, h: 1.0 });
   attic.noWin = false; A.noWin = false; attic.win.n = false; attic.win.s = false;
+  A.extra.push({ rect: [-hw, -hd, hw, hd], floor: 'wood' });
   foundation(K, [[-hw, -hd, hw, hd]]);
   finish(G, A);
   ceiling(K, -hw, -1.9, hw, 1.9, topY + 2.1);
@@ -312,13 +313,13 @@ export function courtyard(b, out, o) {
 // SHOP with a flat above: big window to the street, store behind
 // ---------------------------------------------------------------------------
 export function shop(b, out, o) {
-  const K = new Kit(b, out, o), L = look(o, { shutter: null }), w = o.w || 14, d = o.d || 11, hw = w / 2, hd = d / 2, h = 3.3, up = BASE + h, top = up + 3;
+  const K = new Kit(b, out, o), L = look(o, { shutter: null }), w = o.w || 14, d = o.d || 11, hw = w / 2, hd = d / 2, h = 3.3, up = BASE + h, top = up + 3, xs = hw - 1.45, sx = Math.min(1, xs - stairRun(h) * 2 - 1.5);
   const G = planOf(K, BASE, h, L, { ground: true, plinth: pick(['concreteDark', 'paversDark', null]) }), U = planOf(K, up, 3, L, { flower: 0.6 });
-  const sell = G.room(-hw, -1.5, hw, hd, 'shop', { win: { s: { at: [-hw * 0.56, hw * 0.56], w: 3.4, y: 0.4, h: 2.2, plain: true } } }), store = G.room(-hw, -hd, 1, -1.5, 'storeroom'), hall = G.room(1, -hd, hw, -1.5, 'hall', { fill: false, noWin: true });
+  const sell = G.room(-hw, -1.5, hw, hd, 'shop', { win: { s: { at: [-hw * 0.56, hw * 0.56], w: 3.4, y: 0.4, h: 2.2, plain: true } } }), store = G.room(-hw, -hd, sx, -1.5, 'storeroom'), hall = G.room(sx, -hd, hw, -1.5, 'hall', { fill: false, noWin: true });
   G.out(sell, 's', { w: 2.4, h: 2.6, leaf: false, at: 0 }); G.door(sell, store, { at: -3 }); G.door(sell, hall, { at: 4.8 }); G.out(store, 'n', { at: -3 }); G.out(store, 'w', { at: -hd + 2 });
-  const land = U.room(1, -hd, hw, -1.5, 'hall', { fill: false, noWin: true }), live = U.room(-hw, -hd, 1, hd, 'living'), bed = U.room(1, -1.5, hw, hd, 'bed');
+  const land = U.room(sx, -hd, hw, -1.5, 'hall', { fill: false, noWin: true }), live = U.room(-hw, -hd, sx, hd, 'living'), bed = U.room(sx, -1.5, hw, hd, 'bed');
   U.door(land, live, { at: -hd + 3.1 }); U.door(live, bed, { at: 2 });
-  straightStair(K, G, U, hw - 0.3, -hd + 0.95, '-x', { w: 1.6, rail: false });
+  straightStair(K, G, U, xs, -hd + 0.95, '-x', { w: 1.6 });
   const H = U.holes[0]; topRail(K, U, H[0], H[3], H[2], H[3]);
   if (chance(0.7)) U.balcony(bed, 's', { at: 4, w: 3.4, d: 1.2 });
   foundation(K, [[-hw, -hd, hw, hd]]);
@@ -337,11 +338,11 @@ export function shop(b, out, o) {
 export function bar(b, out, o) {
   const K = new Kit(b, out, o), L = look(o, { ext: pick(['brickDark', 'plasterTerra', 'brick', 'plasterOchre']), shutter: null, plinth: 'concreteDark' }), hw = 7.5, hd = 6, h = 3.4, up = BASE + h;
   const G = planOf(K, BASE, h, L, { ground: true, plinth: L.plinth }), U = new Plan(K, up, 1.1, { ext: L.ext, railMat: 'woodDark' });
-  const room = G.room(-hw, -2, hw, hd, 'bar', { win: { s: { at: [-5, 5], w: 2.6, y: 0.55, h: 1.8 } } }), kitchen = G.room(-hw, -hd, 0, -2, 'kitchen'), wc = G.room(0, -hd, 3, -2, 'bath'), st = G.room(3, -hd, hw, -2, 'stair', { noWin: true });
-  G.out(room, 's', { at: 0, w: 2.3, leaf: false, h: 2.6 }); G.out(room, 'w', { at: 2 }); G.door(room, kitchen, { at: -4 }); G.door(room, wc, { w: 1.3, at: 1.5 }); G.door(room, st, { at: 5.2 }); G.out(kitchen, 'n', { at: -4 }); G.out(st, 'e', { at: -3 });
+  const room = G.room(-hw, -2, hw, hd, 'bar', { win: { s: { at: [-5, 5], w: 2.6, y: 0.55, h: 1.8 } } }), kitchen = G.room(-hw, -hd, -1.5, -2, 'kitchen'), wc = G.room(-1.5, -hd, 1.5, -2, 'bath'), st = G.room(1.5, -hd, hw, -2, 'stair', { noWin: true });
+  G.out(room, 's', { at: 0, w: 2.3, leaf: false, h: 2.6 }); G.out(room, 'w', { at: 2 }); G.door(room, kitchen, { at: -4 }); G.door(room, wc, { w: 1.3, at: 0 }); G.door(room, st, { at: 5.2 }); G.out(kitchen, 'n', { at: -4 }); G.out(st, 'e', { at: -3 });
   const terr = U.room(-hw, -hd, hw, hd, 'terrace', { outdoor: true, floor: 'woodPale', fill: false, chests: 2, items: 3 });
   U.edge(terr, 'nsew', 'low'); terr.lowH = 1.0;
-  straightStair(K, G, U, hw - 0.1, -hd + 1, '-x', { w: 1.65, rail: false });
+  straightStair(K, G, U, hw - 1.45, -hd + 1, '-x', { w: 1.65 });
   const H = U.holes[0];
   topRail(K, U, H[0], H[3], H[2], H[3], 'woodDark'); topRail(K, U, H[2], H[1], H[2], H[3], 'woodDark');
   foundation(K, [[-hw, -hd, hw, hd]]);
@@ -465,22 +466,25 @@ export function townHall(b, out, o) {
   const VX = 6, VZ0 = -4, VZ1 = 5;
   const gN = U.room(-8, -8, 8, VZ0, 'hall', { fill: false, floor: 'parquet', wall: 'wallCream' }), gS = U.room(-8, VZ1, 8, 7, 'hall', { fill: false, floor: 'parquet', wall: 'wallCream' }), gW = U.room(-8, VZ0, -VX, VZ1, 'hall', { fill: false, floor: 'parquet', wall: 'wallCream' }), gE = U.room(VX, VZ0, 8, VZ1, 'hall', { fill: false, floor: 'parquet', wall: 'wallCream' });
   U.open(gN, gW); U.open(gN, gE); U.open(gS, gW); U.open(gS, gE);
+  U.edge(gN, 's', 'none'); U.edge(gS, 'n', 'none'); U.edge(gW, 'e', 'none'); U.edge(gE, 'w', 'none');
   const uW = [U.room(-17, -14, -8, -4.5, 'office'), U.room(-17, -4.5, -8, 4.5, 'meeting'), U.room(-17, 4.5, -8, 13, 'bunk')], uE = [U.room(8, -14, 17, -4.5, 'office'), U.room(8, -4.5, 17, 4.5, 'archive'), U.room(8, 4.5, 17, 13, 'study')];
   const uS = U.room(-8, 7, 8, 13, 'meeting', { win: { s: { bay: 3.2, w: 1.7, y: 0.6, h: 2.2 } } });
   const uN = [U.room(-8, -14, -1.8, -8, 'archive'), U.room(1.8, -14, 8, -8, 'office')], uSt = U.room(-1.8, -14, 1.8, -8, 'stair', { noWin: true });
   U.door(gW, uW[1], { at: 0 }); U.door(gE, uE[1], { at: 0 }); U.door(uW[0], uW[1]); U.door(uW[1], uW[2]); U.door(uE[0], uE[1]); U.door(uE[1], uE[2]);
   U.door(gS, uS, { at: 0, w: 2.4 }); U.door(gN, uN[0], { at: -5 }); U.door(gN, uN[1], { at: 5 }); U.arch(gN, uSt, { at: 0 });
   // two free-standing flights up to the north gallery
-  for (const x of [-5, 5]) {
+  for (const x of [-4.8, 4.8]) {
     const rise = up - BASE, run = rise / 0.8, s = K.sub(x, VZ0 + run, 2, false, BASE);
     const n = Math.round(rise / 0.25), sh = rise / n, sd = run / n;
     for (let i = 0; i < n; i++) s.box(-1.0, Math.max(0, sh * (i + 1) - 0.32), sd * i, 1.0, sh * (i + 1), sd * (i + 1), 'marble', PLAIN);
+    sideRail(s, -1.0, rise, run, 'woodDark'); sideRail(s, 1.0, rise, run, 'woodDark');
     G.keep.push([x - 1.1, VZ0 - 0.1, x + 1.1, VZ0 + run + 1.2]);
   }
   // railing around the void, open where the flights arrive
   railing(K, -VX, VZ1, VX, VZ1, 1.05, 'woodDark', true, up);
   railing(K, -VX, VZ0, -VX, VZ1, 1.05, 'woodDark', true, up); railing(K, VX, VZ0, VX, VZ1, 1.05, 'woodDark', true, up);
-  railing(K, -4, VZ0, 4, VZ0, 1.05, 'woodDark', true, up);
+  railing(K, -3.8, VZ0, 3.8, VZ0, 1.05, 'woodDark', true, up);
+  railing(K, -6, VZ0, -5.8, VZ0, 1.05, 'woodDark', true, up); railing(K, 5.8, VZ0, 6, VZ0, 1.05, 'woodDark', true, up);
   // the stair of the north block keeps going up into the clock tower
   const roofLvl = new Plan(K, top, 3.1, { ext, frame, noWin: false, bay: 9, ground: false, ceil: 'plasterGrey', winH: 1.2, winY: 1.2, winW: 1 }), T1 = new Plan(K, top + 3.1, 3.1, { ext, frame, ceil: 'plasterGrey', bay: 9, winH: 1.2, winY: 1.2, winW: 1 }), Bell = new Plan(K, top + 6.2, 3.1, { ext, frame, noWin: true, ceil: 'plasterGrey' });
   const t0 = roofLvl.room(-1.8, -14, 1.8, -8, 'stair', { wall: 'concrete', win: { e: {}, w: {} } }), t1 = T1.room(-1.8, -14, 1.8, -8, 'stair', { wall: 'concrete', win: { e: {}, w: {} } }), t2 = Bell.room(-1.8, -14, 1.8, -8, 'lookout', { wall: 'concrete', chests: 1, items: 1 });
@@ -632,12 +636,14 @@ export function parking(b, out, o) {
   const RUN = 13, RW = 3.8;
   const ramp = (P, Q, up) => {
     // a long gentle stair, wide enough to walk side by side
-    const dir = up ? 1 : -1, z0 = up ? -1.9 - RW - 1 : 1.9 + 1, x0 = -dir * RUN / 2;
-    const n = 15, sh = (Q.y - P.y) / n, sd = RUN / n;
+    const dir = up ? 1 : -1, z0 = up ? -1.9 - RW - 0.6 : 1.9 + 0.6, x0 = -dir * RUN / 2;
+    const n = 15, sh = (Q.y - P.y) / n, sd = RUN / n, pad = 0.14;
     for (let i = 0; i < n; i++) {
       const a = x0 + dir * sd * i, e = x0 + dir * sd * (i + 1), t = P.y + sh * (i + 1);
-      K.box(a, Math.max(P.y, t - 0.3), z0, e, t, z0 + RW, 'concreteFloor', PLAIN);
+      K.box(a, Math.max(P.y, t - 0.3), z0 + pad, e, t, z0 + RW - pad, 'concreteFloor', PLAIN);
     }
+    const rs = K.sub(x0, z0 + RW / 2, up ? 1 : 3, false, P.y);
+    sideRail(rs, RW / 2 - pad, Q.y - P.y, RUN, 'metalYellow'); sideRail(rs, -RW / 2 + pad, Q.y - P.y, RUN, 'metalYellow');
     Q.hole(-RUN / 2, z0, RUN / 2, z0 + RW);
     P.keep.push([-RUN / 2 - 1, z0, RUN / 2 + 1, z0 + RW]);
     railing(K, -RUN / 2, z0, RUN / 2, z0, 1.05, 'metalYellow', true, Q.y);
@@ -654,7 +660,10 @@ export function parking(b, out, o) {
     const next = S[f + 1] || R;
     ramp(P, next, f % 2 === 0);
     P.door(deck, sw, { at: 3, leaf: false }); P.door(deck, ne, { at: -3, leaf: false });
-    if (f === 0) { P.out(sw, 's', {}); P.out(ne, 'n', {}); }
+    if (f === 0) {
+      P.out(sw, 's', {}); P.out(ne, 'n', {}); P.door(deck, sw, { at: hd - 2, leaf: false }); P.door(deck, ne, { at: -hd + 2, leaf: false });
+      for (const [side, at] of [['s', 0], ['n', 0], ['w', -hd / 2 - 1], ['e', hd / 2 + 1]]) P.out(deck, side, { at, w: 4.5, h: 3, leaf: false, frame: false });
+    }
     switchStair(K, P, next, -hw - 3.6, 2, 0);
     if (f < floors - 1) switchStair(K, P, next, hw + 3.6, -2, 2);
     else topRail(K, P, hw + 2, -3.6, hw + 3.6, -3.6);
@@ -691,15 +700,15 @@ export function warehouse(b, out, o) {
     const nz = -hd + T / 2, wd = 2.1, Y = BASE + gy;
     const plate = (x0, z0, x1, z1) => { K.box(x0, Y - 0.12, z0, x1, Y, z1, m, PLAIN); walkRects.push([x0, z0, x1, z1]); };
     plate(-hw + T / 2, nz, hw - T / 2, nz + wd);
-    plate(-hw + T / 2, nz + wd, -hw + T / 2 + wd, hd - T / 2 - 5);
-    railing(K, -hw + T / 2 + wd, nz + wd, hw - 5.8, nz + wd, 1.05, 'metalYellow', true, Y);
-    railing(K, -hw + T / 2 + wd, nz + wd, -hw + T / 2 + wd, hd - T / 2 - 5, 1.05, 'metalYellow', true, Y);
     // stairs up at the north-east and the far end of the west walk
-    const run = gy / 0.8;
-    { const s = K.sub(hw - 1.1, nz + wd + run, 2, false, BASE); stepFlight(s, 1.75, gy, run, m); keep.push([hw - 2.2, nz + wd, hw, nz + wd + run + 1.5]); }
-    { const s = K.sub(-hw + T / 2 + wd / 2, hd - T / 2 - 5 + run, 2, false, BASE); stepFlight(s, wd - 0.1, gy, run, m); keep.push([-hw, hd - T / 2 - 5.1, -hw + wd + 0.3, hd - T / 2 - 5 + run + 1.3]); }
-    for (const x of bays(-hw, hw, 7)) K.box(x - 0.1, BASE, nz + wd - 0.1, x + 0.1, Y - 0.12, nz + wd + 0.1, m, WALL);
-    for (const z of bays(nz + wd, hd - 5, 7)) K.box(-hw + T / 2 + wd - 0.1, BASE, z - 0.1, -hw + T / 2 + wd + 0.1, Y - 0.12, z + 0.1, m, WALL);
+    const run = gy / 0.8, westEnd = hd - T / 2 - 1.6 - run;
+    plate(-hw + T / 2, nz + wd, -hw + T / 2 + wd, westEnd);
+    railing(K, -hw + T / 2 + wd, nz + wd, hw - 2.2, nz + wd, 1.05, 'metalYellow', true, Y);
+    railing(K, -hw + T / 2 + wd, nz + wd, -hw + T / 2 + wd, westEnd, 1.05, 'metalYellow', true, Y);
+    { const s = K.sub(hw - 1.1, nz + wd + run, 2, false, BASE); stepFlight(s, 1.75, gy, run, m, [1]); keep.push([hw - 2.2, nz + wd, hw, nz + wd + run + 1.5]); }
+    { const s = K.sub(-hw + T / 2 + wd / 2, westEnd + run, 2, false, BASE); stepFlight(s, wd - 0.1, gy, run, m, [-1]); keep.push([-hw, westEnd - 0.1, -hw + wd + 0.3, westEnd + run + 1.3]); }
+    for (const x of bays(-hw, hw - 2.2, 7)) K.box(x - 0.1, BASE, nz + wd - 0.1, x + 0.1, Y - 0.12, nz + wd + 0.1, m, WALL);
+    for (const z of bays(nz + wd, westEnd, 7)) K.box(-hw + T / 2 + wd - 0.1, BASE, z - 0.1, -hw + T / 2 + wd + 0.1, Y - 0.12, z + 0.1, m, WALL);
     for (const x of bays(-hw + 3, hw - 6, 7)) { K.spot(x, Y, nz + 1.05, { kind: 'room' }); }
   }
   // ---- what stands around
@@ -758,9 +767,11 @@ export function warehouse(b, out, o) {
   if (o.sign) sign(K, o.sign, 0, BASE + Math.min(h - 1.2, 6), hd + T / 2 + 0.02, 0, 1, o.signW || 6);
   K.area(-hw, -hd, hw, hd, 2);
 }
-function stepFlight(s, w, rise, run, mat) {
+// open treads rising in +z from z = 0; rails: on which sides a handrail runs (-1, 1)
+export function stepFlight(s, w, rise, run, mat, rails = []) {
   const n = Math.round(rise / 0.25), sh = rise / n, sd = run / n;
   for (let i = 0; i < n; i++) s.box(-w / 2, Math.max(0, sh * (i + 1) - 0.3), sd * i, w / 2, sh * (i + 1), sd * (i + 1), mat, PLAIN);
+  for (const r of rails) sideRail(s, r * w / 2, rise, run, mat);
 }
 function rackRow(K, x, z, hx, hz, y) {
   K.box(x - hx, y, z - hz, x + hx, y + 0.1, z + hz, 'metalDark', { skirt: false, ao: false });
@@ -802,7 +813,7 @@ export function garage(b, out, o) {
   K.spot(5, top, 0, { indoor: false, kind: 'room' });
   // steel stairs up the east side
   const run = h / 0.8, s = K.sub(hw + T / 2 + 0.9, hd - 0.2, 2, false, 0);
-  stepFlight(s, 1.75, top, run + 0.2, 'metalDark');
+  stepFlight(s, 1.75, top, run + 0.2, 'metalDark', [-1]);
   K.box(hw + T / 2, top - 0.1, hd - run - 2.8, hw + T / 2 + 1.8, top, hd - run - 0.4, 'metalDark', PLAIN);
   sign(K, 'GARAGE', 2.5, top - 0.6, hd + T / 2 + 0.02, 0, 1, 3.2);
   for (const [x, z] of [[-hw - 1.2, -2], [-hw - 1.3, 1.2]]) { ITEMS.tires.draw(K.sub(x, z, 0, false, 0)); }
@@ -861,7 +872,7 @@ export function ruin(b, out, o) {
   // what is left of the first floor, one stair still leads up
   const up = y + 3.1, sx = -hw + t, slabX = 1.2;
   K.box(-hw + t / 2, up - 0.25, -hd + t / 2, slabX, up, -0.6, 'concrete', { skirt: false, ao: false });
-  K.box(-hw + 2.1, up - 0.25, -0.6, slabX - 0.6, up, 1.3, 'concrete', { skirt: false, ao: false });
+  K.box(-hw + 2.4, up - 0.25, -0.6, slabX - 0.6, up, 1.3, 'concrete', { skirt: false, ao: false });
   const s = K.sub(sx + 1, 3.3, 2, false, y); stepFlight(s, 1.8, 3.1, 3.9, 'concreteDark');
   K.spot(-2, up, -2.6, { indoor: false, kind: 'room' });
   // rubble
@@ -882,7 +893,7 @@ export function church(b, out, o) {
   const K = new Kit(b, out, o), ext = o.ext || 'plasterWhite', h = 8, top = BASE + h, tH = 3.4;
   const N = new Plan(K, BASE, h, { ext, frame: 'marble', ground: true, plinth: 'stoneWall', noWin: true });
   const nave = N.room(-5.5, -12, 5.5, 9, 'chapel', { wall: 'wallCream', floor: 'pavers', fill: false, chests: 2, items: 2 });
-  for (const s of ['e', 'w']) N.win(nave, s, { at: [-9, -5, -1, 3], w: 1.3, y: 2.4, h: 3.8, fm: 'marble', plain: true });
+  N.win(nave, 'e', { at: [-9, -5, -1, 3], w: 1.3, y: 2.4, h: 3.8, fm: 'marble', plain: true }); N.win(nave, 'w', { at: [-9, -5, -1], w: 1.3, y: 2.4, h: 3.8, fm: 'marble', plain: true });
   nave.noWin = false; N.noWin = false; nave.win.n = { at: [0], w: 1.8, y: 3, h: 3.6, plain: true }; nave.win.s = false;
   N.out(nave, 's', { at: 0, w: 2.6, h: 3.2, leaf: false, fm: 'stoneWall' }); N.out(nave, 'e', { at: 5.8 }); N.out(nave, 'w', { at: -5.5 });
   N.out(nave, 'w', { at: 8, w: 1.75 }); N.out(nave, 'w', { at: 8, w: 1.75, y: tH, h: 2.3 });
@@ -1025,8 +1036,8 @@ export function farmhouse(b, out, o) {
   G.door(hall, kit0, { at: 3 }); G.door(hall, store, { at: -3 }); G.door(hall, stube, { at: 3 }); G.out(hall, 's', { at: 0.7, w: 2 }); G.out(hall, 'n', { at: 0.7 }); G.out(kit0, 'w', { at: -2 });
   const land = U.room(-1, -hd, 2.4, hd, 'hall', { fill: false, floor: 'wood' }), bedW = U.room(-hw, -hd, -1, 0.5, 'bed'), bedW2 = U.room(-hw, 0.5, -1, hd, 'bed'), bedE = U.room(2.4, -hd, hw, hd, 'attic', { wall: 'plasterWhite', floor: 'wood' });
   U.door(land, bedW, { at: -3 }); U.door(land, bedW2, { at: 3 }); U.door(land, bedE, { at: 3.5 }); U.door(bedW, bedW2);
-  straightStair(K, G, U, 0.7, 1.2, '-z', { w: 1.75, rail: -1 });
-  const H = U.holes[0]; topRail(K, U, H[0], H[3], H[2], H[3]); topRail(K, U, H[0], H[1], H[0], H[3]);
+  straightStair(K, G, U, 0.7, 1.2, '-z', { w: 1.75, rail: 'both' });
+  const H = U.holes[0]; topRail(K, U, H[0], H[3], H[2], H[3]); topRail(K, U, H[0], H[1], H[0], H[3]); topRail(K, U, H[2], H[1], H[2], H[3]);
   foundation(K, [[-hw, -hd, hw, hd]]);
   finish(G, U);
   gableRoof(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, { along: 'x', rise: 3.1, mat: L.roof, wall: L.ext, over: 0.6, rake: 0.4 });
@@ -1062,4 +1073,4 @@ export function coverPile(K, x, z, y = 0) {
   K.spot(x + 1.5, y, z + 1.5, { indoor: false, kind: 'floor', ground: true });
 }
 
-export { Kit, rnd, pick, chance, PLAIN, WALL, mtx };
+export { Kit, rnd, pick, chance, PLAIN, WALL, mtx, sideRail };

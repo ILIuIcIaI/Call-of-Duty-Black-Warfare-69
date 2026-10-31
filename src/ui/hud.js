@@ -155,21 +155,107 @@ export class HUD {
       x.strokeRect((x0 - ox) * S, (z0 - oz) * S, (x1 - x0) * S, (z1 - z0) * S);
     }
     this.mmImg = c; this.mmS = S; this.mmOx = ox; this.mmOz = oz; this.mmZoom = 0.95;
+    this.mmPlans = new Map(); this.mmIn = 0; this.mmHouse = null; this.mmLevels = new Map();
+  }
+
+  // ---- floor plans: what the walls really are, cut through at chest height
+  // the floors of a building, from where the bots can walk: heights where a lot of ground lies at the same level
+  houseLevels(f) {
+    let L = this.mmLevels.get(f);
+    if (L) return L;
+    const nav = this.game.nav, n = nav.fineN ?? nav.n, hist = new Map();
+    for (let i = 0; i < n; i++) if (nav.links[i].length && nav.X[i] > f[0] && nav.X[i] < f[2] && nav.Z[i] > f[1] && nav.Z[i] < f[3]) { const k = Math.round((nav.Y[i] - f[5]) * 4); hist.set(k, (hist.get(k) || 0) + 1); }
+    L = [];
+    for (const [k, c] of [...hist.entries()].sort((a, b) => a[0] - b[0])) {
+      if (c < 6) continue;
+      const y = f[5] + k / 4, last = L[L.length - 1];
+      if (last && y - last.y < 1.6) { if (c > last.c) { last.y = y; last.c = c; } } else L.push({ y, c });
+    }
+    if (!L.length) L.push({ y: f[5], c: 1 });
+    this.mmLevels.set(f, L);
+    return L;
+  }
+
+  // one floor of one building as a picture: floor, what stands on it, the walls and the windows
+  housePlan(f, y) {
+    const key = f + '|' + y.toFixed(1);
+    let P = this.mmPlans.get(key);
+    if (P) return P;
+    const PX = 12, m = 0.6, x0 = f[0] - m, z0 = f[1] - m, w = f[2] - f[0] + m * 2, d = f[3] - f[1] + m * 2;
+    const c = document.createElement('canvas'); c.width = Math.ceil(w * PX); c.height = Math.ceil(d * PX);
+    const x = c.getContext('2d'), col = this.game.col, B = col.B;
+    x.fillStyle = 'rgba(30,34,36,0.97)'; x.fillRect(0, 0, c.width, c.height);
+    const cut = y + 1.25, walls = [], low = [], glass = [], solid = []; // (solid: nobody goes there, the inside of a roof, a pillar)
+    const n = col.gather(x0, y + 0.12, z0, x0 + w, y + 2.2, z0 + d);
+    for (let k = 0; k < n; k++) {
+      const i = col.cand[k], o = i * 6, bot = B[o + 1], top = B[o + 4];
+      const r = [(B[o] - x0) * PX, (B[o + 2] - z0) * PX, (B[o + 3] - B[o]) * PX, (B[o + 5] - B[o + 2]) * PX];
+      if (bot <= cut && top >= cut) { if (col.surface[i] === 'glass') glass.push(r); else if (Math.min(r[2], r[3]) > 1.3 * PX) solid.push(r); else walls.push(r); }
+      else if (top < cut && top > y + 0.12) low.push([...r, (top - y) / 1.25]);
+    }
+    // what stands around, higher is lighter: steps on a flight of stairs read as steps
+    low.sort((a, b) => a[4] - b[4]);
+    for (const [a, b, e, g, h] of low) {
+      const l = Math.round(70 + h * 62);
+      x.fillStyle = 'rgb(' + l + ',' + (l + 2) + ',' + l + ')'; x.fillRect(a, b, Math.max(1.5, e), Math.max(1.5, g));
+      x.strokeStyle = 'rgba(16,18,20,0.75)'; x.lineWidth = 1; x.strokeRect(a, b, Math.max(1.5, e), Math.max(1.5, g));
+    }
+    x.fillStyle = '#4d5252';
+    for (const [a, b, e, g] of solid) x.fillRect(a, b, e, g);
+    x.fillStyle = '#7cc8ea';
+    for (const [a, b, e, g] of glass) x.fillRect(a, b, Math.max(2, e), Math.max(2, g));
+    x.fillStyle = '#e6e9e2';
+    for (const [a, b, e, g] of walls) x.fillRect(a, b, Math.max(2.5, e), Math.max(2.5, g));
+    P = { c, x0, z0, w, d };
+    this.mmPlans.set(key, P);
+    return P;
+  }
+
+  // the building you are in, on which floor: null out in the open and on the roofs
+  whereInside() {
+    const g = this.game, p = g.player, D = g.mapDef;
+    if (!D.large || !p.alive) return null;
+    const px = p.pos.x, pz = p.pos.z, py = p.pos.y;
+    for (const f of D.layout.footprints) {
+      if (px < f[0] || px > f[2] || pz < f[1] || pz > f[3]) continue;
+      if (g.col.lineClear(px, py + 1.7, pz, px, py + 40, pz)) continue; // nothing overhead: a yard or a roof
+      const L = this.houseLevels(f);
+      let i = 0;
+      // on the stairs the next floor counts from halfway up
+      while (i + 1 < L.length && py > (L[i].y + L[i + 1].y) / 2) i++;
+      // the floor at the height of the street is the ground floor
+      let g0 = 0, best = Infinity;
+      L.forEach((l, k) => { const e = Math.abs(l.y - f[5]); if (e < best) { best = e; g0 = k; } });
+      return { f, y: L[i].y, floor: i - g0 };
+    }
+    return null;
   }
 
   drawMinimap() {
     const g = this.game, p = g.player, x = this.ctx, W = 220, H = 220;
     if (!this.mmImg) return;
+    // inside a building: the block opens up, and the map comes closer so that the rooms can be read
+    const inside = this.mmPlans ? this.whereInside() : null;
+    if (inside) { if (!this.mmHouse || this.mmHouse.f !== inside.f || this.mmHouse.y !== inside.y) this.mmFade = this.mmHouse && this.mmHouse.f === inside.f ? 0.35 : 0; this.mmHouse = inside; }
+    this.mmIn = (this.mmIn || 0) + ((inside ? 1 : 0) - (this.mmIn || 0)) * 0.14;
+    this.mmFade = Math.min(1, (this.mmFade ?? 1) + 1 / 12);
+    if (this.mmIn < 0.01) this.mmHouse = null;
     x.clearRect(0, 0, W, H);
     x.save();
     x.translate(W / 2, H / 2);
-    const zoom = this.mmZoom; // minimap px per image px
+    const zoom = this.mmZoom * (1 + 1.7 * (this.mmIn || 0)); // minimap px per image px
     x.rotate(p.yaw);
     x.scale(zoom, zoom);
     x.translate(-(p.pos.x - this.mmOx) * this.mmS, -(p.pos.z - this.mmOz) * this.mmS);
     x.globalAlpha = 0.95;
     x.drawImage(this.mmImg, 0, 0);
     x.globalAlpha = 1;
+    if (this.mmHouse) {
+      const H0 = this.mmHouse, P = this.housePlan(H0.f, H0.y), S = this.mmS;
+      x.globalAlpha = (this.mmIn || 0) * this.mmFade;
+      x.drawImage(P.c, (P.x0 - this.mmOx) * S, (P.z0 - this.mmOz) * S, P.w * S, P.d * S);
+      x.globalAlpha = 1;
+    }
     // combatants
     for (const c of g.combatants) {
       if (c === p || !c.alive) continue;
@@ -189,6 +275,14 @@ export class HUD {
     grd.addColorStop(0, 'rgba(255,255,255,0.12)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = grd;
     x.beginPath(); x.moveTo(W / 2, H / 2); x.arc(W / 2, H / 2, 70, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6); x.closePath(); x.fill();
+    // which floor
+    if (this.mmHouse && (this.mmIn || 0) > 0.3) {
+      const n = this.mmHouse.floor, label = n === 0 ? 'EG' : n > 0 ? n + '. OG' : (-n) + '. UG';
+      x.font = 'bold 13px sans-serif'; x.textAlign = 'right'; x.textBaseline = 'top';
+      const tw = x.measureText(label).width;
+      x.globalAlpha = this.mmIn; x.fillStyle = 'rgba(0,0,0,0.62)'; x.fillRect(W - tw - 14, 6, tw + 10, 19);
+      x.fillStyle = '#fff'; x.fillText(label, W - 9, 9); x.globalAlpha = 1; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+    }
   }
 
   hitmarker(kind) {

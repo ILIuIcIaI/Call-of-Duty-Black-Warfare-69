@@ -1,11 +1,12 @@
 import * as THREE from 'three';
+import { PLATE_TIME } from '../weapons/playerWeapons.js';
 import { BRBot, makeCanopy } from '../bots/brbot.js';
 import { OUTFITS, Soldier } from '../characters/soldier.js';
 import { Loot, makeWeaponDef, MAX_PLATES, PLATE_ARMOR, MAX_ARMOR, RARITY } from './loot.js';
 import { Vehicle, VEHICLE_TYPES } from '../vehicles/vehicle.js';
 import { moveCharacter, hullFits } from '../player/physics.js';
 import { HULL } from '../player/player.js';
-import { FINISHERS, Stage, makeProp, bakeFinishers, clearance, roomOf } from './finishers.js';
+import { FINISHERS, Stage, makeProp, bakeFinishers, clearance, roomOf, victimYaw } from './finishers.js';
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
 import { damp, clamp, lerp, DEG, angleDiff, rand } from '../core/math.js';
 import { WORLD_R } from '../world/maps/island.js';
@@ -27,6 +28,8 @@ const CAM_INTO_FALL = 0.8;   // seconds the camera takes from the plane into you
 // self revive takes (first, second, third time down in a match and every time after that)
 const DOWN_HP = 100, BLEED_OUT = [40, 30, 24, 18], REVIVE_TIME = [6.5, 8, 9.5, 11];
 const FINISH_HP = 100;       // health and armor left for a melee from behind to become a finisher
+const FRONT_HP = 60;         // from the front he has to be closer to the end
+const SEEN_DMG = 0.7;        // how hard bots hit each other where the player can see it: fights there are the real thing
 
 // wait before it moves, how long it moves, the radius it ends at, damage per second outside. For the bots:
 // how likely they notice each other far away per look, how hard they hit each other; toward the player: how likely
@@ -329,7 +332,7 @@ export class BRMatch {
       this.botsFighting = fighting; this.hunters = hunters;
       // they fight whenever they meet, but the island shouldn't empty itself before you get to play: ahead of the plan
       // their bullets hardly hurt each other, behind it they hurt a bit more
-      const ahead = (this.alive - (g.player.alive ? 1 : 0)) - this.planned(this.zone.elapsed);
+      const ahead = this.ahead = (this.alive - (g.player.alive ? 1 : 0)) - this.planned(this.zone.elapsed);
       this.botDamage = this.zone.botDmg * (ahead >= 0 ? 1 + Math.min(ahead, 3) * 0.2 : Math.max(0.12, 1 + ahead * 0.45));
     }
     const gas = p.alive && this.playerState !== 'plane' && this.zone.outside(p.pos);
@@ -350,6 +353,9 @@ export class BRMatch {
     for (let i = 1; i < PLAN.length; i++) if (t < PLAN[i][0]) { const [a, n] = PLAN[i - 1], [e, m] = PLAN[i]; return n + (m - n) * (t - a) / (e - a); }
     return 0;
   }
+
+  // far away from the player the plan paces the match, wherever you could be watching, a hit is a hit
+  botDamageOn(v) { return v.seen ? Math.max(this.botDamage, SEEN_DMG * (this.ahead < -5 ? 0.35 : this.ahead < -3 ? 0.6 : 1)) : this.botDamage; }
 
   gasDamage(c, dmg) {
     const g = this.game;
@@ -372,7 +378,7 @@ export class BRMatch {
     this.outOrder++;
     // whoever won that fight catches its breath and looks through the pockets first
     const k = b.lastAttacker;
-    if (k && k.isBot && !k.out) { k.peaceUntil = this.game.time + rand(7, 13); k.target = null; k.targetVisible = false; k.lastSeen = null; if (k.state === 'engage' || k.state === 'chase') { k.state = 'roam'; k.path = null; } }
+    if (k && k.isBot && !k.out) { k.peaceUntil = this.game.time + (k.seen ? rand(1, 2) : rand(7, 13)); k.target = null; k.targetVisible = false; k.lastSeen = null; if (k.state === 'engage' || k.state === 'chase') { k.state = 'roam'; k.path = null; } }
   }
 
   onPlayerDown(killer) {
@@ -616,13 +622,22 @@ export class BRMatch {
         if (inp.pressed('jump')) { this.deploy(false); this.hud.setPromptText(''); return; }
         this.hud.setPromptText('[Leertaste] Gleiter öffnen');
       } else this.hud.setPromptText('');
-    } else this.hud.setPromptText('');
+    } else {
+      // whoever can be finished right now
+      if ((this.finScan = (this.finScan || 0) - dt) <= 0) {
+        this.finScan = 0.12;
+        const S = p.onGround && this.finisherSetup(p);
+        this.finNear = !!S && FINISHERS.some((f) => !!f.prone === !!S.low && this.sceneFits(f, S.best.pos, S.floor, S.yaw));
+      }
+      this.hud.setPromptText(this.finNear ? '[V] FINISHER' : '');
+    }
     // ---- what's in front of us
     const cam = g.engine.camera;
     cam.getWorldDirection(_v);
-    const f = this.loot.focus(cam.position, _v);
+    const f = this.loot.focus(cam.position, _v, this.hud.lookedAt);
     this.hud.setFocus(f, W);
-    if (f && inp.pressed('interact') && this.plateT <= 0) {
+    this.loot.highlight(f && f.o, f && f.kind);
+    if (f && !f.far && inp.pressed('interact') && this.plateT <= 0) {
       if (f.kind === 'chest') this.loot.openChest(f.o, p);
       else this.pickUp(f.o);
     }
@@ -630,18 +645,22 @@ export class BRMatch {
     if (this.plateT > 0) {
       this.plateT -= dt;
       this.hud.setProgress(1 - this.plateT / this.plateDur, 'PLATTE EINSETZEN');
-      if (this.plateT <= 0) {
-        p.plates--; p.armor = Math.min(MAX_ARMOR, p.armor + PLATE_ARMOR);
-        g.audio.play('magIn', { vol: 0.7, rate: 0.8 });
-        g.shake.add(0.06);
-        W.plateDone();
-        this.hud.setProgress(0);
-      }
+      if (this.plateT <= 0) { W.plateDone(); this.hud.setProgress(0); }
     } else if (inp.pressed('plate')) {
       if (p.plates <= 0) this.hud.hint('Keine Platten', 1.2);
       else if (p.armor >= MAX_ARMOR) this.hud.hint('Rüstung ist voll', 1.2);
-      else if (W.startPlate()) { this.plateDur = this.plateT = 1.05; g.audio.play('pouch', { vol: 0.5 }); }
+      else if (W.startPlate()) this.plateDur = this.plateT = PLATE_TIME;
     }
+  }
+
+  // the moment in the animation when the plate goes home
+  plateIn() {
+    const g = this.game, p = g.player;
+    if (p.plates <= 0) return;
+    p.plates--; p.armor = Math.min(MAX_ARMOR, p.armor + PLATE_ARMOR);
+    g.audio.play('magIn', { vol: 0.9, rate: 0.7 }); g.audio.play('thud', { vol: 0.4, rate: 1.4 });
+    g.shake.add(0.1);
+    p.landSpring.impulse(-0.7);
   }
 
   pickUp(it) {
@@ -747,36 +766,61 @@ export class BRMatch {
   }
 
   // ---------------------------------------------------------------- finishers
-  // Behind someone who is already hurt, a melee becomes a staged kill
-  tryFinisher(p) {
-    if (this.playerState !== 'ground' || this.finisher) return false;
+  // Who a melee would finish right now. Behind someone hurt, in front of someone almost dead, and on someone lying down:
+  // down from a wound from any side, lying in cover once he is hurt as well.
+  finisherTarget(p) {
     const g = this.game, col = g.col, f = p.forwardVec(_v);
     let best = null, bd = Infinity;
     for (const b of g.bots) {
       if (!b.alive || b.out || b.sky || b.scripted) continue;
-      const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz);
-      if (d > 2.7 || d < 0.05 || Math.abs(b.pos.y - p.pos.y) > 0.8) continue;
-      if ((dx * f.x + dz * f.z) / d < 0.5) continue;                             // it is in front of me...
-      if ((dx * -Math.sin(b.aimYaw) + dz * -Math.cos(b.aimYaw)) / d < 0.4) continue; // ...and I am behind it
-      if (b.health + (b.armor || 0) > FINISH_HP) continue;
-      if (!col.lineClear(p.pos.x, p.pos.y + 1.2, p.pos.z, b.pos.x, b.pos.y + 1.2, b.pos.z)) continue;
+      const dx = b.pos.x - p.pos.x, dz = b.pos.z - p.pos.z, d = Math.hypot(dx, dz), low = b.downed || b.prone;
+      if (d > (low ? 3.1 : 2.7) || d < 0.05 || Math.abs(b.pos.y - p.pos.y) > 0.8) continue;
+      if ((dx * f.x + dz * f.z) / d < 0.5) continue;
+      const hp = b.health + (b.armor || 0), behind = (dx * -Math.sin(b.aimYaw) + dz * -Math.cos(b.aimYaw)) / d >= 0.4;
+      if (!b.downed && hp > (low || behind ? FINISH_HP : FRONT_HP)) continue;
+      if (!col.lineClear(p.pos.x, p.pos.y + 1.2, p.pos.z, b.pos.x, b.pos.y + (low ? 0.5 : 1.2), b.pos.z)) continue;
       if (d < bd) { bd = d; best = b; }
     }
-    if (!best) return false;
-    const yaw = best.aimYaw, floor = col.floorBelow(best.pos.x, best.pos.z, 0.2, best.pos.y + 0.6, best.pos.y - 0.6);
-    if (!isFinite(floor)) return false;
-    const F = this.pickFinisher(best.pos, floor, yaw);
+    return best;
+  }
+
+  // who a scene would be on, on what ground and looking which way
+  finisherSetup(p) {
+    const col = this.game.col, best = this.finisherTarget(p);
+    if (!best) return null;
+    const floor = col.floorBelow(best.pos.x, best.pos.z, 0.2, best.pos.y + 0.6, best.pos.y - 0.6);
+    if (!isFinite(floor)) return null;
+    const low = best.downed || best.prone, dx = best.pos.x - p.pos.x, dz = best.pos.z - p.pos.z, d = Math.hypot(dx, dz);
+    const behind = (dx * -Math.sin(best.aimYaw) + dz * -Math.cos(best.aimYaw)) / d >= 0.4;
+    // from the front the scene is set up looking from me to him, and he comes into it from where he stands
+    return { best, floor, low, behind, yaw: low || behind ? best.aimYaw : Math.atan2(-dx, -dz) };
+  }
+
+  tryFinisher(p) {
+    if (this.playerState !== 'ground' || this.finisher) return false;
+    const S = this.finisherSetup(p);
+    if (!S) return false;
+    const { best, floor, low, behind, yaw } = S;
+    const F = this.pickFinisher(best.pos, floor, yaw, low);
     if (!F) return false;
-    this.startFinisher(best, F, floor, yaw);
+    let t0 = 0, turn = 0;
+    if (!low && !behind) {
+      t0 = F.front || 0;
+      const inScene = victimYaw(F, t0);
+      turn = inScene + angleDiff(inScene, best.aimYaw - yaw);
+    }
+    this.startFinisher(best, F, floor, yaw, t0, turn);
     return true;
   }
 
   // the next one from a shuffled deck that has room to play here
-  pickFinisher(pos, y, yaw) {
-    if (!this.finDeck || !this.finDeck.length) this.finDeck = [...FINISHERS].sort(() => Math.random() - 0.5);
-    for (let i = 0; i < this.finDeck.length; i++) if (this.sceneFits(this.finDeck[i], pos, y, yaw)) return this.finDeck.splice(i, 1)[0];
+  pickFinisher(pos, y, yaw, low = false) {
+    const name = low ? 'proneDeck' : 'finDeck';
+    if (!this[name] || !this[name].length) this[name] = FINISHERS.filter((f) => !!f.prone === low).sort(() => Math.random() - 0.5);
+    const deck = this[name];
+    for (let i = 0; i < deck.length; i++) if (this.sceneFits(deck[i], pos, y, yaw)) return deck.splice(i, 1)[0];
     // nothing left in the deck fits here, maybe one that has been played already
-    return FINISHERS.find((f) => this.sceneFits(f, pos, y, yaw)) || null;
+    return FINISHERS.find((f) => !!f.prone === low && this.sceneFits(f, pos, y, yaw)) || null;
   }
 
   // Room for the bodies on ground that is more or less one plane, and somewhere for the camera to stand.
@@ -804,26 +848,33 @@ export class BRMatch {
     return Math.max(clearance(F, at, q, col, 1), clearance(F, at, q, col, -1)) > 0.5;
   }
 
-  startFinisher(b, F, y, yaw) {
+  startFinisher(b, F, y, yaw, t0 = 0, turn = 0) {
     const g = this.game, p = g.player, W = g.weapons, O = b.soldier.outfit, av = O === OUTFITS.vanguard || O === OUTFITS.desert ? this.avatarDark : this.avatar;
     W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null;
     p.sprinting = false; p.tac = false; p.mount = null; p.stance = 'stand'; p.vel.set(0, 0, 0);
-    b.scripted = true; b.vel.set(0, 0, 0); b.path = null; b.target = null; b.crouching = false; b.mantling = null; b.sliding = 0;
+    b.scripted = true; b.vel.set(0, 0, 0); b.path = null; b.target = null; b.crouching = false; b.mantling = null; b.sliding = 0; b.prone = false;
     const origin = new THREE.Vector3(b.pos.x, y, b.pos.z);
     av.resetPose();
     if (F.gun === 'own') av.setWeapon(W.w.def, W.w.optic); else if (F.gun) av.setWeapon(WEAPONS[F.gun], 'iron');
-    const stage = new Stage(g, F, av, b.soldier, origin, yaw, this.finTilt);
+    const stage = new Stage(g, F, av, b.soldier, origin, yaw, this.finTilt, t0, turn);
     if (F.prop) {
       this.props = this.props || {};
       const P = this.props[F.prop] || (this.props[F.prop] = makeProp(F.prop));
       if (P.parent !== g.scene) g.scene.add(P);
       P.visible = false; P.quaternion.identity(); stage.prop = P;
     }
+    // both of them where the scene has them before the next frame is drawn
+    stage.startFrom(p.pos);
+    stage.pose(0);
     const cam = g.engine.camera;
     this.finisher = { F, b, av, stage, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false };
+    // what the skipped part of the scene had done already
+    const S = this.finisher;
+    while (S.fired < F.events.length && F.events[S.fired][0] < t0) { const E = F.events[S.fired++]; if (E[1] === 'prop' || E[1] === 'drop') this.finisherEvent(E, S); }
     this.playerState = 'finisher';
     this.hud.setFocus(null, W); this.hud.setVehiclePrompt(null); this.hud.setPromptText('');
     this.hud.setCine(true, F.name);
+    this.loot.root.visible = false;
     g.audio.play('pouch', { vol: 0.7 });
   }
 
@@ -869,10 +920,16 @@ export class BRMatch {
     } else if (name === 'thud') g.audio.play('thud', { vol: 0.9 });
     else if (name === 'shot') {
       const av = S.av, m = av.muzzleWorld(new THREE.Vector3()), at = place(2).clone(), power = E[9];
-      g.fx.muzzleWorld(m, 1.3);
+      g.fx.muzzleWorld(m, E[10] || 1.3, E[10] ? 1 : 2);
       g.fx.tracer(m, at);
       g.audio.gunshot(av.weapon.def.id);
       g.fx.bloodBurst(at, dir(6).clone(), power);
+      if (E[2][0] === 'v') b.soldier.addWound(st.bone(E[2]), E[3], E[4], E[5]);
+      // what the gun lets out: smoke at the muzzle, the brass to the right
+      if (!E[10]) g.fx.dust.spawn(m.x, m.y, m.z, rand(-0.2, 0.2), rand(0.15, 0.5), rand(-0.2, 0.2), 1.1, 0.16, 0.72, 0.72, 0.72, 0.16, -0.25, 1.1, 2.2);
+      av.arms[1].hand.getWorldPosition(_v);
+      _w.set(1, 0, 0).applyAxisAngle(UP3, st.yaw);
+      g.fx.dust.spawn(_v.x, _v.y + 0.1, _v.z, _w.x * rand(1.4, 2.2), rand(1.6, 2.6), _w.z * rand(1.4, 2.2), 0.7, 0.024, 0.82, 0.62, 0.24, 1, 9.8, 0.2, 0);
       g.audio.play('imp_flesh', { vol: 1 });
       if (power >= 2) g.audio.play('sting', { vol: 0.9 });
     } else if (name === 'kill' && !S.killed && b.alive) {
@@ -911,6 +968,7 @@ export class BRMatch {
     this.finisher = null;
     g.slowmo = 0;
     this.hud.setCine(false);
+    this.loot.root.visible = true;
     const st = S.stage, av = S.av, b = S.b;
     g.engine.film = 0;
     if (st.prop) { if (st.prop.parent) st.prop.parent.remove(st.prop); st.prop.visible = false; }

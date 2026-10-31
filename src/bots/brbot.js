@@ -3,6 +3,7 @@ import { Bot, DIFFICULTY } from './bot.js';
 import { WEAPONS } from '../weapons/defs.js';
 import { makeWeaponDef, MAX_PLATES, PLATE_ARMOR, MAX_ARMOR, RARITY } from '../game/loot.js';
 import { rand, angleDiff } from '../core/math.js';
+import { moveCharacter } from '../player/physics.js';
 
 // =============================================================================
 // A bot in a Warzone match. Jumps out of the plane toward a place it picked, then
@@ -13,6 +14,7 @@ import { rand, angleDiff } from '../core/math.js';
 const TIER = { ar: 5, burst: 5, smg: 4.6, pdw: 4.2, lmg: 4, dmr: 4, autoshot: 4.2, shotgun: 3.6, sniper: 3.4, amr: 3.4, handcannon: 2.2, revolver: 2.2, mpistol: 2.4, pistol: 1.2 };
 const GOOD_GEAR = 6.2;
 // how far they bother to fight with what they're holding
+const DOWN_CHANCE = [1, 0.6, 0.3], DOWN_HP = 100, REVIVE = 6.5, SEEN = 110;
 const REACH = { pistol: 28, revolver: 32, handcannon: 32, mpistol: 26, smg: 34, pdw: 30, shotgun: 22, autoshot: 24, ar: 52, burst: 52, lmg: 52, dmr: 62, sniper: 72, amr: 72 };
 
 const _c = new THREE.Vector3();
@@ -62,6 +64,7 @@ export class BRBot extends Bot {
     this.gear = TIER.pistol;
     this.soldier.setVisible(false);
     this.lootGoal = null; this.goalKind = null; this.plateT = 0; this.zoneRepath = 0; this.pending = null; this.peaceUntil = 0;
+    this.downed = false; this.downs = 0; this.prone = false; this.seen = false;
     this.animEvery = 1;
     this.hiddenBody = false;
   }
@@ -160,13 +163,14 @@ export class BRBot extends Bot {
   }
 
   // ------------------------------------------------------------------ decisions
-  // among themselves they are busy with loot and the zone: real fights happen up close, or once the circle gets small
+  // Somebody in sight is an enemy. Only out of the player's sight the plan decides how much of that happens.
   ignores(c, dist) {
     if (c.sky === 'fall' || c.scripted) return true;
     if (!c.isBot) return this.ignoresPlayer(c, dist);
-    if (this.game.time < this.peaceUntil && dist > 8) return true;
+    if (c.downed && c !== this.target) return dist > 24 || Math.random() > 0.5; // crawling away: only worth it close by
     if (c === this.target || c === this.lastAttacker) return false;
-    // somebody in sight is an enemy. Far away they take a moment to notice, up close never long
+    if (this.seen || c.seen) return false;
+    if (this.game.time < this.peaceUntil && dist > 8) return true;
     const z = this.game.match.zone;
     return Math.random() > (dist < 12 ? 0.5 : dist < 30 ? z.aggro : z.aggro * 0.5);
   }
@@ -176,7 +180,7 @@ export class BRBot extends Bot {
 
   // gunfire draws only some of them over, otherwise the whole island would gather around every shot
   hear(pos, shooter) {
-    if (Math.random() > 0.15) return;
+    if (Math.random() > (shooter.isBot ? 0.35 : 0.15)) return;
     super.hear(pos, shooter);
   }
 
@@ -195,18 +199,26 @@ export class BRBot extends Bot {
 
   think() {
     const g = this.game, t = g.time, br = g.match, z = br.zone;
+    const cam = g.engine.camera.position;
+    this.seen = Math.hypot(this.pos.x - cam.x, this.pos.z - cam.z) < SEEN;
     this.perceive();
     const inGas = z.outside(this.pos, 0);
     const pressed = z.urgent(this.pos);
-    // no endless duels among bots, and running from the gas goes first
+    // running from the gas goes first; out of the player's sight no duel goes on forever
     if (this.target && this.target.isBot && this.targetVisible) {
       if (this.target !== this.duelWith) { this.duelWith = this.target; this.duelT = t; }
-      // long-range stalemates end as well: both have somewhere to be
-      if (inGas || (pressed && z.distToNext(this.pos) > 25) || t - this.duelT > 22) {
+      if (inGas || (!this.seen && ((pressed && z.distToNext(this.pos) > 25) || t - this.duelT > 22))) {
         this.peaceUntil = t + rand(3, 6);
         this.target = null; this.targetVisible = false; this.lastSeen = null; this.duelWith = null;
         if (this.state === 'engage') { this.state = 'roam'; this.path = null; }
       }
+    }
+    this.updateProne(t);
+    // shot at from somewhere they can't see: into cover or after them, not on with the shopping
+    const by = this.lastAttacker;
+    if (!(this.target && this.targetVisible) && by && by.alive && by !== this && t - this.lastDamage < 4 && this.state !== 'cover' && !inGas) {
+      if (this.gear > 3 && Math.random() < 0.6) { this.target = by; this.lastSeen = by.pos.clone(); this.lastSeenT = t; }
+      else if (this.findCover()) this.state = 'cover';
     }
     if (this.state === 'cover' && (inGas || pressed)) { this.state = 'roam'; this.path = null; }
     const fight = this.target && this.targetVisible;
@@ -220,7 +232,7 @@ export class BRBot extends Bot {
       if (this.health > this.maxHealth * 0.85 || t - this.coverT > 7) { this.state = 'roam'; this.path = null; }
     } else if (this.target && this.lastSeen && this.gear > 3 && !pressed) {
       if (this.state !== 'chase') { this.state = 'chase'; this.pathTo(this.lastSeen); }
-    } else if (this.heard && t - this.heardT < 8 && this.gear >= GOOD_GEAR && !pressed && this.heard.distanceTo(this.pos) < 70) {
+    } else if (this.heard && t - this.heardT < 8 && this.gear > 3 && !pressed && this.heard.distanceTo(this.pos) < 70) {
       if (this.state !== 'investigate' || this.repathT <= 0) { this.state = 'investigate'; this.pathTo(this.heard); this.repathT = 3; }
     } else if (this.state !== 'roam') { this.state = 'roam'; this.path = null; }
 
@@ -264,7 +276,7 @@ export class BRBot extends Bot {
     if (!this.path || this.wp >= this.path.length) {
       // arrived somewhere with nothing to do: hold the place for a while and watch, nobody runs around all match
       if (this.goalKind === 'wander' && this.path) this.holdUntil = g.time + rand(8, 22) * (z.phase < 3 ? 1 : 0.5);
-      if (g.time < (this.holdUntil || 0)) { this.path = null; if (Math.random() < 0.06) this.aimYaw += rand(-1.3, 1.3); return; }
+      if (g.time < (this.holdUntil || 0)) { this.path = null; if (Math.random() < (this.prone ? 0.02 : 0.06)) this.aimYaw += rand(-1.3, 1.3); return; }
       this.path = null; this.lootGoal = null;
       const range = this.gear < GOOD_GEAR ? 130 : 26;
       const found = L.nearestFor(this, range, (it) => this.wants(it) && !it.noPath);
@@ -275,6 +287,79 @@ export class BRBot extends Bot {
       // ---- otherwise wander inside the safe area, houses first
       if (!this.lootGoal) { this.goalKind = 'wander'; this.pathTo(z.pointInside(this.pos, true)); }
     }
+  }
+
+  // Long guns like to lie down wherever they are holding a place or shooting far, some others do too.
+  updateProne(t) {
+    const long = this.prefDist >= 22, tg = this.target, close = tg && this.targetVisible && tg.pos.distanceTo(this.pos) < 16;
+    if (this.prone) {
+      if (close || t - this.lastDamage < 1 || (this.path && this.wp < this.path.length && this.state !== 'engage') || !this.onGround) this.prone = false;
+      return;
+    }
+    if (!this.onGround || this.mantling || close || t - this.lastDamage < 3 || (t < (this.proneCd || 0))) return;
+    this.proneCd = t + rand(3, 7);
+    const holding = t < (this.holdUntil || 0) && !this.path, sniping = this.state === 'engage' && long && tg && this.targetVisible && !this.wantClose;
+    if ((holding && Math.random() < (long ? 0.75 : 0.2)) || (sniping && Math.random() < 0.55)) { this.prone = true; this.vel.x = 0; this.vel.z = 0; }
+  }
+
+  // ------------------------------------------------------------------ on the ground
+  // What would have killed them puts most of them down first: crawling, bleeding, and with some luck back on their feet by
+  // themselves. Whoever comes close can finish it. Gas and what has already gone that far kill for good.
+  goesDown(attacker, info) {
+    if (this.downed || this.sky || this.out || this.scripted || (info && (info.zone || info.staged))) return false;
+    if (Math.random() > DOWN_CHANCE[Math.min(this.downs, DOWN_CHANCE.length - 1)]) return false;
+    const g = this.game;
+    this.downs++;
+    this.downed = true; this.prone = false;
+    this.health = DOWN_HP; this.armor = 0; this.plateT = 0; this.downT = 0; this.reviveK = 0;
+    this.bleedRate = DOWN_HP / rand(24, 38);
+    this.reviveAt = Math.random() < 0.62 ? rand(6, 12) : Infinity;
+    this.state = 'downed'; this.path = null; this.target = null; this.targetVisible = false; this.lootGoal = null; this.goalKind = null;
+    this.crouching = false; this.crouchT = 0; this.sliding = 0; this.mantling = null; this.reloadT = 0; this.burst = 0; this.sprinting = false; this.tac = false;
+    this.vel.x *= 0.3; this.vel.z *= 0.3;
+    this.crawlYaw = attacker && attacker !== this ? Math.atan2(-(this.pos.x - attacker.pos.x), -(this.pos.z - attacker.pos.z)) : this.aimYaw;
+    // whoever shot often thinks it is done: that is the chance to crawl away
+    for (const b of g.bots) if (b.target === this && Math.random() < 0.4) { b.target = null; b.targetVisible = false; b.lastSeen = null; if (b.state === 'engage' || b.state === 'chase') { b.state = 'roam'; b.path = null; } }
+    g.audio.play('hurt', { pos: this.pos, vol: 0.7, rate: 0.75, maxDist: 40 });
+    return true;
+  }
+
+  updateDowned(dt) {
+    const g = this.game, col = g.col, alone = g.time - this.lastDamage > 2.2;
+    this.downT += dt;
+    const reviving = alone && this.downT > this.reviveAt;
+    let sp = 0;
+    if (reviving) {
+      if (this.reviveK === 0) g.audio.play('stim', { pos: this.pos, vol: 0.5, maxDist: 25 });
+      this.reviveK += dt / REVIVE;
+    } else {
+      this.reviveK = Math.max(0, this.reviveK - dt * 0.1);
+      sp = 1.05;
+      // a wall or a ledge ahead: around it
+      const fx = -Math.sin(this.crawlYaw), fz = -Math.cos(this.crawlYaw);
+      if (Math.random() < dt * 4 && (!col.lineClear(this.pos.x, this.pos.y + 0.4, this.pos.z, this.pos.x + fx, this.pos.y + 0.4, this.pos.z + fz) || !this.groundAhead(_c.set(fx, 0, fz)))) this.crawlYaw += rand(0.9, 2.2) * (Math.random() < 0.5 ? -1 : 1);
+    }
+    const dy = angleDiff(this.aimYaw, this.crawlYaw);
+    this.aimYaw += dy * Math.min(1, dt * 2.5);
+    const k = Math.min(1, dt * 7), tx = -Math.sin(this.aimYaw) * sp, tz = -Math.cos(this.aimYaw) * sp;
+    this.vel.x += (tx - this.vel.x) * k; this.vel.z += (tz - this.vel.z) * k;
+    this.vel.y -= 19.5 * dt;
+    const res = moveCharacter(col, this.pos, this.vel, dt, 0.25, 0.62, this.onGround);
+    this.onGround = res.ground;
+    g.separate(this);
+    this.aimPitch += (0 - this.aimPitch) * Math.min(1, dt * 6);
+    // bleeding: slower while patching up
+    this.health -= this.bleedRate * dt * (reviving ? 0.5 : 1);
+    if (this.reviveK >= 1) { this.getUp(); return; }
+    if (this.health <= 0) { g.kill(this, this.lastAttacker && this.lastAttacker !== this ? this.lastAttacker : null, { part: 'chest', weapon: { name: 'VERBLUTET', damage: [20, 20] }, zone: true, dir: new THREE.Vector3(0, -0.4, 1).normalize() }); return; }
+    this.soldier.update(dt, { yaw: this.aimYaw, pitch: 0, speed: Math.hypot(this.vel.x, this.vel.z), moveAngle: 0, downed: true, reviving, floorY: this.pos.y }, this.pos);
+  }
+
+  getUp() {
+    const g = this.game;
+    this.downed = false; this.health = 75; this.armor = 0; this.lastDamage = g.time;
+    this.state = 'roam'; this.path = null; this.crouchT = 1.2; this.lastProgress.copy(this.pos); this.stuckT = 0; this.peaceUntil = g.time + 2;
+    g.audio.play('stim', { pos: this.pos, vol: 0.5, rate: 0.8, maxDist: 25 });
   }
 
   pathTo(p) {
@@ -317,6 +402,7 @@ export class BRBot extends Bot {
     this.soldier.setVisible(d2 < 420 * 420);
     this.animEvery = d2 < 70 * 70 ? 1 : d2 < 170 * 170 ? 3 : 8;
     if (this.sky) { this.updateSky(dt); return; }
+    if (this.downed) { this.updateDowned(dt); return; }
     if (this.plateT > 0) {
       this.plateT -= dt;
       if (this.plateT <= 0 && this.plates > 0) { this.plates--; this.armor = Math.min(MAX_ARMOR, this.armor + PLATE_ARMOR); }

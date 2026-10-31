@@ -201,18 +201,17 @@ body.hoverlook #game-canvas { cursor: none; }
 #br-banner { position: absolute; left: 50%; top: 13%; transform: translateX(-50%); font-family: var(--head); font-size: 40px; letter-spacing: 4px; text-shadow: 0 3px 12px #000; white-space: nowrap; opacity: 0; text-align: center; }
 #br-hint { position: absolute; left: 50%; bottom: 78px; transform: translateX(-50%); font-weight: 700; font-size: 17px; letter-spacing: 1px; color: #fff; text-shadow: 0 2px 5px #000; white-space: nowrap; opacity: 0; }
 #br-prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); padding: 6px 16px; background: var(--panel); border: 1px solid rgba(255,255,255,.25); font-weight: 700; letter-spacing: 1px; font-size: 17px; white-space: nowrap; }
-#br-card { --rar: #fff; position: absolute; left: 50%; bottom: 112px; transform: translateX(-50%); width: 560px; height: 158px; display: flex; border: 1px solid rgba(255,255,255,.1); border-left: 5px solid var(--rar); box-shadow: 0 0 26px -6px var(--rar); }
-#br-card.small { width: 400px; height: 96px; }
-#br-card.small .pv { display: none; }
-#br-card.small .tx { background: rgba(10,12,14,.88); }
-#br-card .pv { width: 230px; flex: none; background: radial-gradient(ellipse at center, color-mix(in srgb, var(--rar) 14%, transparent), transparent 72%); }
-#br-card .tx { padding: 10px 14px; min-width: 0; flex: 1; display: flex; flex-direction: column; background: rgba(10,12,14,.9); }
-#br-card .ra { color: var(--rar); font-weight: 700; font-size: 13px; letter-spacing: 2px; white-space: nowrap; }
-#br-card .na { font-family: var(--head); font-size: 32px; letter-spacing: 2px; line-height: 1.05; white-space: nowrap; }
-#br-card .op { font-weight: 700; font-size: 14px; color: #dfe2da; }
-#br-card .pe { font-weight: 600; font-size: 13px; color: var(--muted); line-height: 1.2; margin-top: 2px; }
-#br-card .st { font-weight: 600; font-size: 13px; color: var(--muted); margin-top: 2px; }
-#br-card .key { margin-top: auto; color: var(--accent); font-weight: 700; letter-spacing: 1px; font-size: 15px; }
+#br-card { --rar: #fff; position: absolute; left: 0; top: 0; width: clamp(176px, 14.6vw, 300px); font-size: clamp(10px, 0.72vw, 15px); pointer-events: none; will-change: transform; animation: br-card-in .1s ease-out; }
+@keyframes br-card-in { from { opacity: 0; } to { opacity: 1; } }
+#br-card .pan { position: relative; aspect-ratio: 280 / 88; padding: .45em .6em; box-sizing: border-box; overflow: hidden; background: linear-gradient(100deg, color-mix(in srgb, var(--rar) 44%, #080a0c), color-mix(in srgb, var(--rar) 24%, #080a0c)); border: 1px solid color-mix(in srgb, var(--rar) 70%, #fff 12%); opacity: .95; }
+#br-card .na { position: relative; z-index: 1; font-weight: 700; font-size: 1.14em; letter-spacing: .4px; line-height: 1.1; color: #fff; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+#br-card .cl { position: relative; z-index: 1; font-weight: 600; font-size: .86em; line-height: 1.15; color: rgba(255,255,255,.66); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+#br-card .dm { position: absolute; right: .7em; top: .7em; width: .62em; height: .62em; transform: rotate(45deg); border: 1px solid #fff; background: color-mix(in srgb, var(--rar) 80%, #fff); }
+#br-card .ic { position: absolute; left: 16%; bottom: 2%; width: 68%; height: 56%; filter: brightness(1.45) drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+#br-card .op { position: absolute; z-index: 1; left: .7em; bottom: .3em; font-weight: 700; font-size: .78em; color: rgba(255,255,255,.82); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+#br-card .key { display: flex; align-items: center; gap: .5em; margin-top: .4em; font-weight: 700; letter-spacing: .6px; font-size: .95em; color: #fff; text-shadow: 0 1px 3px #000; }
+#br-card .key b { display: inline-block; min-width: 1.5em; text-align: center; padding: 0 .3em; border: 1px solid rgba(255,255,255,.75); border-radius: 3px; background: rgba(0,0,0,.5); line-height: 1.5; }
+#br-card.far .key { visibility: hidden; }
 #br-progress { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); width: 240px; text-align: center; font-weight: 700; letter-spacing: 2px; font-size: 13px; text-shadow: 0 1px 3px #000; }
 #br-progress i { display: block; height: 5px; margin-top: 4px; background: rgba(0,0,0,.5); }
 #br-progress b { display: block; height: 100%; width: 0; background: #5ac8ff; }
@@ -226,7 +225,7 @@ body.hoverlook #game-canvas { cursor: none; }
 #br-veh .sp b { font-family: var(--head); font-size: 40px; font-weight: 500; line-height: 1; color: #fff; }
 #br-veh i { display: block; height: 4px; margin-top: 3px; background: rgba(255,255,255,.14); }
 #br-veh u { display: block; height: 100%; background: var(--accent); }
-#br-pops { position: absolute; left: 22px; bottom: 112px; font-weight: 700; letter-spacing: 1px; font-size: 15px; text-shadow: 0 1px 3px #000; }
+#br-pops { position: absolute; left: calc(50% + 70px); top: calc(50% + 26px); font-weight: 700; letter-spacing: 1px; font-size: 14px; text-shadow: 0 1px 3px #000; }
 #br-map { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(4,6,8,.62); pointer-events: none; }
 #br-map canvas { border: 2px solid rgba(255,255,255,.3); box-shadow: 0 8px 40px rgba(0,0,0,.6); }
 #br-map .legend { margin-top: 8px; font-weight: 700; letter-spacing: 1px; font-size: 14px; color: #dfe2da; }

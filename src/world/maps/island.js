@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Terrain, makeNoise, sstep } from '../terrain.js';
 import {
-  Kit, rnd, PLAIN, WALL, cottage, townhouse, row, stadthaus, villa, apartments, galleryBlock, courtyard, shop, bar, officeTower, townHall, hotel, school, parking,
-  warehouse, garage, gasStation, ruin, church, bunker, barracks, controlTower, fisherHut, bungalow, farmhouse, radioShack, coverPile,
+  Kit, rnd, PLAIN, WALL, sideRail, cottage, townhouse, row, stadthaus, villa, apartments, galleryBlock, courtyard, shop, bar, officeTower, townHall, hotel, school, parking,
+  warehouse, garage, gasStation, ruin, church, bunker, barracks, controlTower, fisherHut, bungalow, farmhouse, radioShack, coverPile, stepFlight,
 } from '../buildings.js';
 import { container, barrel, sandbags, barrier, truck, lampPost, stairs, tree, palm, mtx } from '../props.js';
 
@@ -31,8 +31,9 @@ const POI = {
   resort: { name: 'RESORT', x: -225, z: -5, w: 64, d: 86, y: 5, blend: 18 },
   farm: { name: 'GUTSHOF', x: -125, z: 62, w: 50, d: 46, y: 12, blend: 18 },
   radar: { name: 'FUNKSTATION', x: -20, z: -225, w: 36, d: 30, y: 40, blend: 18 },
-  weilerO: { name: 'OSTWEILER', x: 130, z: -30, w: 40, d: 38, y: 14, blend: 16 },
+  weilerO: { name: 'OSTWEILER', x: 130, z: -30, w: 40, d: 44, y: 14, blend: 16 },
   weilerS: { name: 'S\u00dcDWEILER', x: -60, z: 150, w: 40, d: 38, y: 9, blend: 16 },
+  tanke: { name: 'TANKSTELLE', x: 44, z: 128, w: 34, d: 34, y: 13.1, blend: 14 },
 };
 
 const MOUNTAINS = [
@@ -40,21 +41,22 @@ const MOUNTAINS = [
   [-155, 25, 21, 51], [-19, 189, 11, 41], [276, 43, 16, 38], [-260, -118, 15, 47], [81, -81, 12, 37],
 ];
 
+// every road ends in front of a house or at a gate, never in one; through Ostweiler it is the village street
 const ROADS = [
-  { pts: [[22, 78], [18, 130], [24, 185], [30, 222]], w: 4.6 },
+  { pts: [[22, 78], [18, 130], [24, 185], [30, 219]], w: 4.6 },
   { pts: [[-75, 62], [-98, 92], [-118, 112], [-132, 125]], w: 4.6 },
-  { pts: [[-75, -30], [-95, -60], [-112, -80], [-125, -96]], w: 4.4 },
-  { pts: [[75, 55], [105, 75], [130, 92], [150, 100]], w: 4.6 },
-  { pts: [[22, -58], [50, -90], [75, -120], [92, -146]], w: 4 },
-  { pts: [[-75, 5], [-120, 2], [-165, -2], [-195, -5]], w: 4.2 },
-  { pts: [[75, -10], [105, -22], [150, -35], [230, -50]], w: 4.2 },
+  { pts: [[-75, -30], [-100, -58], [-130, -80], [-154, -91]], w: 4.4 },
+  { pts: [[75, 55], [105, 75], [125, 92], [141, 104]], w: 4.6 },
+  { pts: [[22, -58], [50, -90], [80, -120], [107, -143]], w: 4 },
+  { pts: [[-75, 5], [-120, 2], [-165, -2], [-188, -4]], w: 4.2 },
+  { pts: [[75, -10], [100, -26], [130, -29], [158, -31], [205, -44], [238, -43]], w: 4.2 },
   { pts: [[60, 222], [110, 195], [150, 170], [170, 165]], w: 3.8 },
-  { pts: [[-135, 180], [-85, 205], [-40, 225], [-25, 232]], w: 3.8 },
+  { pts: [[-135, 180], [-85, 205], [-52, 222], [-42, 226]], w: 3.8 },
   { pts: [[-215, 100], [-240, 65], [-245, 40]], w: 3.2, dirt: true },
-  { pts: [[-190, -95], [-215, -70], [-225, -48]], w: 3.2, dirt: true },
-  { pts: [[140, -165], [190, -105], [245, -88]], w: 3.2, dirt: true },
+  { pts: [[-154, -91], [-190, -85], [-215, -68], [-225, -48]], w: 3.2, dirt: true },
+  { pts: [[146, -160], [190, -105], [245, -88]], w: 3.2, dirt: true },
   { pts: [[-100, 65], [-90, 60], [-75, 55]], w: 3.2, dirt: true },
-  { pts: [[-118, -150], [-75, -175], [-40, -205], [-25, -212]], w: 3, dirt: true },
+  { pts: [[-165, -178], [-110, -182], [-75, -185], [-40, -205], [-25, -212]], w: 3, dirt: true },
   { pts: [[-50, 130], [-35, 105], [-20, 80]], w: 3.2, dirt: true },
 ];
 
@@ -299,7 +301,7 @@ function harbor(b, out) {
   const sx0 = p.x - 48, sx1 = p.x + 48, sz0 = Z + 40, sz1 = Z + 62, deck = 7;
   b.box(sx0, -3, sz0, sx1, deck, sz1, 'metalRed', PLAIN);
   A.box(sx0 - 0.1, -6, sz0 - 0.1, sx1 + 0.1, 0.8, sz1 + 0.1, 'metalDark', { ...PLAIN, collide: false });
-  b.box(sx0, deck, sz0, p.x - 12, deck + 0.8, sz0 + 0.3, 'metalRed', WALL); b.box(p.x - 8, deck, sz0, sx1, deck + 0.8, sz0 + 0.3, 'metalRed', WALL); b.box(sx0, deck, sz1 - 0.3, sx1, deck + 0.8, sz1, 'metalRed', WALL);
+  b.box(sx0, deck, sz0, p.x - 12, deck + 0.8, sz0 + 0.3, 'metalRed', PLAIN); b.box(p.x - 8, deck, sz0, sx1, deck + 0.8, sz0 + 0.3, 'metalRed', PLAIN); b.box(sx0, deck, sz1 - 0.3, sx1, deck + 0.8, sz1, 'metalRed', PLAIN);
   for (let i = 0; i < 4; i++) {
     const cx = sx0 + 12 + i * 14;
     container(b, cx, (sz0 + sz1) / 2 - 4, 'x', cols[i % 6], deck);
@@ -310,6 +312,7 @@ function harbor(b, out) {
   radioShack(b, out, { x: sx1 - 11, z: (sz0 + sz1) / 2, y: deck - 0.15 });
   // gangway: broad stairs from the quay up to the deck
   stairs(b, p.x - 10, Z + 34, '+z', 3.4, deck - y, 6, 'metalDark', y);
+  { const g = new Kit(b, out, { x: p.x - 10, z: Z + 34, y }); sideRail(g, -1.7, deck - y, 6, 'metalYellow'); sideRail(g, 1.7, deck - y, 6, 'metalYellow'); }
   out.navRects.push([sx0, sz0, sx1, sz1], [p.x - 14, Z + 30, p.x - 6, sz0 + 1]);
   truck(A, p.x - 54, Z + 16, 'x'); barrier(A, p.x + 30, Z + 8, 'z', 3);
   A.vehicle('pickup', p.x + 18, Z + 16, 1.57);
@@ -343,23 +346,28 @@ function base(b, out) {
   const p = POI.base, y = p.y, A = new Kit(b, out, { y }), X = p.x, Z = p.z, hw = 46, hd = 40, on = placer(b, out, y);
   // perimeter wall with two gates
   const wall = 'concreteDark', wh = 3.4;
-  A.box(X - hw, 0, Z - hd, X - 8, wh, Z - hd + 0.5, wall, WALL); A.box(X + 8, 0, Z - hd, X + hw, wh, Z - hd + 0.5, wall, WALL);
-  A.box(X - hw, 0, Z + hd - 0.5, X + 4, wh, Z + hd, wall, WALL); A.box(X + 18, 0, Z + hd - 0.5, X + hw, wh, Z + hd, wall, WALL);
-  A.box(X - hw, 0, Z - hd, X - hw + 0.5, wh, Z + hd, wall, WALL); A.box(X + hw - 0.5, 0, Z - hd, X + hw, wh, Z + hd, wall, WALL);
+  A.box(X - hw, 0, Z - hd, X - 8, wh, Z - hd + 0.5, wall, PLAIN); A.box(X + 8, 0, Z - hd, X + hw, wh, Z - hd + 0.5, wall, PLAIN);
+  A.box(X - hw, 0, Z + hd - 0.5, X + 4, wh, Z + hd, wall, PLAIN); A.box(X + 18, 0, Z + hd - 0.5, X + hw, wh, Z + hd, wall, PLAIN);
+  A.box(X - hw, 0, Z - hd, X - hw + 0.5, wh, Z + hd, wall, PLAIN); A.box(X + hw - 0.5, 0, Z - hd, X + hw, wh, Z + hd, wall, PLAIN);
   // headquarters, barracks, motor pool, bunkers
   on(school, X - 2, Z - 22, 2, { ext: 'concrete', plinth: 'concreteDark', trim: 'metalDark', frame: 'metalDark', floors: 2 });
-  on(barracks, X - 30, Z - 6, 0, { w: 24 }); on(barracks, X - 30, Z + 12, 0, { w: 24 }); on(barracks, X - 30, Z + 29, 0, { w: 24, ext: 'contGreen' });
+  on(barracks, X - 30, Z - 6, 0, { w: 24 }); on(barracks, X - 30, Z + 12, 0, { w: 24 }); on(barracks, X - 30, Z + 26, 0, { w: 24, ext: 'contGreen' });
   on(warehouse, X + 30, Z - 24, 0, { w: 26, d: 22, h: 6.5, ext: 'contGreen', walk: false, gates: [{ side: 's', at: 0, w: 8, h: 4.6 }, { side: 'w', at: 0, w: 3.6, h: 3.2 }] });
-  on(bunker, X + 2, Z + 8); on(bunker, X + 30, Z + 26, 1);
+  on(bunker, X + 2, Z + 8); on(bunker, X + 26, Z + 22, 1);
   // watchtowers at the corners
-  for (const [tx, tz] of [[X - hw + 5, Z - hd + 5], [X + hw - 5, Z + hd - 5], [X - hw + 5, Z + hd - 5]]) {
-    for (const [ax, az] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) A.box(tx + ax - 0.15, 0, tz + az - 0.15, tx + ax + 0.15, 7, tz + az + 0.15, 'metalDark', WALL);
-    A.box(tx - 2.6, 7, tz - 2.6, tx + 2.6, 7.15, tz + 2.6, 'woodDark', PLAIN);
-    for (const [ax, az, bx, bz] of [[-2.6, -2.6, 2.6, -2.5], [-2.6, 2.5, 2.6, 2.6], [-2.6, -2.6, -2.5, 2.6]]) A.box(tx + ax, 7.15, tz + az, tx + bx, 8.1, tz + bz, 'woodDark', { ...PLAIN, pen: 0.7 });
-    A.box(tx - 2.8, 9.6, tz - 2.8, tx + 2.8, 9.8, tz + 2.8, 'metalDark', { ...PLAIN, collide: false });
-    stairs(A, tx + 3.5, tz - 1.0, '+z', 1.7, 7.15, 8.6, 'metalDark');
-    A.spot(tx, 7.15, tz, { indoor: false, kind: 'room' });
-    A.area(tx - 3, tz - 3, tx + 5, tz + 9, 0);
+  // (each in its own frame: open toward +x, where the stair arrives, the stair running along that side toward +z)
+  for (const [tx, tz, q, m] of [[X - hw + 5, Z - hd + 5, 0, false], [X + hw - 5, Z + hd - 5, 2, false], [X - hw + 5, Z + hd - 5, 1, true]]) {
+    const s = A.sub(tx, tz, q, m), top = 7.15;
+    for (const [ax, az] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) s.box(ax - 0.15, 0, az - 0.15, ax + 0.15, 7, az + 0.15, 'metalDark', WALL);
+    s.box(-2.6, 7, -2.6, 2.6, top, 2.6, 'woodDark', PLAIN);
+    for (const [ax, az, bx, bz] of [[-2.6, -2.6, 2.6, -2.5], [-2.6, 2.5, 2.6, 2.6], [-2.6, -2.6, -2.5, 2.6]]) s.box(ax, top, az, bx, 8.1, bz, 'woodDark', { ...PLAIN, pen: 0.7 });
+    for (const [ax, az] of [[-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5], [2.5, 2.5]]) s.box(ax - 0.05, top, az - 0.05, ax + 0.05, 9.6, az + 0.05, 'metalDark', { ...PLAIN, collide: false });
+    s.box(-2.8, 9.6, -2.8, 2.8, 9.8, 2.8, 'metalDark', { ...PLAIN, collide: false });
+    const f = s.sub(3.5, 8, 2);
+    stepFlight(f, 1.7, top, 8.6, 'metalDark', [-1]);
+    sideRail(f, 0.85, top, 8.6, 'metalDark', 0, 0.58);
+    s.spot(0, top, 0, { indoor: false, kind: 'room' });
+    s.area(-3, -3, 5, 9, 0);
   }
   // sandbag nests, crates, parked trucks
   sandbags(A, X + 10, Z - 6, 8, 'x'); sandbags(A, X - 12, Z + 34, 6, 'z'); sandbags(A, X + 24, Z + 4, 6, 'x');
@@ -461,11 +469,11 @@ function radar(b, out) {
 
 function hamlets(b, out) {
   const O = POI.weilerO, S = POI.weilerS, on = placer(b, out, O.y), un = placer(b, out, S.y);
-  on(cottage, O.x - 11, O.z - 10); on(garage, O.x + 11, O.z - 9); on(townhouse, O.x - 11, O.z + 10, 2); on(ruin, O.x + 12, O.z + 11, 0, { w: 12, d: 10 });
+  on(cottage, O.x - 11, O.z - 14); on(garage, O.x + 11, O.z - 13); on(townhouse, O.x - 11, O.z + 14, 2); on(ruin, O.x + 12, O.z + 15, 0, { w: 12, d: 10 });
   un(villa, S.x - 2, S.z - 7); un(shop, S.x - 10, S.z + 12, 2, { sign: 'POST', w: 12, d: 10 }); un(cottage, S.x + 12, S.z + 12, 2);
   const A = new Kit(b, out, { y: O.y }), B = new Kit(b, out, { y: S.y });
   coverPile(A, O.x + rnd(-3, 3), O.z + rnd(-3, 3)); coverPile(B, S.x + 5, S.z + 2);
-  A.vehicle('sedan', O.x, O.z + 2, 1.57); B.vehicle('jeep', S.x + 15, S.z - 4, 0);
+  A.vehicle('sedan', O.x, O.z + 3.5, 1.57); B.vehicle('jeep', S.x + 15, S.z - 4, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +523,7 @@ function nature(b, t, q) {
     const forest = N.fbm(x / 95 + 31, z / 95 + 17, 3), sl = t.slopeAt(x, z);
     const kind = Math.random();
     if (kind < 0.2) {
+      if (inPlace(x, z, 3) || roadNear(x, z)) continue;
       if (sl > 0.25 && Math.random() < 0.08) buckets.rock.push([x, h, z, 0.8 + Math.random() * 2.4]);
       else if (Math.random() < 0.014) buckets.rock.push([x, h, z, 0.6 + Math.random() * 1.6]);
       continue;
@@ -595,7 +604,7 @@ export default {
     // places
     const out = this.layout = { spots: [], navRects: [], footprints: [], vehicles: [] };
     city(B, out); harbor(B, out); airfield(B, out); base(B, out); factory(B, out); bergdorf(B, out); fischerdorf(B, out); resort(B, out); farm(B, out); radar(B, out); hamlets(B, out);
-    gasStation(B, out, { x: 44, z: 128, y: t.heightAt(44, 128), rot: 3 });
+    gasStation(B, out, { x: POI.tanke.x, z: POI.tanke.z, y: POI.tanke.y, rot: 3 });
     this.natureStats = nature(B, t, B.q);
     return this;
   },

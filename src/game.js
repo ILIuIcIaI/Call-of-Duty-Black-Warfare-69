@@ -278,6 +278,9 @@ export class Game {
     this.bots = this.match.createBots();
     for (const b of this.bots) { this.combatants.push(b); this.match.spawn(b); }
     this.time = 0;
+    // (the clock starts over: nothing may keep waiting for a moment on the old one)
+    this.recentAction = null; this.player.lastRadar = -99;
+    this.weapons.startOver();
     if (cfg.mode === 'br') this.match.startPlayer();
     else { this.weapons.setLoadout(this.settings.loadout); this.spawnPlayer(); }
     this.state = 'playing';
@@ -426,7 +429,7 @@ export class Game {
 
   applyDamage(victim, dmg, attacker, info) {
     if (!victim.alive) return;
-    if (this.br && attacker && attacker.isBot) dmg = victim.isBot ? dmg * this.match.botDamage : Math.min(dmg * this.match.zone.now.toPlayer, 60); // no bot one-shots you
+    if (this.br && attacker && attacker.isBot) dmg = victim.isBot ? dmg * this.match.botDamageOn(victim) : Math.min(dmg * this.match.zone.now.toPlayer, 60); // no bot one-shots you
     // armor plates take the hit first
     let armorHit = false, armorBroke = false;
     if (victim.armor > 0) {
@@ -438,7 +441,8 @@ export class Game {
     victim.lastDamage = this.time;
     victim.lastAttacker = attacker;
     if (victim.onDamaged) victim.onDamaged(dmg, attacker, info);
-    const killed = victim.health <= 0;
+    const killed = victim.health <= 0, felled = killed && victim.isBot && this.br && victim.goesDown(attacker, info);
+    if (felled && attacker === this.player) this.hud.popup('+50', 'GEGNER AM BODEN');
     if (attacker === this.player) {
       this.hud.hitmarker(killed ? 'kill' : armorHit ? 'armor' : info.part === 'head' ? 'head' : 'hit');
       this.audio.play(killed ? 'kill' : info.part === 'head' ? 'hitHead' : 'hit', { vol: killed ? 0.7 : 0.5, rate: armorHit && !killed ? 1.35 : 1 });
@@ -449,7 +453,7 @@ export class Game {
       if (armorBroke) this.audio.play('magDrop', { vol: 0.9, rate: 0.8 });
     }
     if (killed && victim === this.player && this.br && this.br.playerGoesDown(attacker, info)) return;
-    if (killed) this.kill(victim, attacker, info);
+    if (killed && !felled) this.kill(victim, attacker, info);
   }
 
   onPlayerDamaged(dmg, attacker, info) {
@@ -590,6 +594,7 @@ export class Game {
   }
 
   updatePlaying(dt) {
+    this.engine.filmShot = 0;
     if (this.state === 'ended') { this.engine.render(this.scene, this.vmScene); return; } // freeze the world on the end screen
     if (this.slowmo) dt *= this.slowmo;
     this.time += dt;
@@ -662,6 +667,8 @@ export class Game {
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
     this.hud.setScope(scoped ? optic.overlay : null);
     W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel);
+    W.vm.smoke.points.visible = W.vm.root.visible;
+    if (!W.vm.root.visible) W.vm.smoke.update(dt); // (the smoke of the last shots goes on without the gun, out of sight)
     if (scoped) {
       const t = this.time, k = (optic.sway ?? 1) * (p.mount ? 0.3 : 1);
       cam.rotation.x += (Math.sin(t * 0.9) * 0.0018 + Math.sin(t * 2.3) * 0.0006) * k;

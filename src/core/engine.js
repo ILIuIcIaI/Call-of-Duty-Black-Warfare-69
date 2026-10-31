@@ -79,7 +79,7 @@ export class Engine {
     if (extraBefore) extraBefore();
     r.render(scene, this.camera);
     if (vmScene) { r.clearDepth(); r.render(vmScene, this.vmCamera); }
-    if (this.film > 0) this.filmPass(); else this.filmOld = false;
+    if (this.film > 0 || this.filmShot > 0) this.filmPass(); else this.filmOld = false;
   }
 
   // Film: every frame keeps a little of the one before, the way a film camera's shutter smears anything fast.
@@ -105,7 +105,7 @@ export class Engine {
     }
     if (this.filmOld) {
       const u = this.filmQuad.material.uniforms;
-      u.map.value = this.filmTex; u.k.value = this.film;
+      u.map.value = this.filmTex; u.k.value = Math.max(this.film, this.filmShot || 0);
       r.render(this.filmScene, this.filmCam);
     }
     r.copyFramebufferToTexture(this.filmTex);

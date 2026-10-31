@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Spring, Spring3, clamp, damp, lerp, smoother, rand } from '../core/math.js';
-import { buildWeapon, buildHands, weaponMaterials, basisQuat } from './models.js';
+import { buildWeapon, buildHands, weaponMaterials, basisQuat, buildPlate } from './models.js';
 import { sampleKeys, sampleScalar, stateAt } from './anim.js';
 import { Particles } from '../fx/effects.js';
 
@@ -56,13 +56,18 @@ function flashTexture() {
   x.closePath(); x.fill();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+// tongues of flame licking away from the muzzle at the left edge
 function flashSideTexture() {
-  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
   const x = c.getContext('2d');
-  const g = x.createLinearGradient(0, 0, 128, 0);
-  g.addColorStop(0, 'rgba(255,255,230,1)'); g.addColorStop(0.25, 'rgba(255,210,100,0.9)'); g.addColorStop(1, 'rgba(255,100,20,0)');
-  x.fillStyle = g;
-  x.beginPath(); x.moveTo(0, 32); x.quadraticCurveTo(40, 2, 128, 26); x.lineTo(128, 38); x.quadraticCurveTo(40, 62, 0, 32); x.fill();
+  x.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 9; i++) {
+    const len = 110 + Math.random() * 140, w = 8 + Math.random() * 26, y0 = 64 + (Math.random() - 0.5) * 16, tip = 64 + (Math.random() - 0.5) * 70;
+    const g = x.createLinearGradient(0, 0, len, 0);
+    g.addColorStop(0, 'rgba(255,250,225,0.8)'); g.addColorStop(0.3, 'rgba(255,205,100,0.55)'); g.addColorStop(0.7, 'rgba(255,125,35,0.25)'); g.addColorStop(1, 'rgba(255,70,10,0)');
+    x.fillStyle = g;
+    x.beginPath(); x.moveTo(0, y0); x.quadraticCurveTo(len * 0.35, y0 - w, len, tip); x.quadraticCurveTo(len * 0.35, y0 + w, 0, y0); x.fill();
+  }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
@@ -97,6 +102,11 @@ export class Viewmodel {
     this.knifeArm.add(kb);
     this.knifeArm.visible = false;
     this.root.add(this.knifeArm);
+    // plate arm: the right hand lets go of the gun, brings the plate up out of the vest and drives it home
+    this.plateArm = buildHands(this.mats).right;
+    const plate = buildPlate(); plate.position.set(-0.14, -0.06, -0.03); this.plateArm.add(plate);
+    this.plateArm.visible = false;
+    this.root.add(this.plateArm);
 
     // lights (camera space); key light follows the world sun direction
     this.hemi = new THREE.HemisphereLight(0xe8e6e0, 0x5a5044, 1.7);
@@ -134,19 +144,25 @@ export class Viewmodel {
     const fm = new THREE.MeshBasicMaterial({ map: this.flashTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const sm = new THREE.MeshBasicMaterial({ map: this.flashSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
     this.flash = new THREE.Group();
-    const front = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.17), fm); this.flash.add(front);
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), fm); this.flash.add(front);
     for (let i = 0; i < 3; i++) {
-      const s = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.1), sm);
-      s.rotation.y = Math.PI / 2; s.rotation.x = i * Math.PI / 3; s.position.z = -0.11; this.flash.add(s);
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.12), sm);
+      s.rotation.y = Math.PI / 2; s.rotation.x = i * Math.PI / 3; s.position.z = -0.14; this.flash.add(s);
     }
     this.flash.visible = false; this.flashT = 0;
-    this.flashLight = new THREE.PointLight(0xffa850, 0, 1.4, 2);
+    // the gas that blows out to both sides of the muzzle, facing the shooter
+    this.wings = new THREE.Group();
+    const wg = new THREE.PlaneGeometry(0.4, 0.22).translate(0.19, 0, 0);
+    for (const sg of [1, -1]) { const m = new THREE.Mesh(wg, sm); m.scale.x = sg; m.userData.sg = sg; this.wings.add(m); }
+    this.wings.visible = false;
+    this.flashLight = new THREE.PointLight(0xffa850, 0, 2.2, 2);
     this.root.add(this.flashLight);
 
     // ---- barrel smoke (camera space particles)
-    this.smoke = new Particles(this.scene, 90, false);
+    this.smoke = new Particles(this.scene, 260, false);
     this.smoke.points.renderOrder = 10;
     this.heat = 0;
+    this.drive = 0; this.driveS = 0; // sustained fire: how far the gun is pressed back
 
     this.casings = [];
     this.clip = null; this.clipT = 0; this.clipFired = new Set();
@@ -195,6 +211,8 @@ export class Viewmodel {
     w.root.add(this.flash);
     this.flash.position.copy(w.anchors.muzzle);
     this.flash.scale.setScalar(def.flash ? def.flash : def.id === 'shotgun' || def.id === 'sniper' || def.id === 'revolver' ? 1.6 : def.id === 'smg' ? 0.8 : def.id === 'lmg' ? 1.25 : 1.1);
+    w.root.add(this.wings); this.wings.position.copy(w.anchors.muzzle); this.wings.position.z -= 0.02; this.wings.scale.copy(this.flash.scale);
+    this.drive = 0; this.driveS = 0;
     this.persist.slide = 0;
     this.clip = null;
     this.setMagState('gun');
@@ -405,19 +423,33 @@ export class Viewmodel {
   // -------------------------------------------------------------- per-shot
   onShot(def, ads) {
     const r = def.recoil;
-    const k = r.vis * (ads ? 0.55 : 1);
-    this.recoilPos.impulse(rand(-0.07, 0.07) * k, rand(0.02, 0.1) * k, (0.95 + Math.random() * 0.35) * k);
-    this.recoilRot.impulse((1.9 + Math.random() * 0.8) * k, rand(-0.5, 0.5) * k, rand(-1.1, 1.1) * k);
+    const k = r.vis * (ads ? 0.55 : 1), back = Math.pow(r.vis, 0.75) * (ads ? 0.72 : 1), sn = (r.snap || 0) * (ads ? 0.4 : 1);
+    // the gun is shoved back at the shooter with every round and springs forward again, the view itself stays calm;
+    // the small ones have no weight to hold them down: every round throws them up and back, right at the face
+    this.recoilPos.impulse(rand(-0.07, 0.07) * k + rand(-0.3, 0.3) * sn, rand(0.02, 0.1) * k + (0.45 + Math.random() * 0.5) * sn, (2.0 + Math.random() * 0.6) * back + (1.0 + Math.random() * 0.6) * sn);
+    this.recoilRot.impulse((1.9 + Math.random() * 0.8) * k + (2.6 + Math.random() * 1.4) * sn, rand(-0.5, 0.5) * k + rand(-1.2, 1.2) * sn, rand(-1.1, 1.1) * k + rand(-1.8, 1.8) * sn);
+    this.drive = Math.min(1, this.drive + (def.fire === 'auto' || def.fire === 'burst' ? 0.17 : 0.5));
     this.vib = Math.min(1, this.vib + 0.45);
     this.shotKick = 1;
     if (this.model && this.model.parts.slide && this.isPistol) this.slideKick = 1;
     this.flash.visible = true; this.flashT = 0.04 + Math.random() * 0.02;
     this.flash.rotation.z = Math.random() * Math.PI;
-    const s = 0.8 + Math.random() * 0.5;
+    const look = ads ? 0.6 : 1, s = (0.8 + Math.random() * 0.5) * look;
     this.flash.children[0].scale.setScalar(s);
-    for (let i = 1; i < this.flash.children.length; i++) this.flash.children[i].scale.set(0.7 + Math.random() * 0.6, 0.8 + Math.random() * 0.4, 1);
-    this.flashLight.intensity = 3.2;
+    for (let i = 1; i < this.flash.children.length; i++) this.flash.children[i].scale.set((0.7 + Math.random() * 0.6) * look, (0.8 + Math.random() * 0.4) * look, 1);
+    // the wings: never the same twice, one side often stronger, and not every round blows them out as far
+    this.wings.visible = Math.random() < 0.86; this.wings.rotation.z = rand(-0.3, 0.3);
+    for (const m of this.wings.children) m.scale.set(m.userData.sg * (0.55 + Math.random() * 0.75) * look, (Math.random() < 0.5 ? -1 : 1) * (0.65 + Math.random() * 0.7) * look, 1);
+    this.flashLight.intensity = 6;
     this.heat = Math.min(1.5, this.heat + (def.fire === 'auto' || def.fire === 'burst' ? 0.09 : 0.35));
+    // a breath of smoke out of the muzzle with every round, a thinner one at the ejection port
+    const a = (ads ? 0.45 : 1) * clamp(0.5 + r.vis * 0.35, 0.6, 1.3), bore = this.model && this.model.anchors;
+    this.flash.getWorldPosition(_v2);
+    for (let i = 0; i < 3; i++) this.smoke.spawn(_v2.x, _v2.y, _v2.z, rand(-0.14, 0.14), rand(-0.02, 0.14), rand(-0.6, -0.14), rand(0.3, 0.65), rand(0.03, 0.06), 0.84, 0.84, 0.82, 0.34 * a, -0.05, 6, 6);
+    if (bore && bore.eject) {
+      _v.copy(bore.eject); this.model.root.localToWorld(_v); this.root.worldToLocal(_v);
+      this.smoke.spawn(_v.x, _v.y, _v.z, rand(0.03, 0.12), rand(0.04, 0.14), rand(-0.03, 0.03), rand(0.3, 0.6), rand(0.016, 0.028), 0.82, 0.82, 0.8, 0.24 * a, -0.05, 3, 5);
+    }
   }
 
   ejectCasing() {
@@ -622,10 +654,18 @@ export class Viewmodel {
     // ---- recoil + vibration
     this.recoilPos.update(dt); this.recoilRot.update(dt);
     this.vib = Math.max(0, this.vib - dt * 7);
-    const vb = this.vib * (1 - adsE * 0.5);
+    const snap = ((this.def && this.def.recoil.snap) || 0) * (1 - adsE * 0.6), vb = this.vib * (1 - adsE * 0.5) * (1 + snap * 2.2);
+    // holding the trigger keeps the gun pressed back into the shoulder, it comes forward again when it stops
+    this.drive = Math.max(0, this.drive - dt * 1.5);
+    this.driveS = damp(this.driveS, this.drive, 14, dt);
+    const dr = this.driveS;
+    pos.y -= dr * 0.012 * (1 - adsE); rx += dr * 0.035 * (1 - adsE * 0.85); pos.z += dr * 0.055 * (1 - adsE * 0.45);
+    // (a small gun climbs and stays up while the trigger is held, into the middle of the picture)
+    pos.y += dr * 0.05 * snap; rx += dr * 0.15 * snap; pos.z += dr * 0.035 * snap; pos.x -= dr * 0.03 * snap;
+    this.game.engine.filmShot = dr > 0.03 ? (0.05 + dr * 0.11) * (1 - adsE * 0.6) : 0; // a touch of smear on the kick
 
-    pos.x += this.clipPos.vx + this.joltPos.vx + this.swayPos.vx + this.recoilPos.vx + (Math.random() - 0.5) * 0.002 * vb;
-    pos.y += this.clipPos.vy + this.joltPos.vy + this.swayPos.vy + this.recoilPos.vy + this.land.x * 0.055 + (Math.random() - 0.5) * 0.002 * vb;
+    pos.x += this.clipPos.vx + this.joltPos.vx + this.swayPos.vx + this.recoilPos.vx + (Math.random() - 0.5) * 0.0035 * vb;
+    pos.y += this.clipPos.vy + this.joltPos.vy + this.swayPos.vy + this.recoilPos.vy + this.land.x * 0.055 + (Math.random() - 0.5) * 0.0035 * vb;
     pos.z += this.clipPos.vz + this.joltPos.vz + this.recoilPos.vz;
     rx += this.clipRot.vx + this.joltRot.vx + this.swayRot.vx + this.moveRot.vx + this.recoilRot.vx + this.land.x * 0.14 + (Math.random() - 0.5) * 0.008 * vb;
     ry += this.clipRot.vy + this.joltRot.vy + this.swayRot.vy + this.recoilRot.vy + (Math.random() - 0.5) * 0.006 * vb;
@@ -729,6 +769,21 @@ export class Viewmodel {
       _q.setFromUnitVectors(KNIFE_ARM, _v3);
       this.knifeArm.quaternion.setFromAxisAngle(_v3, K[3]).multiply(_q);
     } else this.knifeArm.visible = false;
+    // ---- plate: the left hand keeps the gun down in the corner, the right one has other things to do
+    const plating = !!c && c.name === 'plate', pu = plating ? Math.min(1, this.clipT) : 0;
+    this.rhand.visible = !(plating && pu > c.free[0] && pu < c.free[1]);
+    this.plateArm.visible = plating && pu >= c.P[0][0] && pu <= c.P[c.P.length - 1][0];
+    if (this.plateArm.visible) {
+      const A = sampleKeys(c.P, pu, 1, 6, tmpC);
+      this.plateArm.position.set(A[0], A[1], A[2]);
+      this.plateArm.rotation.set(A[3], A[4], A[5], 'YXZ');
+    }
+    if (plating && pu >= c.H[0][0] && pu <= c.H[c.H.length - 1][0]) {
+      const A = sampleKeys(c.H, pu, 1, 6, tmpC);
+      this.rhandOpen.position.set(A[0], A[1], A[2]);
+      this.rhandOpen.rotation.set(A[3], A[4], A[5], 'YXZ');
+      this.rhandOpen.visible = true;
+    }
     // ---- flat-hand slaps during clips (magazine tap / bolt release)
     const openUp = (S.openUp || 0) > 0.5, openSide = (S.openSide || 0) > 0.5;
     if (c && (openUp || openSide)) {
@@ -743,15 +798,15 @@ export class Viewmodel {
     }
 
     // ---- muzzle flash + light
-    if (this.flash.visible) { this.flashT -= dt; if (this.flashT <= 0) this.flash.visible = false; }
-    this.flashLight.intensity = Math.max(0, this.flashLight.intensity - dt * 70);
+    if (this.flash.visible) { this.flashT -= dt; if (this.flashT <= 0) { this.flash.visible = false; this.wings.visible = false; } }
+    this.flashLight.intensity = Math.max(0, this.flashLight.intensity - dt * 110);
     if (this.flashLight.intensity > 0) this.flash.getWorldPosition(this.flashLight.position);
 
-    // ---- barrel smoke after sustained fire
-    this.heat = Math.max(0, this.heat - dt * 0.5);
-    if (this.heat > 0.25 && Math.random() < dt * 14 * Math.min(1, this.heat)) {
+    // ---- the hot barrel keeps smoking for a while after the last round
+    this.heat = Math.max(0, this.heat - dt * 0.42);
+    if (this.heat > 0.1 && Math.random() < dt * 26 * Math.min(1, this.heat + 0.2)) {
       this.flash.getWorldPosition(_v2);
-      this.smoke.spawn(_v2.x, _v2.y, _v2.z, rand(-0.01, 0.01), rand(0.03, 0.07), rand(-0.02, 0.01), rand(0.7, 1.3), rand(0.012, 0.022), 0.75, 0.75, 0.75, 0.12 * Math.min(1, this.heat), -0.01, 0.6, 3.5);
+      this.smoke.spawn(_v2.x + rand(-0.008, 0.008), _v2.y, _v2.z + rand(0, 0.12), rand(-0.012, 0.012), rand(0.04, 0.1), rand(-0.015, 0.015), rand(0.9, 1.7), rand(0.018, 0.034), 0.8, 0.8, 0.8, 0.3 * Math.min(1, this.heat + 0.15) * (1 - adsE * 0.6), -0.02, 0.5, 4.5);
     }
     this.smoke.update(dt);
     const vmc = this.game.engine.vmCamera;

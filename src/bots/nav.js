@@ -4,7 +4,7 @@
 // links, A* search with a binary heap and string-pulling path smoothing.
 // =============================================================================
 const R = 0.3;        // agent radius used for clearance
-const HEIGHT = 1.7;   // standing clearance
+const HEIGHT = 1.8;   // standing clearance
 const STEP = 0.46;
 
 export class NavGraph {

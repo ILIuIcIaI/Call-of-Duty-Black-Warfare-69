@@ -127,7 +127,7 @@ export class Kit {
     const [ax, az] = this.w(x0, z0), [ex, ez] = this.w(x1, z1);
     const X0 = Math.min(ax, ex), X1 = Math.max(ax, ex), Z0 = Math.min(az, ez), Z1 = Math.max(az, ez);
     this.out.navRects.push([X0 - m, Z0 - m, X1 + m, Z1 + m]);
-    if (floors) this.out.footprints.push([X0, Z0, X1, Z1, floors]);
+    if (floors) this.out.footprints.push([X0, Z0, X1, Z1, floors, this.y]);
   }
 }
 
@@ -135,13 +135,19 @@ export class Kit {
 // Openings
 // ---------------------------------------------------------------------------
 function wallSegs(p, q, ops, H) {
-  const list = ops.map((o) => ({ s: Math.max(p, o.c - o.w / 2), e: Math.min(q, o.c + o.w / 2), y: o.y, h: o.h })).filter((o) => o.e > o.s + 1e-3).sort((a, b) => a.s - b.s);
+  const list = ops.map((o) => ({ s: Math.max(p, o.c - o.w / 2), e: Math.min(q, o.c + o.w / 2), y: o.y, h: o.h })).filter((o) => o.e > o.s + 1e-3).sort((a, b) => a.s - b.s || a.y - b.y);
   const out = [];
   let cur = p;
-  for (const o of list) {
+  for (let i = 0; i < list.length;) {
+    const o = list[i];
     if (o.s > cur + 1e-3) out.push([cur, o.s, 0, H]);
-    if (o.y > 0.01) out.push([o.s, o.e, 0, o.y]);
-    if (o.y + o.h < H - 0.01) out.push([o.s, o.e, o.y + o.h, H]);
+    // openings one above the other in the same place (a door to the loft over a door to the tower)
+    let y = 0;
+    for (; i < list.length && Math.abs(list[i].s - o.s) < 1e-3 && Math.abs(list[i].e - o.e) < 1e-3; i++) {
+      if (list[i].y > y + 0.01) out.push([o.s, o.e, y, list[i].y]);
+      y = list[i].y + list[i].h;
+    }
+    if (y < H - 0.01) out.push([o.s, o.e, y, H]);
     cur = Math.max(cur, o.e);
   }
   if (cur < q - 1e-3) out.push([cur, q, 0, H]);
@@ -241,7 +247,7 @@ export class Plan {
     }
     // ---- outside doors
     for (const r of this.rooms) for (const E of r.exts) {
-      const list = pcs.filter((c) => c.room === r && c.side === E.side && c.kind === 'ext');
+      const list = pcs.filter((c) => c.room === r && c.side === E.side && (c.kind === 'ext' || c.kind === 'low'));
       if (!list.length) { console.warn('kit: no outside wall for door', r.type, E.side); continue; }
       let pc = list[0];
       if (E.at !== undefined) pc = list.find((c) => E.at >= c.p && E.at <= c.q) || pc;
@@ -303,7 +309,7 @@ export class Plan {
       return;
     }
     const low = pc.kind === 'low';
-    const H = low ? (pc.room.lowH ?? 1.1) : pc.kind === 'ext' ? this.h : this.h - SLAB;
+    const H = low ? (pc.room.lowH ?? 1.1) : this.h;
     const colH = low ? H : this.h;
     const p = pc.p - pc.ea, q = pc.q + pc.eb;
     // ---- what you bump into
@@ -323,10 +329,10 @@ export class Plan {
         const m = inner.lowTop || 'concreteDark';
         if (ax === 'x') K.box(p, Y + H, line - t / 2 - 0.02, q, Y + H + 0.03, line + t / 2 + 0.02, m, { ...DECO });
         else K.box(line - t / 2 - 0.02, Y + H, p, line + t / 2 + 0.02, Y + H + 0.03, q, m, { ...DECO });
-      } else this.skin(pc, -pc.extSign, pc.p, pc.q, inner.wall, this.h - SLAB);
+      } else this.skin(pc, -pc.extSign, p, q, inner.wall, this.h);
     } else {
-      this.skin(pc, 1, pc.p, pc.q, pc.A.wall, H);
-      this.skin(pc, -1, pc.p, pc.q, pc.B.wall, H);
+      this.skin(pc, 1, p, q, pc.A.wall, H);
+      this.skin(pc, -1, p, q, pc.B.wall, H);
     }
     // ---- frames and what hangs on them
     for (const op of pc.ops) {
@@ -457,21 +463,27 @@ export function stairLen(h, L = 1.6, F = 1.7) { return L + stairRun(h) + F; }
 
 // one straight flight from (x, z), rising in the given direction, from one storey to the next
 export function straightStair(K, lower, upper, x, z, dir, o = {}) {
-  const w = o.w || 1.7, rise = upper.y - lower.y, run = rise / SLOPE, mat = o.mat || lower.stairMat;
+  const w = o.w || 1.7, rise = upper.y - lower.y, run = rise / SLOPE, mat = o.mat || lower.stairMat, pad = 0.12;
   const s = K.sub(x, z, Q_DIR[dir], false, lower.y);
   treads(s, w, rise, run, mat);
-  const rect = s.up([-w / 2, 0, w / 2, run]);
+  // the hole is a little wider than the flight, so whoever walks on it doesn't catch the floor above with the head
+  const rect = s.up([-w / 2 - pad, 0, w / 2 + pad, run]);
   upper.hole(rect[0], rect[1], rect[2], rect[3]);
   lower.keep.push(s.up([-w / 2 - 0.1, -1.2, w / 2 + 0.1, run]));
+  upper.keep.push(s.up([-w / 2 - 0.7, run - 0.1, w / 2 + 0.7, run + 1.9]));
   // the handrail follows the treads, the other side is usually a wall
-  if (o.rail !== false) sideRail(s, o.rail === -1 ? -w / 2 : w / 2, rise, run, lower.railMat);
+  if (o.rail === 'both') { sideRail(s, -w / 2, rise, run, lower.railMat); sideRail(s, w / 2, rise, run, lower.railMat); }
+  else if (o.rail !== false) sideRail(s, o.rail === -1 ? -w / 2 : w / 2, rise, run, lower.railMat, o.railFrom || 0);
   return rect;
 }
-function sideRail(s, x, rise, run, mat) {
-  const L = Math.hypot(rise, run), a = Math.atan2(rise, run);
+// A handrail along a flight rising in +z from z = 0, and what keeps you on the treads: one short invisible wall per tread.
+// from and to: the part of the flight it runs along, as fractions.
+export function sideRail(s, x, rise, run, mat, from = 0, to = 1) {
+  const n = Math.max(2, Math.round(rise / 0.25)), z0 = run * from, z1 = run * to, L = Math.hypot(rise, run) * (to - from), a = Math.atan2(rise, run);
   const g = new THREE.BoxGeometry(0.05, 0.05, L);
-  s.geom(g, mat, mtx(x, rise / 2 + 0.95, run / 2, 0, 1, 1, 1, -a));
-  for (const k of [0.04, 0.5, 0.96]) s.box(x - 0.025, rise * k, run * k - 0.025, x + 0.025, rise * k + 0.95, run * k + 0.025, mat, { ...DECO });
+  s.geom(g, mat, mtx(x, rise * (from + to) / 2 + 0.95, (z0 + z1) / 2, 0, 1, 1, 1, -a));
+  for (const k of [from + 0.04 * (to - from), (from + to) / 2, to - 0.04 * (to - from)]) s.box(x - 0.025, rise * k, run * k - 0.025, x + 0.025, rise * k + 0.95, run * k + 0.025, mat, { ...DECO });
+  for (let i = Math.floor(from * n); i < Math.ceil(to * n); i++) s.box(x - 0.04, rise * i / n, run * i / n, x + 0.04, rise * (i + 1) / n + 1.05, run * (i + 1) / n, mat, { visual: false, pen: 1, noBullet: true });
 }
 
 // there and back within the bay: canonical origin at a corner, 3.4 wide in x, the near landing (part of the
@@ -485,7 +497,8 @@ export function switchStair(K, lower, upper, x, z, q = 0, o = {}) {
   s.box(0, half - 0.2, L + run, W, half, L + run + F, mat, PLAIN);
   treads(e, fw, half, run, mat);
   // the wall between the flights
-  s.box(fw + 0.02, 0, L, W - fw - 0.02, h - SLAB, L + run, o.divider || 'plasterGrey', { ...WALL, pen: 0 });
+  s.box(fw + 0.02, 0, L, W - fw - 0.02, h, L + run, o.divider || 'plasterGrey', { ...WALL, pen: 0 });
+  railing(s, W / 2, L, W / 2, L + run, 1.05, lower.railMat, true, h);
   const rect = s.up([0, L, W, L + run + F]);
   upper.hole(rect[0], rect[1], rect[2], rect[3]);
   lower.keep.push(s.up([-0.05, 0, W + 0.05, L + run + F])); upper.keep.push(s.up([-0.05, 0, W + 0.05, L]));
@@ -500,7 +513,7 @@ export function stairHouse(K, roofY, x, z, q, o = {}) {
   const W = o.W || 3.4, L = o.L ?? 1.6, h = o.h || 3.1, end = L + stairRun(h) + (o.F ?? 1.7), mat = o.mat || 'concrete', H = 2.5;
   const s = K.sub(x, z, q, !!o.mirror, roofY);
   const P = { ...WALL };
-  s.box(-0.12, 0, L - 0.1, 0, H, end + 0.12, mat, P); s.box(W, 0, L - 0.1, W + 0.12, H, end + 0.12, mat, P); s.box(-0.12, 0, end, W + 0.12, H, end + 0.12, mat, P);
+  s.box(-0.12, 0, L - 0.1, 0.11, H, end + 0.12, mat, P); s.box(W - 0.11, 0, L - 0.1, W + 0.12, H, end + 0.12, mat, P); s.box(-0.12, 0, end - 0.11, W + 0.12, H, end + 0.12, mat, P);
   s.box(-0.3, H, L - 0.5, W + 0.3, H + 0.18, end + 0.3, 'concreteDark', PLAIN);
 }
 
@@ -517,10 +530,11 @@ export function fireEscape(K, plans, x, z, q, rooms, o = {}) {
       const h = plans[i + 1].y - P.y, run = stairRun(h), half = h / 2, fw = (W - 0.2) / 2;
       const a = s.sub(fw / 2, L, 0), e = s.sub(W - fw / 2, L + run, 2, false, half);
       treads(a, fw, half, run, mat); s.box(0, half - 0.15, L + run, W, half, L + run + F, mat, PLAIN); treads(e, fw, half, run, mat);
-      railing(s, W, L, W, L + run + F, 1.05, mat, true, 0);
-      railing(s, 0, L + run + F, W, L + run + F, 1.05, mat, true, 0);
+      sideRail(a, fw / 2, half, run, mat); sideRail(e, fw / 2, half, run, mat); sideRail(e, -fw / 2, half, run, mat);
+      railing(s, W, L + run, W, L + run + F, 1.05, mat, true, half);
+      railing(s, 0, L + run + F, W, L + run + F, 1.05, mat, true, half);
       railing(s, 0, L + run, 0, L + run + F, 1.05, mat, true, half);
-    }
+    } else railing(s, 0, L, W - (W - 0.2) / 2, L, 1.05, mat, true, 0);
     if (i > 0) { railing(s, W, 0, W, L, 1.05, mat, true, 0); railing(s, 0, 0, W, 0, 1.05, mat, true, 0); }
     const r0 = s.up([0, 0, W, L]);
     K.area(r0[0], r0[1], r0[2], r0[3], 0, 3);
@@ -649,6 +663,10 @@ export function flatRoof(K, rects, y, o = {}) {
       K.box(Math.min(n0, n1), y, a, Math.max(n0, n1), y + par, e, wall, ao);
       K.box(Math.min(n0, n1) - 0.03, y + par, a - 0.03, Math.max(n0, n1) + 0.03, y + par + 0.05, e + 0.03, top, { ...DECO });
     }
+  } else for (const S of perimeter(rects)) {
+    const a = S.a0 - T / 2, e = S.a1 + T / 2, n0 = S.line, n1 = S.line + S.out * (T / 2 + 0.02), rim = o.top || 'concreteDark';
+    if (S.ax === 'x') K.box(a, y - 0.03, Math.min(n0, n1), e, y + 0.005, Math.max(n0, n1), rim, { ...DECO });
+    else K.box(Math.min(n0, n1), y - 0.03, a, Math.max(n0, n1), y + 0.005, e, rim, { ...DECO });
   }
 }
 
