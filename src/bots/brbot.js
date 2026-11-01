@@ -106,7 +106,8 @@ export class BRBot extends Bot {
     this.wdef = makeWeaponDef(it.weaponId, it.rarity);
     this.wdefBase = WEAPONS[it.weaponId];
     this.optic = it.optic;
-    this.soldier.setWeapon(this.wdef, it.optic === 'iron' ? this.wdef.optics[0] : it.optic);
+    this.skin = it.skin || 'standard';
+    this.soldier.setWeapon(this.wdef, it.optic === 'iron' ? this.wdef.optics[0] : it.optic, this.skin);
     this.mag = this.wdef.mag; this.reloadT = 0;
     this.rarity = it.rarity;
     this.gear = score;
@@ -125,7 +126,7 @@ export class BRBot extends Bot {
     if (it.kind === 'plate') this.plates = Math.min(MAX_PLATES, this.plates + (it.count || 1));
     else if (it.kind === 'weapon') {
       // the old gun stays on the floor if it was worth something
-      if (this.rarity !== undefined && this.gear > 3) L.drop({ kind: 'weapon', weaponId: this.wdef.id, optic: this.optic, rarity: this.rarity }, this.pos.x, this.pos.y, this.pos.z);
+      if (this.rarity !== undefined && this.gear > 3) L.drop({ kind: 'weapon', weaponId: this.wdef.id, optic: this.optic, rarity: this.rarity, skin: this.skin }, this.pos.x, this.pos.y, this.pos.z);
       this.equipLoot(it);
     }
     L.removeItem(it);
@@ -485,7 +486,7 @@ export class BRBot extends Bot {
   // whatever it found can be taken from it
   dropLoot() {
     const L = this.game.match.loot, x = this.pos.x, y = this.pos.y, z = this.pos.z;
-    if (this.rarity !== undefined) L.drop({ kind: 'weapon', weaponId: this.wdef.id, optic: this.optic, rarity: this.rarity }, x, y, z);
+    if (this.rarity !== undefined) L.drop({ kind: 'weapon', weaponId: this.wdef.id, optic: this.optic, rarity: this.rarity, skin: this.skin }, x, y, z);
     if (this.plates > 0) L.drop({ kind: 'plate', count: this.plates }, x, y, z);
     L.drop({ kind: 'ammo' }, x, y, z);
   }

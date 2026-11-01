@@ -119,6 +119,7 @@ export class Effects {
     const tm = new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
     this.tracerMesh = new THREE.InstancedMesh(tg, tm, 64);
     this.tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.tracerMesh.count = 0; // (without any tracer, nothing: in the menu no update ever sets this)
     this.tracerMesh.frustumCulled = false;
     this.tracers = Array.from({ length: 64 }, () => ({ life: 0 }));
     this.tracerNext = 0;

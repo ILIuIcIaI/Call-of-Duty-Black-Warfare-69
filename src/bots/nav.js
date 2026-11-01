@@ -8,10 +8,12 @@ const HEIGHT = 1.8;   // standing clearance
 const STEP = 0.46;
 
 export class NavGraph {
-  constructor(col, bounds) {
+  constructor(col, bounds, climb = 1.3, topY = 25) {
     this.col = col;
     this.b = bounds;
     this.cs = 1.0;
+    this.climb = climb; // how high a ledge bots still climb
+    this.topY = topY;   // nothing above this is ground
   }
 
   build() {
@@ -37,7 +39,7 @@ export class NavGraph {
         for (const top of tops) {
           if (top - last < 0.2) continue;
           last = top;
-          if (top > 25) continue;
+          if (top > this.topY) continue;
           if (col.overlaps(x - R, top + 0.02, z - R, x + R, top + HEIGHT, z + R)) continue;
           list.push(X.length);
           X.push(x); Y.push(top); Z.push(z);
@@ -78,7 +80,7 @@ export class NavGraph {
     }
     // drops (one-way) and jump-ups onto crates (mantle)
     if (dy < -0.95 && dy >= -4.2 && this.clearAbove(c, a)) this.link(a, c, d + 1, 1);
-    else if (dy > 0.95 && dy <= 1.3 && this.clearAbove(a, c)) { this.link(a, c, d + 2.5, 2); this.link(c, a, d + 0.5, 1); }
+    else if (dy > 0.95 && dy <= this.climb && this.clearAbove(a, c)) { this.link(a, c, d + 2.5, 2); this.link(c, a, d + 0.5, 1); }
     else if (dy < -0.95 && dy >= -1.3) { /* handled from the other side */ }
   }
 

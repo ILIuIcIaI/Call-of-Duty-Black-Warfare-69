@@ -2,6 +2,38 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-01
+
+The Gun Game update: a new mode, a new map straight from a Counter-Strike 1.6 map file, and six weapon skins.
+
+### Added
+
+**Gun Game**
+- A new mode on all four maps, solo with bots and in the multiplayer vote. Everyone for themselves: every kill gives you the next weapon.
+- 15 levels: 14 guns from the P-11 Sidearm up to the Titan .50, then the knife. A kill with the knife wins the match. It takes two stabs on someone at full health, or one on a bot from behind.
+- A knife kill below the last level doesn't move the killer up, it costs the victim a level. Killing yourself costs a level too.
+- Every new weapon comes with a random skin, the standard look included.
+- The HUD shows your level, the next weapon and who is ahead. The scoreboard shows everyone's level and weapon.
+- Bots climb the same ladder and come at you with the knife on the last level. Someone who joins a running match over the network starts at level one.
+
+**PoolDay**
+- The Counter-Strike 1.6 map by Squall as the fourth map for every mode except Warzone. It isn't rebuilt: the game reads the original map file with its walls, textures, baked light, solid parts, spawn points and stall doors.
+- The pool in the middle is empty, so you jump in and climb back out. The whirlpool still has its water.
+- The stall doors open when someone walks up to them and shut again behind them. `F` at a urinal flushes it, and the others hear it too.
+- Bots know their way around, in and out of the pool.
+- Nothing lies on the floor: you bring your loadout, the original's weapons on the ground aren't used.
+
+**Weapon skins**
+- Six skins next to the standard look: Glutglas, Riss, Magenta, Plasma, Flüssigchrom and Neonader. They are painted in code and fitted to each weapon, so lenses, glass and reticles stay clear.
+- Every weapon has its own skin in the loadout menu, picked with a row of small buttons under the optics. The menu's 3D preview shows it.
+- In Warzone every weapon on the ground comes with a random skin, all seven looks equally likely, and its card names it. A weapon keeps its skin when it's dropped and picked up again.
+- Everyone sees the skins of the others, on bots and over the network as well.
+
+### Changed
+
+- The knife no longer kills another player with one stab from behind. Players take the same damage from any side. Bots outside Warzone still die to one stab from behind.
+- Both computers need this version to play together: 0.3.0 and 0.4.0 don't mix, and the lobby says so.
+
 ## [0.3.0] - 2026-10-31
 
 The multiplayer update: play every mode with your friends over the local network, on any network and any PC.
@@ -133,6 +165,7 @@ The first release.
 - Main menu, pause menu, settings and controls overview (in German).
 - HUD with minimap, score bar, kill feed, ammo counter and hit markers.
 
+[0.4.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.1.0

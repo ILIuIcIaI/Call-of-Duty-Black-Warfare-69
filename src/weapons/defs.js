@@ -119,8 +119,20 @@ export const WEAPONS = {
   },
 };
 
+// The last level of Gun Game: nothing but the knife. Not in any list of guns you can choose or find.
+WEAPONS.knife = {
+  id: 'knife', name: 'MESSER', cls: 'Nahkampf', slot: 'secondary', model: 'knife', fire: 'semi', melee: true,
+  rpm: 60, damage: [105, 105], range: [2, 3], head: 1, limb: 1, mag: 1, reserve: 0,
+  reload: 1, reloadEmpty: 1, ads: 0.1, sprintToFire: 0.05, tacToFire: 0.1, mobility: 1.12, adsMoveMul: 1,
+  hip: 0, adsSpread: 0, moveSpread: 0, recoil: { up: 0, side: 0, bias: 0, recover: 7, kick: 0, vis: 0 },
+  optics: ['iron'], sound: 'pistol', reloadStyle: 'none', pen: 0,
+  stats: { dmg: 100, rof: 30, rng: 2, acc: 100, mob: 100, hnd: 100 },
+};
+
 export const PRIMARIES = ['ar', 'burst', 'smg', 'pdw', 'lmg', 'dmr', 'sniper', 'amr', 'shotgun', 'autoshot'];
 export const SECONDARIES = ['pistol', 'handcannon', 'revolver', 'mpistol'];
+// Gun Game: from the first weapon to the last, one kill each
+export const GUN_TIERS = ['pistol', 'mpistol', 'revolver', 'handcannon', 'shotgun', 'autoshot', 'pdw', 'smg', 'ar', 'burst', 'lmg', 'dmr', 'sniper', 'amr', 'knife'];
 
 // All optics. zoom = how the sight is sold in the menu; the real values live with the models.
 export const OPTICS = {

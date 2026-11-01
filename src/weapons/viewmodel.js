@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Spring, Spring3, clamp, damp, lerp, smoother, rand } from '../core/math.js';
-import { buildWeapon, buildHands, weaponMaterials, basisQuat, buildPlate } from './models.js';
+import { buildWeapon, buildHands, weaponMaterials, basisQuat, buildPlate, evenUV } from './models.js';
+import { applySkin, skinMaterials } from './skins.js';
 import { sampleKeys, sampleScalar, stateAt } from './anim.js';
 import { Particles } from '../fx/effects.js';
 
@@ -106,6 +107,8 @@ export class Viewmodel {
     for (const f of bi) for (const i of f) bp.push(...bv[i]);
     blade.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3)); blade.computeVertexNormals();
     const kbm = new THREE.Mesh(blade, this.mats.steel); kbm.position.y = 0.066; kb.add(kbm);
+    this.knifeBlade = [kg, kbm]; this.knifeGrip = kh;
+    evenUV(kb); // (a skin paints the blade as evenly as any gun)
     kb.position.set(0, 0.0, -0.022);
     this.knifeArm.add(kb);
     this.knifeArm.visible = false;
@@ -183,12 +186,17 @@ export class Viewmodel {
   }
 
   // -------------------------------------------------------------- weapon setup
-  setWeapon(def, optic) {
-    if (this.model) this.pivot.remove(this.model.root);
+  // Gun Game: the models of the ladder are ready before the first shot
+  prebuild(def, optic) { const key = def.id + '|' + (optic || 'iron'); this.cache = this.cache || {}; if (!this.cache[key]) this.cache[key] = buildWeapon(def.model, optic, this.mats); }
+
+  setWeapon(def, optic, skin = 'standard') {
+    if (this.model) { this.pivot.remove(this.model.root); this.model.root.visible = true; }
     if (this.spare && this.spare.parent) this.spare.parent.remove(this.spare);
     const key = def.id + '|' + (optic || 'iron');
     this.cache = this.cache || {};
     if (!this.cache[key]) this.cache[key] = buildWeapon(def.model, optic, this.mats);
+    // (with nothing but the knife, the blade that stabs is that knife)
+    if (this.knifeBlade) { const km = skinMaterials(this.mats, def.melee ? skin : 'standard'); for (const b of this.knifeBlade) b.material = km.steel; this.knifeGrip.material = def.melee ? km.rubber : this.mats.dark; }
     const w = this.model = this.cache[key];
     this.def = def;
     this.pivot.add(w.root);
@@ -205,7 +213,7 @@ export class Viewmodel {
       const r = this.rHome;
       this.lHome = { pos: r.pos.clone().add(_v.set(-0.012, -0.022, -0.004)), quat: r.quat.clone().multiply(_q.setFromEuler(_e.set(0.1, 0.0, 0.15))) };
     }
-    this.lhand.visible = true;
+    this.lhand.visible = !def.melee;
     if (w.parts.mag) {
       const magRest = new THREE.Matrix4().compose(this.rest.mag.pos, new THREE.Quaternion().setFromEuler(this.rest.mag.rot), new THREE.Vector3(1, 1, 1));
       const a = this.resolveAnchor('mag', true, {});
@@ -217,6 +225,7 @@ export class Viewmodel {
       this.spareInHand = new THREE.Matrix4().makeTranslation(-0.042, 0, 0).multiply(this.magInHand);
       this.magState = null;
     } else this.spare = null;
+    applySkin(w, skin, this.mats, { cracks: true });
     if (w.parts.shellHand) this.shellRel = new THREE.Matrix4().makeTranslation(-0.01, 0.0, -0.035);
     w.root.add(this.flash);
     this.flash.position.copy(w.anchors.muzzle);
@@ -783,6 +792,9 @@ export class Viewmodel {
       }
     } else { this.lhandOpen.visible = false; this.lhand.visible = true; }
     if (!this.ledge) this.rhandOpen.visible = false;
+    // ---- nothing but the knife: no second hand on it, and in the stab the knife arm is the knife
+    if (this.def.melee) { this.lhand.visible = false; this.lhandOpen.visible = false; w.root.visible = !(c && c.name === 'melee'); }
+    if (w.cracks) w.cracks.visible = w.skin === 'riss' && st.ads < 0.4;
     // ---- knife: the left hand leaves the gun, the knife arm does the work
     if (c && c.name === 'melee') {
       this.lhand.visible = false; this.lhandOpen.visible = false;
@@ -796,7 +808,7 @@ export class Viewmodel {
     } else this.knifeArm.visible = false;
     // ---- plate: the left hand keeps the gun down in the corner, the right one has other things to do
     const plating = !!c && c.name === 'plate', pu = plating ? Math.min(1, this.clipT) : 0;
-    this.rhand.visible = !(plating && pu > c.free[0] && pu < c.free[1]);
+    this.rhand.visible = !(plating && pu > c.free[0] && pu < c.free[1]) && !(this.def.melee && c && c.name === 'melee');
     this.plateArm.visible = plating && pu >= c.P[0][0] && pu <= c.P[c.P.length - 1][0];
     if (this.plateArm.visible) {
       const A = sampleKeys(c.P, pu, 1, 6, tmpC);

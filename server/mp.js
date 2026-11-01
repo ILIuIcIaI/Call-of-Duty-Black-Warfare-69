@@ -11,16 +11,17 @@ const os = require('os');
 const net = require('net');
 const firewall = require('./firewall.js');
 
-const VERSION = 1;
+const VERSION = 2;
 const UDP_PORT = 48069, GROUP = '239.69.0.69';
 const LOOK_MS = 900, BEACON_MS = 1000;
 const REACH_MS = 1500, RETRY_MS = 3000, SWEEP_TICKS = 6, FIREWALL_TICKS = 15;
 // network cards that aren't the way to the others: virtual machines, VPNs, Bluetooth and the like
 const VIRTUAL = /v-?ethernet|virtual|vmware|vmnet|vbox|hyper-?v|wsl|docker|virbr|^br-|bridge|loopback|bluetooth|tailscale|zerotier|hamachi|radmin|wireguard|nordlynx|vpn|^tap|^tun|^utun|^wg\d|awdl|llw|lan-verbindung\s*\*|local area connection\s*\*/i;
 const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40;
-const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20 };
+const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10 };
+const GUN_LEVELS = 15; // Gun Game: 14 guns, then the knife
 const MATCH_MS = 600000;
-const MAPS = ['drydock', 'citadel', 'blacksite'];
+const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday'];
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
 const FFA_OUTFITS = ['raven', 'jungle', 'urban', 'desert', 'vanguard'];
@@ -190,7 +191,7 @@ class Room {
 
   vote(p, stage, value) {
     if (this.state !== 'lobby' || stage !== this.stage) return;
-    const valid = stage === 'mode' ? ['tdm', 'ffa', 'br'].includes(value) : stage === 'map' ? MAPS.includes(value) : stage === 'bots' ? ['yes', 'no'].includes(value) : false;
+    const valid = stage === 'mode' ? ['tdm', 'ffa', 'br', 'gun'].includes(value) : stage === 'map' ? MAPS.includes(value) : stage === 'bots' ? ['yes', 'no'].includes(value) : false;
     if (!valid) return;
     this.votes[stage].set(p.id, value);
     this.after();
@@ -213,7 +214,7 @@ class Room {
     for (const v of V.values()) count[v] = (count[v] || 0) + 1;
     const top = Math.max(...Object.values(count)), best = Object.keys(count).filter((k) => count[k] === top);
     this.choice[stage] = pick(best); // a tie is decided by chance
-    this.say(null, stage === 'mode' ? 'Modus: ' + { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone' }[this.choice.mode] : stage === 'map' ? 'Karte: ' + this.choice.map : 'Bots: ' + (this.choice.bots === 'yes' ? 'ja' : 'nein'));
+    this.say(null, stage === 'mode' ? 'Modus: ' + { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game' }[this.choice.mode] : stage === 'map' ? 'Karte: ' + this.choice.map : 'Bots: ' + (this.choice.bots === 'yes' ? 'ja' : 'nein'));
     if (stage === 'mode') this.stage = this.choice.mode === 'br' ? 'bots' : 'map';
     else if (stage === 'map') this.stage = 'bots';
     else this.stage = 'done';
@@ -246,14 +247,14 @@ class Room {
     });
     for (let i = 0; i < bots; i++) {
       const team = mode === 'tdm' ? teamFor() : 2 + players.length + i;
-      roster.push({ id: 'b' + (i + 1), name: names[i % names.length], team, bot: true, outfit: mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[(players.length + i) % FFA_OUTFITS.length], weapon: pickWeapon() });
+      roster.push({ id: 'b' + (i + 1), name: names[i % names.length], team, bot: true, outfit: mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[(players.length + i) % FFA_OUTFITS.length], weapon: mode === 'gun' ? 'pistol' : pickWeapon() });
     }
-    const limit = mode === 'ffa' ? 25 : mode === 'tdm' ? 50 + (roster.length - 1) * 5 : 0;
+    const limit = mode === 'ffa' ? 25 : mode === 'gun' ? GUN_LEVELS : mode === 'tdm' ? 50 + (roster.length - 1) * 5 : 0;
     // (the bots run in somebody's browser: a PC that already has enough to do with itself is spared that)
     const carrier = players.find((p) => !(p.fps < SMOOTH_FPS)) || players.reduce((a, b) => (b.fps > a.fps ? b : a));
     this.match = {
       mode, map: mode === 'br' ? 'island' : c.map, seed, roster, limit, auth: carrier.id,
-      score: new Map(roster.map((r) => [r.id, { kills: 0, deaths: 0, points: 0, team: r.team }])), team: [0, 0],
+      score: new Map(roster.map((r) => [r.id, { kills: 0, deaths: 0, points: 0, team: r.team, tier: 0 }])), team: [0, 0],
       alive: new Set(roster.map((r) => r.id)), joinable: mode !== 'br', taken: new Set(),
     };
     this.state = 'loading'; this.startsAt = 0; this.lateOk = false;
@@ -264,7 +265,7 @@ class Room {
 
   startCfg() {
     const m = this.match;
-    return { mode: m.mode, map: m.map, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : MATCH_MS, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points })), team: m.team };
+    return { mode: m.mode, map: m.map, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : MATCH_MS, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points, tier: s.tier })), team: m.team };
   }
 
   // Everybody is there, or the time is up and somebody is: whoever is late comes in when he can.
@@ -293,6 +294,10 @@ class Room {
   leader() {
     const M = this.match;
     if (M.mode === 'tdm') return M.team[0] === M.team[1] ? null : M.team[0] > M.team[1] ? 0 : 1;
+    if (M.mode === 'gun') {
+      const R = [...M.score].sort((a, b) => b[1].tier - a[1].tier || b[1].kills - a[1].kills);
+      return R.length && (R.length < 2 || R[0][1].tier > R[1][1].tier || R[0][1].kills > R[1][1].kills) ? R[0][0] : null;
+    }
     const rows = [...M.score].sort((a, b) => b[1].kills - a[1].kills);
     return rows.length && (rows.length < 2 || rows[0][1].kills > rows[1][1].kills) ? rows[0][0] : null;
   }
@@ -306,7 +311,7 @@ class Room {
       const team = m.mode === 'tdm' ? (this.teamSize(0) <= this.teamSize(1) ? 0 : 1) : 2 + 100 + n;
       entry = { id: p.id, name: p.name, team, bot: false, outfit: m.mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[n % FFA_OUTFITS.length] };
       m.roster.push(entry);
-      m.score.set(p.id, { kills: 0, deaths: 0, points: 0, team });
+      m.score.set(p.id, { kills: 0, deaths: 0, points: 0, team, tier: 0 });
     }
     m.alive.add(p.id);
     p.team = entry.team; p.inMatch = true; p.loaded = false;
@@ -328,13 +333,23 @@ class Room {
       k.points += 100 + (m.part === 'head' ? 25 : 0);
       if (M.mode === 'tdm' && (k.team === 0 || k.team === 1)) M.team[k.team]++;
     }
+    // Gun Game: a kill with a gun is the next weapon. Stabbed: the victim falls back and the knife gains nothing, except on the last level, where it wins.
+    let gunWon = false;
+    if (M.mode === 'gun') {
+      const last = GUN_LEVELS - 1;
+      if (!k || m.by === m.id) { if (v) v.tier = Math.max(0, v.tier - 1); }
+      else if (m.w === 'MESSER') { if (k.tier >= last) gunWon = true; else if (v) v.tier = Math.max(0, v.tier - 1); }
+      else if (k.tier < last) k.tier++;
+    }
     this.others(from, { ...m, t: 'died', from: from.id });
-    this.others(null, { t: 'sc', id: m.id, d: v ? v.deaths : 0, by: m.by || null, k: k ? k.kills : undefined, p: k ? k.points : undefined, team: M.team });
+    this.others(null, { t: 'sc', id: m.id, d: v ? v.deaths : 0, by: m.by || null, k: k ? k.kills : undefined, p: k ? k.points : undefined, team: M.team, tv: v ? v.tier : undefined, tk: k ? k.tier : undefined });
     if (M.mode === 'br') {
       M.alive.delete(m.id);
       this.checkLast(m.rest);
     } else if (M.mode === 'tdm') {
       if (M.team[0] >= M.limit || M.team[1] >= M.limit) this.endMatch(M.team[0] >= M.limit ? 0 : 1);
+    } else if (M.mode === 'gun') {
+      if (gunWon) this.endMatch(m.by);
     } else if (k && k.kills >= M.limit) this.endMatch(m.by);
   }
 
@@ -352,7 +367,7 @@ class Room {
   endMatch(winner) {
     const M = this.match;
     if (!M || this.state === 'lobby') return;
-    const board = M.roster.map((r) => { const s = M.score.get(r.id) || { kills: 0, deaths: 0 }; return { id: r.id, name: r.name, bot: r.bot, team: r.team, kills: s.kills, deaths: s.deaths }; }).sort((a, b) => b.kills - a.kills);
+    const board = M.roster.map((r) => { const s = M.score.get(r.id) || { kills: 0, deaths: 0, tier: 0 }; return { id: r.id, name: r.name, bot: r.bot, team: r.team, kills: s.kills, deaths: s.deaths, tier: s.tier }; }).sort((a, b) => (M.mode === 'gun' ? b.tier - a.tier : 0) || b.kills - a.kills);
     this.everyone({ t: 'end', winner, board, team: M.team, mode: M.mode });
     for (const p of this.connected()) { p.inMatch = false; p.loaded = false; }
     this.resetLobby();

@@ -3,6 +3,7 @@ import { WEAPONS } from './defs.js';
 import { Viewmodel } from './viewmodel.js';
 import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise, plateClip, meleeClip } from './anim.js';
 import { makeWeaponDef } from '../game/loot.js';
+import { skinOf } from './skins.js';
 import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
 
 // =============================================================================
@@ -47,10 +48,12 @@ export class PlayerWeapons {
     this.vm.stop(); this.vm.endFree();
   }
 
+  skinFor(id) { return skinOf(this.game.settings.skins[id]); }
+
   setLoadout(lo) {
     const mk = (id, optic) => {
       const def = WEAPONS[id];
-      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
+      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], skin: this.skinFor(id), mag: def.mag, reserve: def.reserve, chambered: true };
     };
     this.slots = [mk(lo.primary, lo.primaryOptic), mk(lo.secondary, lo.secondaryOptic)];
     this.cur = 0;
@@ -61,11 +64,11 @@ export class PlayerWeapons {
   applyLoadout(lo) {
     const slot = (id, optic) => {
       const def = WEAPONS[id];
-      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], mag: def.mag, reserve: def.reserve, chambered: true };
+      return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], skin: this.skinFor(id), mag: def.mag, reserve: def.reserve, chambered: true };
     };
     const P = slot(lo.primary, lo.primaryOptic), S = slot(lo.secondary, lo.secondaryOptic);
     const cur = this.slots;
-    const chP = !cur[0] || cur[0].def !== P.def || cur[0].optic !== P.optic, chS = !cur[1] || cur[1].def !== S.def || cur[1].optic !== S.optic;
+    const chP = !cur[0] || cur[0].def !== P.def || cur[0].optic !== P.optic || cur[0].skin !== P.skin, chS = !cur[1] || cur[1].def !== S.def || cur[1].optic !== S.optic || cur[1].skin !== S.skin;
     if (!chP && !chS) return false;
     if (chP) cur[0] = P;
     if (chS) cur[1] = S;
@@ -73,6 +76,16 @@ export class PlayerWeapons {
     this.cur = chP ? 0 : 1;
     this.equip(false);
     return true;
+  }
+
+  // Gun Game: one weapon at a time, the one of your level, full and ready
+  setGunWeapon(id, skin) {
+    const def = WEAPONS[id], optic = def.optics.includes('reflex') ? 'reflex' : def.optics[0];
+    clearTimeout(this._boltDelay);
+    this.slots = [{ def, optic, skin, mag: def.mag, reserve: def.reserve, chambered: true }, null];
+    this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0; this.lunge = null; this.lockSlot = -1;
+    this.cur = 0;
+    this.equip(false);
   }
 
   // Warzone: you land with nothing but a plain pistol
@@ -88,7 +101,7 @@ export class PlayerWeapons {
   pickup(it) {
     const def = makeWeaponDef(it.weaponId, it.rarity);
     const i = def.slot === 'primary' ? 0 : 1, old = this.slots[i];
-    this.slots[i] = { def, optic: it.optic, mag: it.mag ?? def.mag, reserve: it.reserve ?? def.mag * 3, chambered: true };
+    this.slots[i] = { def, optic: it.optic, skin: skinOf(it.skin), mag: it.mag ?? def.mag, reserve: it.reserve ?? def.mag * 3, chambered: true };
     this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1;
     this.cur = i;
     this.equip(false);
@@ -119,12 +132,12 @@ export class PlayerWeapons {
   plateDone() { if (this.state === 'plate') this.state = 'idle'; }
 
   refillAll() {
-    for (const s of this.slots) { s.mag = s.def.mag; s.reserve = s.def.reserve; s.chambered = true; }
+    for (const s of this.slots) if (s) { s.mag = s.def.mag; s.reserve = s.def.reserve; s.chambered = true; }
   }
 
   equip(first) {
     const w = this.w;
-    this.vm.setWeapon(w.def, w.optic);
+    this.vm.setWeapon(w.def, w.optic, w.skin);
     this.adsAmount = 0; this.burstLeft = 0;
     this.state = 'draw';
     const quick = w.def.slot === 'secondary';
@@ -151,7 +164,7 @@ export class PlayerWeapons {
     }
 
     // ---- knife
-    if (input.pressed('melee') && !player.gliding && player.mode !== 'mantle' && player.mode !== 'dive' && this.state !== 'holster' && this.state !== 'plate' && this.state !== 'melee') this.startMelee(player);
+    if ((input.pressed('melee') || (def.melee && input.firePressed)) && !player.gliding && player.mode !== 'mantle' && player.mode !== 'dive' && this.state !== 'holster' && this.state !== 'plate' && this.state !== 'melee') this.startMelee(player);
     if (this.lunge) this.updateLunge(dt, player);
 
     // ---- sprint / movement restrictions
@@ -168,7 +181,7 @@ export class PlayerWeapons {
     // aiming during a reload: wait for the magazine, then it cuts the rest of the animation short
     let reloading = this.state === 'reload' && def.reloadStyle !== 'shell';
     if (reloading && this.refilled && input.ads && !sprinting && !lowered) { this.vm.stop(); this.state = 'idle'; reloading = false; }
-    this.wantsAds = (input.ads || (player.mount && player.mount.held)) && !sprinting && !lowered && !reloading && this.state !== 'inspect' && this.state !== 'plate' && this.state !== 'melee';
+    this.wantsAds = (input.ads || (player.mount && player.mount.held)) && !sprinting && !lowered && !reloading && !def.melee && this.state !== 'inspect' && this.state !== 'plate' && this.state !== 'melee';
     const adsRate = 1 / def.ads * (this.raiseT > 0 ? 0.75 : 1);
     this.adsAmount = clamp(this.adsAmount + (this.wantsAds ? adsRate : -adsRate * 1.3) * dt, 0, 1);
 
@@ -180,7 +193,7 @@ export class PlayerWeapons {
     // a started burst always finishes, unless the gun runs dry or gets put away
     if (this.burstLeft > 0 && (w.mag <= 0 || !canShootState || lowered)) { this.burstLeft = 0; this.nextShot = Math.max(this.nextShot, t + def.burstDelay); }
     const bursting = this.burstLeft > 0;
-    if ((this.fireBuffer > 0 || bursting || (triggerHeld && def.fire === 'auto')) && canShootState && this.raiseT <= 0 && !lowered && t >= this.nextShot) {
+    if (!def.melee && (this.fireBuffer > 0 || bursting || (triggerHeld && def.fire === 'auto')) && canShootState && this.raiseT <= 0 && !lowered && t >= this.nextShot) {
       if (w.mag <= 0) {
         if (this.fireBuffer > 0) { g.audio.play('dryfire', { vol: 0.6 }); this.fireBuffer = 0; this.tryReload(); }
       } else if (def.fire === 'auto' || bursting || this.fireBuffer > 0) {
@@ -360,8 +373,8 @@ export class PlayerWeapons {
     cam.getWorldDirection(_dir);
     if (c) {
       const dx = c.pos.x - player.pos.x, dz = c.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
-      // its own facing against the direction we are coming from: from behind, the knife kills outright
-      const yaw = c.isBot ? c.aimYaw : c.yaw, back = (-Math.sin(yaw) * dx + -Math.cos(yaw) * dz) / d > 0.35;
+      // its own facing against the direction we are coming from: from behind, the knife kills a bot outright. Another player only gets hurt.
+      const back = c.isBot && (-Math.sin(c.aimYaw) * dx + -Math.cos(c.aimYaw) * dz) / d > 0.35;
       const dmg = back && !g.br ? 400 : 105; // Warzone has the finisher for this
       const dir = new THREE.Vector3(dx / d, 0.1, dz / d);
       const point = new THREE.Vector3(c.pos.x - dx / d * 0.25, c.pos.y + 1.15, c.pos.z - dz / d * 0.25);

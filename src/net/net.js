@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { Puppet, F, WEAPON_IDS, OPTIC_IDS } from './puppet.js';
 import { WEAPONS } from '../weapons/defs.js';
+import { SKIN_IDS } from '../weapons/skins.js';
 
 // =============================================================================
 // The game's end of the room in server/mp.js: the connection, the lobby state, and everything
 // a match has to tell the others or hears from them. Everybody owns his own body, one
 // player owns the bots; a hit goes to the owner, and he says when somebody is dead.
 // =============================================================================
-const VERSION = 1, SEND_EVERY = 0.05, BOTS_EVERY = 0.1;
+const VERSION = 2, SEND_EVERY = 0.05, BOTS_EVERY = 0.1;
 
 export class Net {
   constructor(game) {
@@ -108,8 +109,8 @@ export class Net {
       case 'sc': this.onScore(m); break;
       case 'take': if (g.br) g.br.loot.netTake(m.nid); break;
       case 'lost': if (g.br) g.br.onItemLost(m.nid); break;
-      case 'ev': if (g.br) g.br.onNetEvent(m); break;
-      case 'joined': { this.addEntry(m.entry); const c = this.byId.get(m.entry.id); if (c && m.score) { c.kills = m.score.kills; c.deaths = m.score.deaths; c.score = m.score.points; } this.note(m.entry.name + ' ist dazugekommen'); break; }
+      case 'ev': if (g.br) g.br.onNetEvent(m); else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
+      case 'joined': { this.addEntry(m.entry); const c = this.byId.get(m.entry.id); if (c && m.score) { c.kills = m.score.kills; c.deaths = m.score.deaths; c.score = m.score.points; c.tier = m.score.tier || 0; } this.note(m.entry.name + ' ist dazugekommen'); break; }
       case 'left': this.onLeft(m); break;
       case 'auth': this.setAuth(m.id); break;
       case 'end': this.onEnd(m); break;
@@ -153,7 +154,7 @@ export class Net {
       if (this.status !== 'match') return;
       g.startMatch({ ...cfg, net: true, bots: cfg.roster.filter((r) => r.bot).length });
       L.classList.add('hidden');
-      for (const r of cfg.board || []) { const c = r.id === this.you ? g.player : this.byId.get(r.id); if (c) { c.kills = r.kills; c.deaths = r.deaths; c.score = r.points; } }
+      for (const r of cfg.board || []) { const c = r.id === this.you ? g.player : this.byId.get(r.id); if (c) { c.kills = r.kills; c.deaths = r.deaths; c.score = r.points; if (g.match.gun && r.tier) g.match.setTier(c, r.tier); } }
       if (cfg.team && g.match.mode === 'tdm') g.match.score = [cfg.team[0], cfg.team[1]];
       g.showNetWait(g.netWait);
       this.send({ t: 'loaded' });
@@ -203,7 +204,7 @@ export class Net {
   setAuth(id) {
     const old = this.cfg && this.cfg.auth;
     if (this.cfg) this.cfg.auth = id;
-    if (id === this.you && old !== id) this.adoptBots();
+    if (this.cfg && id === this.you && old !== id) this.adoptBots(); // (no match running here: nothing to take over)
   }
 
   // it took this PC too long to load and somebody else runs them by now: puppets here as well
@@ -232,6 +233,7 @@ export class Net {
       const i = g.bots.indexOf(pu), j = g.combatants.indexOf(pu);
       const b = g.match.makeNetBot(e);
       b.netId = e.id; b.kills = pu.kills; b.deaths = pu.deaths; b.score = pu.score;
+      if (g.match.gun && pu.tier) { b.tier = pu.tier; b.setWeapon(pu.wdef.id, pu.skin); }
       // (one still in the plane isn't alive yet, but not out of it either)
       if (g.br ? pu.out : !pu.alive) g.match.adoptDead(b, pu);
       else g.match.adoptAt(b, pu);
@@ -305,7 +307,7 @@ export class Net {
     if (st === 'vehicle') f |= F.seat;
     if (st === 'downed') { f |= F.downed; f &= ~F.prone; if (g.input.down('interact')) f |= F.reviving; }
     const w = W.w, fwd = p.moveInput ? p.moveInput.y : 0, side = p.moveInput ? p.moveInput.x : 0;
-    return [+p.pos.x.toFixed(3), +p.pos.y.toFixed(3), +p.pos.z.toFixed(3), +p.yaw.toFixed(3), +p.pitch.toFixed(3), +(p.bodyYaw ?? p.yaw).toFixed(3), +(p.speedH || 0).toFixed(2), +Math.atan2(side, fwd || (side ? 0 : 1)).toFixed(2), f, p.proneSpin !== undefined ? +p.proneSpin.toFixed(2) : 9, w ? WEAPON_IDS.indexOf(w.def.id) : 0, w ? OPTIC_IDS.indexOf(w.optic) : 0, Math.round(p.health), Math.round(p.armor || 0)];
+    return [+p.pos.x.toFixed(3), +p.pos.y.toFixed(3), +p.pos.z.toFixed(3), +p.yaw.toFixed(3), +p.pitch.toFixed(3), +(p.bodyYaw ?? p.yaw).toFixed(3), +(p.speedH || 0).toFixed(2), +Math.atan2(side, fwd || (side ? 0 : 1)).toFixed(2), f, p.proneSpin !== undefined ? +p.proneSpin.toFixed(2) : 9, w ? WEAPON_IDS.indexOf(w.def.id) : 0, w ? OPTIC_IDS.indexOf(w.optic) : 0, Math.round(p.health), Math.round(p.armor || 0), w ? Math.max(0, SKIN_IDS.indexOf(w.skin)) : 0];
   }
 
   botState(b) {
@@ -324,7 +326,7 @@ export class Net {
     if (b.sky === 'chute') f |= F.chute;
     if (b.downed) f |= F.downed;
     const oi = OPTIC_IDS.indexOf(b.optic || 'iron');
-    return [+b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2), +a.yaw.toFixed(3), +a.pitch.toFixed(3), +a.yaw.toFixed(3), +a.speed.toFixed(2), +a.moveAngle.toFixed(2), f, 9, WEAPON_IDS.indexOf(b.wdef.id), oi < 0 ? 0 : oi, Math.round(b.health), Math.round(b.armor || 0)];
+    return [+b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2), +a.yaw.toFixed(3), +a.pitch.toFixed(3), +a.yaw.toFixed(3), +a.speed.toFixed(2), +a.moveAngle.toFixed(2), f, 9, WEAPON_IDS.indexOf(b.wdef.id), oi < 0 ? 0 : oi, Math.round(b.health), Math.round(b.armor || 0), Math.max(0, SKIN_IDS.indexOf(b.skin))];
   }
 
   // ---------------------------------------------------------------- shots
@@ -388,6 +390,10 @@ export class Net {
     if (v) v.deaths = m.d;
     if (k && m.k !== undefined) { k.kills = m.k; k.score = m.p; }
     if (g.match && g.match.mode === 'tdm' && m.team) g.match.score = [m.team[0], m.team[1]];
+    if (g.match && g.match.gun) {
+      if (v && m.tv !== undefined) g.match.setTier(v, m.tv);
+      if (k && m.tk !== undefined) g.match.setTier(k, m.tk);
+    }
   }
 
   // ---------------------------------------------------------------- the end
@@ -416,7 +422,7 @@ export class Net {
 
 // what stays up in the lobby after a match
 function lastBoard(m) {
-  const name = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone' }[m.mode];
+  const name = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game' }[m.mode];
   const won = m.mode === 'tdm' ? null : (m.board.find((r) => r.id === m.winner) || {}).name;
   return { title: 'Letztes Match: ' + name + (m.mode === 'tdm' ? ' ' + m.team[0] + ' : ' + m.team[1] : won ? ', gewonnen von ' + won : ''), rows: m.board };
 }

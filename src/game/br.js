@@ -210,7 +210,7 @@ export class BRMatch {
     b.sky = null; b.alive = true; b.onGround = true; b.pos.copy(was.pos); b.aimYaw = was.aimYaw; b.aimPitch = 0; b.health = Math.max(1, was.health); b.armor = was.armor;
     b.vel.set(0, 0, 0); b.state = 'roam'; b.path = null; b.wp = 0; b.repathT = 0; b.lastProgress = b.pos.clone(); b.stuckT = 0; b.crouching = false; b.crouchT = 0; b.sliding = 0; b.burst = 0; b.burstPause = 0; b.nextShot = 0; b.strafeDir = 1; b.strafeT = 0; b.heardT = -99; b.lastSeenT = -99; b.reactT = 0;
     b.soldier.setVisible(true); b.soldier.root.position.copy(b.pos);
-    if (was.wdef && was.wdef.id !== 'pistol') b.equipLoot({ weaponId: was.wdef.id, optic: was.optic, rarity: 1 });
+    if (was.wdef && was.wdef.id !== 'pistol') b.equipLoot({ weaponId: was.wdef.id, optic: was.optic, rarity: 1, skin: was.skin });
   }
   adoptDead(b) { b.alive = false; b.out = true; b.sky = null; b.deathT = this.game.time - 20; b.hiddenBody = true; b.soldier.setVisible(false); }
 
@@ -412,7 +412,7 @@ export class BRMatch {
     // what you had is there for whoever finds it
     if (this.cfg.net) {
       const W = this.game.weapons, L = this.loot;
-      for (const s of W.slots) if (s && s.def.id !== 'pistol') L.drop({ kind: 'weapon', weaponId: s.def.id, optic: s.optic, rarity: s.def.rarity || 0, mag: s.mag, reserve: s.reserve }, p.pos.x, p.pos.y, p.pos.z);
+      for (const s of W.slots) if (s && s.def.id !== 'pistol') L.drop({ kind: 'weapon', weaponId: s.def.id, optic: s.optic, rarity: s.def.rarity || 0, skin: s.skin, mag: s.mag, reserve: s.reserve }, p.pos.x, p.pos.y, p.pos.z);
       if (p.plates > 0) L.drop({ kind: 'plate', count: p.plates }, p.pos.x, p.pos.y, p.pos.z);
     }
     void killer;
@@ -890,7 +890,7 @@ export class BRMatch {
     }
     const old = W.pickup(it);
     if (old) {
-      const d = this.loot.drop({ kind: 'weapon', weaponId: old.def.id, optic: old.optic, rarity: old.def.rarity || 0, mag: old.mag, reserve: old.reserve }, p.pos.x, p.pos.y, p.pos.z, p.yaw);
+      const d = this.loot.drop({ kind: 'weapon', weaponId: old.def.id, optic: old.optic, rarity: old.def.rarity || 0, skin: old.skin, mag: old.mag, reserve: old.reserve }, p.pos.x, p.pos.y, p.pos.z, p.yaw);
       d.claimed = p;
     }
     g.audio.play('chargeBack', { vol: 0.5 }); g.audio.play('magTouch', { vol: 0.4 });
@@ -1063,7 +1063,7 @@ export class BRMatch {
     b.scripted = true; b.vel.set(0, 0, 0); b.path = null; b.target = null; b.crouching = false; b.mantling = null; b.sliding = 0; b.prone = false;
     const origin = new THREE.Vector3(b.pos.x, y, b.pos.z);
     av.resetPose();
-    if (F.gun === 'own') av.setWeapon(W.w.def, W.w.optic); else if (F.gun) av.setWeapon(WEAPONS[F.gun], 'iron');
+    if (F.gun === 'own') av.setWeapon(W.w.def, W.w.optic, W.w.skin); else if (F.gun) av.setWeapon(WEAPONS[F.gun], 'iron');
     const stage = new Stage(g, F, av, b.soldier, origin, yaw, this.finTilt, t0, turn);
     if (F.prop) {
       this.props = this.props || {};
@@ -1300,7 +1300,7 @@ export class BRMatch {
   // you as you are right now: the scene takes over from there
   poseAvatar(av) {
     const p = this.game.player, W = this.game.weapons, s = this.playerState;
-    av.resetPose(); av.setVisible(true); av.setWeapon(W.w.def, W.w.optic);
+    av.resetPose(); av.setVisible(true); av.setWeapon(W.w.def, W.w.optic, W.w.skin);
     for (let i = 0; i < 8; i++) av.update(0.05, { yaw: p.yaw, pitch: 0, speed: 0, moveAngle: 0, downed: s === 'downed', prone: p.stance === 'prone' && s !== 'downed', crouch: p.stance === 'crouch', floorY: p.pos.y }, p.pos);
   }
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Soldier, OUTFITS } from '../characters/soldier.js';
 import { makeCanopy, openCanopy, OPEN_PULL, OPEN_BLOOM } from '../bots/brbot.js';
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
+import { SKIN_IDS } from '../weapons/skins.js';
 import { angleDiff } from '../core/math.js';
 
 // =============================================================================
@@ -31,15 +32,15 @@ export class Puppet {
     this.flags = 0; this.out = false; this.sky = null; this.downed = false; this.prone = false; this.crouching = false; this.scripted = false;
     this.st = { yaw: 0, pitch: 0, speed: 0, moveAngle: 0, floorY: 0 };
     this.wid = -1; this.oid = -1;
-    this.setGun(entry.weapon ? WEAPON_IDS.indexOf(entry.weapon) : WEAPON_IDS.indexOf('ar'), OPTIC_IDS.indexOf('iron'));
+    this.setGun(entry.weapon ? WEAPON_IDS.indexOf(entry.weapon) : WEAPON_IDS.indexOf('ar'), OPTIC_IDS.indexOf('iron'), 0);
     this.seen = false; this.deathT = -99;
   }
 
-  setGun(wi, oi) {
-    if (wi === this.wid && oi === this.oid) return;
+  setGun(wi, oi, si = 0) {
+    if (wi === this.wid && oi === this.oid && si === this.sid) return;
     const def = WEAPONS[WEAPON_IDS[wi]] || WEAPONS.ar, opt = OPTIC_IDS[oi] || 'iron';
-    this.wid = wi; this.oid = oi; this.wdef = def; this.optic = def.optics.includes(opt) ? opt : def.optics[0];
-    if (!this.soldier.dead) this.soldier.setWeapon(def, this.optic);
+    this.wid = wi; this.oid = oi; this.sid = si; this.wdef = def; this.optic = def.optics.includes(opt) ? opt : def.optics[0]; this.skin = SKIN_IDS[si] || 'standard';
+    if (!this.soldier.dead) this.soldier.setWeapon(def, this.optic, this.skin);
   }
 
   get eyeH() { return this.downed ? 0.42 : this.prone ? 0.3 : this.crouching ? 1.12 : 1.6; }
@@ -104,7 +105,7 @@ export class Puppet {
     this.aimPitch = a[4] + (c[4] - a[4]) * u;
     const fl = c[8], yaw = a[5] + angleDiff(a[5], c[5]) * u, wasAlive = this.alive;
     this.flags = fl;
-    this.setGun(c[10], c[11]);
+    this.setGun(c[10], c[11], c[14]);
     this.health = c[12]; this.armor = c[13];
     // Dying is said out loud, the state only says it a moment earlier or later: he stays alive until the word comes. Unless it never does.
     if (fl & F.alive) { this.alive = true; this.deadSince = 0; } else if (wasAlive) {
@@ -141,7 +142,7 @@ export class Puppet {
     const so = this.soldier;
     so.resetPose();
     if (so.weaponDrop) { this.game.scene.remove(so.weaponDrop.obj); so.weaponDrop = null; }
-    so.setWeapon(this.wdef, this.optic);
+    so.setWeapon(this.wdef, this.optic, this.skin);
     so.setVisible(true);
     this.alive = true;
     this.buf = [{ t: performance.now() / 1000, s }];

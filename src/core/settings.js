@@ -12,12 +12,13 @@ export const DEFAULTS = {
   invertY: false,
   loadout: { primary: 'ar', primaryOptic: 'reflex', secondary: 'pistol', secondaryOptic: 'iron' },
   match: { map: 'drydock', mode: 'tdm', bots: 5, difficulty: 'regular' },
+  skins: {},             // weapon id -> skin; what isn't in here is Standard
 };
 
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { ...DEFAULTS, ...s, loadout: { ...DEFAULTS.loadout, ...(s.loadout || {}) }, match: { ...DEFAULTS.match, ...(s.match || {}) } };
+    return { ...DEFAULTS, ...s, loadout: { ...DEFAULTS.loadout, ...(s.loadout || {}) }, match: { ...DEFAULTS.match, ...(s.match || {}) }, skins: { ...(s.skins || {}) } };
   } catch (e) { return structuredClone(DEFAULTS); }
 }
 export function saveSettings(s) {

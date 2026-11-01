@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Bot } from '../bots/bot.js';
 import { OUTFITS } from '../characters/soldier.js';
-import { PRIMARIES } from '../weapons/defs.js';
+import { PRIMARIES, GUN_TIERS, WEAPONS } from '../weapons/defs.js';
+import { randomSkin } from '../weapons/skins.js';
 
 // =============================================================================
 // Match rules: team setup, spawn selection (safe spawns away from enemy sight
@@ -23,7 +24,8 @@ export class Match {
     this.mode = cfg.mode;
     this.cfg = cfg;
     this.score = [0, 0];
-    this.limit = cfg.net ? cfg.limit : cfg.mode === 'ffa' ? 25 : 50 + cfg.bots * 5;
+    this.gun = cfg.mode === 'gun';
+    this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : 50 + cfg.bots * 5;
     this.timeLeft = cfg.net ? cfg.leftMs / 1000 : 600;
     this.ended = false;
     this.lastUsed = new Map();
@@ -36,9 +38,9 @@ export class Match {
     const pts = [];
     for (const team of [0, 1]) for (const [x, y, z, yaw] of sp[team]) pts.push({ x, y, z, yaw, team });
     // extra dynamic points from the nav graph (used in FFA and when team spawns are compromised)
-    const nav = g.nav;
+    const nav = g.nav, lowest = g.mapDef.spawnMinY ?? -Infinity;
     for (let i = 0; i < 40; i++) {
-      const n = nav.randomNode((k) => nav.links[k].length >= 6 && nav.Y[k] < 0.5);
+      const n = nav.randomNode((k) => nav.links[k].length >= 6 && nav.Y[k] < 0.5 && nav.Y[k] >= lowest);
       const x = nav.X[n], z = nav.Z[n];
       pts.push({ x, y: nav.Y[n], z, yaw: Math.atan2(-(cx - x), -(cz - z)), team: -1 });
     }
@@ -46,7 +48,11 @@ export class Match {
   }
 
   // ---- in a network match the room has decided who is who
-  makeNetBot(e) { return new Bot(this.game, { name: e.name, team: e.team, difficulty: this.cfg.difficulty, outfit: OUTFITS[e.outfit], weapon: e.weapon || pickWeapon() }); }
+  makeNetBot(e) {
+    const b = new Bot(this.game, { name: e.name, team: e.team, difficulty: this.cfg.difficulty, outfit: OUTFITS[e.outfit], weapon: e.weapon || pickWeapon() });
+    if (this.gun) { b.tier = 0; b.setWeapon(GUN_TIERS[0], randomSkin()); }
+    return b;
+  }
   adoptAt(b, was) { b.spawn(was.pos.x, was.pos.y, was.pos.z, was.aimYaw); b.health = Math.max(1, was.health); }
   adoptDead(b) { b.alive = false; b.deathT = this.game.time - 2; b.soldier.setVisible(false); }
 
@@ -64,7 +70,8 @@ export class Match {
         team = i < allies ? 0 : 1;
         outfit = OUTFITS[team === 0 ? 'vanguard' : 'raven'];
       } else { team = 2 + i; outfit = OUTFITS[outfitsFFA[i % outfitsFFA.length]]; }
-      const bot = new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit, weapon: pickWeapon() });
+      const bot = new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit, weapon: this.gun ? GUN_TIERS[0] : pickWeapon() });
+      if (this.gun) { bot.tier = 0; bot.setWeapon(GUN_TIERS[0], randomSkin()); }
       bots.push(bot);
     }
     return bots;
@@ -103,11 +110,51 @@ export class Match {
     const p = this.chooseSpawn(ent);
     if (ent.isPlayer) return p;
     ent.spawn(p.x + (Math.random() - 0.5) * 0.6, p.y, p.z + (Math.random() - 0.5) * 0.6, p.yaw);
+    if (ent.pendingGun) { ent.setWeapon(ent.pendingGun[0], ent.pendingGun[1]); ent.pendingGun = null; }
     return p;
   }
 
-  onKill(killer, victim) {
+  // ---- Gun Game. Who has reached which weapon. Over the network the room decides this and everybody is told.
+  // Each new weapon comes with a random skin, the plain one among them.
+  setTier(c, tier) {
+    const g = this.game, t = Math.max(0, Math.min(GUN_TIERS.length - 1, tier)), was = c.tier || 0;
+    if (t === was) return;
+    c.tier = t;
+    const id = GUN_TIERS[t], skin = randomSkin();
+    if (c === g.player) {
+      c.gunSkin = skin;
+      if (c.alive) g.weapons.setGunWeapon(id, skin);
+      if (t > was) { g.hud.popup('STUFE ' + (t + 1), WEAPONS[id].name, t === GUN_TIERS.length - 1); g.audio.play('chargeFwd', { vol: 0.7 }); }
+      else { g.hud.popup('STUFE ' + (t + 1), 'ZURÜCKGESTUFT'); g.audio.play('magDrop', { vol: 0.7 }); }
+    } else if (!c.remote) {
+      if (c.alive) c.setWeapon(id, skin); else c.pendingGun = [id, skin];
+    }
+    if (t === GUN_TIERS.length - 1 && t > was && c !== g.player) g.hud.message('<span style="font-size:22px">' + c.name.replace(/[<>&]/g, '') + ' HAT DAS MESSER</span>', 2.5);
+  }
+
+  // (re)spawning, or the match has just begun
+  armPlayer() {
+    const p = this.game.player;
+    if (!p.gunSkin) p.gunSkin = randomSkin();
+    this.game.weapons.setGunWeapon(GUN_TIERS[p.tier || 0], p.gunSkin);
+  }
+
+  gunLeader() { return [...this.game.combatants].sort((a, b) => (b.tier || 0) - (a.tier || 0) || b.kills - a.kills)[0]; }
+
+  // A kill with a gun: the next weapon. Stabbed: the victim falls back a level and the knife gains nothing, unless it is the last level.
+  // Your own fault: one level back as well.
+  gunKill(killer, victim, info) {
+    const melee = info && info.weapon && info.weapon.name === 'MESSER', last = GUN_TIERS.length - 1;
+    if (!killer || killer === victim) { this.setTier(victim, (victim.tier || 0) - 1); return; }
+    if (melee) {
+      if ((killer.tier || 0) >= last) { this.end(killer); return; }
+      this.setTier(victim, (victim.tier || 0) - 1);
+    } else if ((killer.tier || 0) < last) this.setTier(killer, (killer.tier || 0) + 1);
+  }
+
+  onKill(killer, victim, info) {
     if (this.ended || this.cfg.net) return;
+    if (this.gun) { this.gunKill(killer, victim, info); return; }
     if (this.mode === 'tdm' && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
   }
 
@@ -122,7 +169,7 @@ export class Match {
     let winner = null;
     if (this.mode === 'tdm') {
       if (this.score[0] >= this.limit) winner = 0; else if (this.score[1] >= this.limit) winner = 1;
-    } else {
+    } else if (!this.gun) {
       const top = [...g.combatants].sort((a, b) => b.kills - a.kills)[0];
       if (top && top.kills >= this.limit) winner = top;
     }
@@ -132,6 +179,7 @@ export class Match {
   scores() {
     const g = this.game;
     if (this.mode === 'tdm') return { f: this.score[g.player.team], e: this.score[1 - g.player.team] };
+    if (this.gun) return { f: (g.player.tier || 0) + 1, e: Math.max(0, ...g.combatants.filter((c) => c !== g.player).map((c) => (c.tier || 0) + 1)) };
     const others = g.combatants.filter((c) => c !== g.player).map((c) => c.kills);
     return { f: g.player.kills, e: others.length ? Math.max(...others) : 0 };
   }
@@ -143,6 +191,8 @@ export class Match {
     if (this.mode === 'tdm') {
       if (winner === null) won = this.score[g.player.team] > this.score[1 - g.player.team] ? true : this.score[g.player.team] === this.score[1 - g.player.team] ? null : false;
       else won = winner === g.player.team;
+    } else if (this.gun) {
+      won = (winner || this.gunLeader()) === g.player;
     } else {
       const top = [...g.combatants].sort((a, b) => b.kills - a.kills)[0];
       won = top === g.player;

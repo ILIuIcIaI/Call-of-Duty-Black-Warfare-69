@@ -13,7 +13,9 @@ import { MAPS } from './world/maps/index.js';
 import { Effects } from './fx/effects.js';
 import { HUD } from './ui/hud.js';
 import { PlayerWeapons } from './weapons/playerWeapons.js';
-import { damageAt } from './weapons/defs.js';
+import { damageAt, GUN_TIERS, WEAPONS } from './weapons/defs.js';
+import { weaponMaterials } from './weapons/models.js';
+import { prewarmSkins, tickSkins, warmSkinPrograms } from './weapons/skins.js';
 import { Soldier, OUTFITS } from './characters/soldier.js';
 import { Menu } from './ui/menu.js';
 import { NavGraph } from './bots/nav.js';
@@ -151,6 +153,9 @@ export class Game {
     const msg = document.getElementById('load-msg'), fill = document.getElementById('load-fill');
     this.tex = new TextureLib(this.engine);
     await this.tex.generateAll((p, name) => { fill.style.width = (p * 100).toFixed(0) + '%'; msg.textContent = 'Generiere Texturen: ' + name; });
+    msg.textContent = 'Generiere Texturen: Waffen-Skins';
+    await new Promise((r) => setTimeout(r, 0));
+    prewarmSkins(weaponMaterials(this.tex));
     this.hud = new HUD(this);
     this.weapons = new PlayerWeapons(this);
     this.menu = new Menu(this);
@@ -165,7 +170,7 @@ export class Game {
     if (this.dev && this.params.has('manual')) this.debugManual = true; // dev tooling drives the frames from the start
     if (this.dev && this.params.has('mp')) { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
     else if (this.dev && this.params.has('br')) this.startMatch({ mode: 'br', map: 'island', bots: +(this.params.get('bots') ?? 19), difficulty: this.settings.match.difficulty });
-    else if (this.dev) this.startMatch({ ...this.settings.match, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
+    else if (this.dev) this.startMatch({ ...this.settings.match, mode: this.params.get('mode') || this.settings.match.mode, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
     else { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
   }
 
@@ -217,7 +222,7 @@ export class Game {
   resume() {
     this.menu.hide();
     this.paused = false;
-    if (!this.br) this.weapons.applyLoadout(this.settings.loadout);
+    if (!this.br && !this.match.gun) this.weapons.applyLoadout(this.settings.loadout);
     this.input.pressedKeys.clear();
     this.input.lock();
   }
@@ -289,12 +294,15 @@ export class Game {
     if (this.engine.q.standard) { this.muzzleLight = new THREE.PointLight(0xffaa55, 0, 9, 2); this.scene.add(this.muzzleLight); }
     if (this.playerBody) this.playerBody.dispose();
     this.playerBody = new Soldier(this, OUTFITS.vanguard, { firstPerson: true });
+    this.playerBody.setVisible(false); // a match shows it; the menu looks at an empty map
     this.audio.occlusionTest = (p) => {
       const c = this.engine.camera.position;
       return this.col.lineClear(c.x, c.y, c.z, p.x, p.y + 0.2, p.z);
     };
     const t0 = performance.now();
-    this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds).build();
+    if (def.onBuilt) def.onBuilt(this);
+    this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds, def.navClimb, def.navTop).build();
+    if (def.onNavBuilt) def.onNavBuilt(this);
     console.log('nav graph: ' + this.nav.n + ' nodes in ' + (performance.now() - t0).toFixed(0) + 'ms');
     this.hud.buildMinimap();
     // PIP render target for magnified optics
@@ -319,8 +327,8 @@ export class Game {
     const undoMatch = cfg.net ? seededRandom(cfg.seed + 1) : null;
     this.match = cfg.mode === 'br' ? new BRMatch(this, cfg) : new Match(this, cfg);
     if (undoMatch) undoMatch();
-    this.player.team = cfg.mode === 'ffa' ? 1 : 0;
-    this.player.kills = 0; this.player.deaths = 0; this.player.score = 0;
+    this.player.team = cfg.mode === 'ffa' || cfg.mode === 'gun' ? 1 : 0;
+    this.player.kills = 0; this.player.deaths = 0; this.player.score = 0; this.player.tier = 0; this.player.gunSkin = null;
     this.combatants = [this.player];
     this.bots = this.match.createBots();
     for (const b of this.bots) { this.combatants.push(b); this.match.spawn(b); }
@@ -329,10 +337,12 @@ export class Game {
     this.recentAction = null; this.player.lastRadar = -99;
     this.weapons.startOver();
     if (cfg.mode === 'br') this.match.startPlayer();
-    else { this.weapons.setLoadout(this.settings.loadout); this.spawnPlayer(); }
+    else { if (!this.match.gun) this.weapons.setLoadout(this.settings.loadout); this.spawnPlayer(); }
+    if (cfg.mode === 'gun') for (const id of GUN_TIERS) { const d = WEAPONS[id]; this.weapons.vm.prebuild(d, d.optics.includes('reflex') ? 'reflex' : d.optics[0]); }
+    if (cfg.mode === 'gun' || cfg.mode === 'br') warmSkinPrograms(this.engine.renderer, this.engine.camera, [this.scene, this.vmScene], weaponMaterials(this.tex));
     this.state = 'playing';
     document.getElementById('hud').classList.remove('hidden');
-    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
+    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
     document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' ? 'none' : '';
     if (this.onMatchStart) this.onMatchStart(cfg);
   }
@@ -353,10 +363,13 @@ export class Game {
     p.pos.set(sp.x, sp.y, sp.z);
     p.yaw = sp.yaw; p.pitch = 0;
     p.alive = true;
-    this.weapons.applyLoadout(this.settings.loadout);
-    this.weapons.refillAll();
-    this.weapons.cur = 0;
-    this.weapons.equip(true);
+    if (this.match.gun) this.match.armPlayer();
+    else {
+      this.weapons.applyLoadout(this.settings.loadout);
+      this.weapons.refillAll();
+      this.weapons.cur = 0;
+      this.weapons.equip(true);
+    }
     document.getElementById('death-screen').classList.add('hidden');
   }
 
@@ -553,7 +566,7 @@ export class Game {
       this.hud.popup('+' + (100 + (head ? 25 : 0)), head ? 'KOPFSCHUSS' : 'GEGNER GETÖTET', head);
     }
     if (victim.onKilled) victim.onKilled(killer, info);
-    if (this.match && this.match.onKill) this.match.onKill(killer, victim);
+    if (this.match && this.match.onKill) this.match.onKill(killer, victim, info);
     if (victim === this.player) this.onPlayerKilled(killer, info);
   }
 
@@ -565,7 +578,7 @@ export class Game {
     c.setVisible(true);
     if (c.weaponDrop) { this.scene.remove(c.weaponDrop.obj); c.weaponDrop = null; }
     const w = this.weapons.w;
-    c.setWeapon(w.def, w.optic);
+    c.setWeapon(w.def, w.optic, w.skin);
     // pose it like the player was standing / crouching / sliding right now
     const st = {
       yaw: p.bodyYaw, pitch: p.pitch, speed: p.speedH, moveAngle: 0, crouch: p.stance === 'crouch' && p.mode === 'normal', slide: p.mode === 'slide',
@@ -658,6 +671,7 @@ export class Game {
   }
 
   update(dt) {
+    tickSkins(performance.now() / 1000);
     this.input.capture = this.state === 'playing' && !this.paused;
     if (this.state === 'playing' || this.state === 'ended') this.updatePlaying(dt);
     else this.renderMenuBackdrop(dt);
@@ -715,8 +729,9 @@ export class Game {
       if (this.respawnT <= 0 && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
     }
     for (const b of this.bots) b.update(dt);
+    if (this.mapDef.update) this.mapDef.update(this, dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
-    if (inp.pressed('loadout') && !br) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
+    if (inp.pressed('loadout') && !br && !(this.match && this.match.gun)) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.net) this.net.tick(dt);
     if (this.match) {
       this.match.update(dt);
@@ -907,10 +922,11 @@ export class Game {
     const cam = this.engine.camera;
     const a = this.time * 0.04;
     const b = this.mapDef.bounds;
-    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2, R = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.55;
-    cam.position.set(cx + Math.cos(a) * R, 26, cz + Math.sin(a) * R * 0.8);
+    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2, R = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.55, O = this.mapDef.menuOrbit;
+    if (O) cam.position.set(O.look[0] + Math.cos(a) * O.r, O.y, O.look[2] + Math.sin(a) * O.rz);
+    else cam.position.set(cx + Math.cos(a) * R, 26, cz + Math.sin(a) * R * 0.8);
     cam.fov = 60; cam.updateProjectionMatrix();
-    cam.lookAt(cx, 0, cz);
+    if (O) cam.lookAt(O.look[0], O.look[1], O.look[2]); else cam.lookAt(cx, 0, cz);
     this.engine.render(this.scene, null);
     this.renderLoadoutPreview();
   }

@@ -287,6 +287,7 @@ export class Audio {
     // knife
     add('swing', sweepNoise(sr, 0.2, 1500, 5200, (t) => Math.sin(t * Math.PI) * 0.8, 300, 2.2));
     add('swing', sweepNoise(sr, 0.22, 1300, 4600, (t) => Math.sin(t * Math.PI) * 0.8, 301, 2.2));
+    add('trickle', sweepNoise(sr, 2.2, 1500, 1900, (t) => Math.min(1, t * 14) * Math.min(1, (1 - t) * 4) * (0.72 + 0.28 * Math.sin(t * 70)), 77, 1.3));
     add('stab', concat(sr, [[synthNoiseHit(sr, 0.14, 420, 0.03, 0.9, 'lp', 302, 0.9, 85), 0, 1], [synthNoiseHit(sr, 0.09, 2100, 0.018, 1.2, 'bp', 303), 0.004, 0.65], [sweepNoise(sr, 0.1, 900, 400, (t) => 1 - t, 304, 1.2), 0.02, 0.4]]));
     add('stab', concat(sr, [[synthNoiseHit(sr, 0.16, 360, 0.035, 0.9, 'lp', 305, 1, 75), 0, 1], [synthNoiseHit(sr, 0.08, 1800, 0.016, 1.2, 'bp', 306), 0.003, 0.7]]));
     add('crack', concat(sr, [[synthNoiseHit(sr, 0.05, 2600, 0.008, 1.4, 'bp', 307), 0, 1], [synthNoiseHit(sr, 0.06, 900, 0.012, 1, 'bp', 308), 0.012, 0.7], [synthNoiseHit(sr, 0.12, 240, 0.03, 0.8, 'lp', 309, 0.7, 70), 0.01, 0.6]]));

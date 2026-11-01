@@ -5,9 +5,9 @@ import { MAP_LIST } from '../world/maps/index.js';
 // Multiplayer in the menu: the name, the search for a room, and the room itself: who is there,
 // what is being voted on, and the chat. Nobody runs this room, everybody votes.
 // =============================================================================
-const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
+const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['gun', 'GUN GAME', 'Wettrüsten: Jeder Kill bringt die nächste Waffe, zuletzt zählt nur das Messer.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
 const STAGES = { mode: 'WELCHER MODUS?', map: 'WELCHE KARTE?', bots: 'FREIE PLÄTZE MIT BOTS FÜLLEN?' };
-const MODE_NAME = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone' };
+const MODE_NAME = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game' };
 
 export class Lobby {
   constructor(game) { this.game = game; this.el = document.getElementById('menu'); this.draft = ''; this.tick = null; this.open = false; this.lastBoard = null; }

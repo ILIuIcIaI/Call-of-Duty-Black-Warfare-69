@@ -208,7 +208,9 @@ body.hoverlook #game-canvas { cursor: none; }
 #br-card .cl { position: relative; z-index: 1; font-weight: 600; font-size: .86em; line-height: 1.15; color: rgba(255,255,255,.66); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 #br-card .dm { position: absolute; right: .7em; top: .7em; width: .62em; height: .62em; transform: rotate(45deg); border: 1px solid #fff; background: color-mix(in srgb, var(--rar) 80%, #fff); }
 #br-card .ic { position: absolute; left: 16%; bottom: 2%; width: 68%; height: 56%; filter: brightness(1.45) drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
-#br-card .op { position: absolute; z-index: 1; left: .7em; bottom: .3em; font-weight: 700; font-size: .78em; color: rgba(255,255,255,.82); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+#br-card .op, #br-card .sk { position: absolute; z-index: 1; bottom: .3em; font-weight: 700; font-size: .78em; color: rgba(255,255,255,.82); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+#br-card .op { left: .7em; }
+#br-card .sk { right: .7em; }
 #br-card .key { display: flex; align-items: center; gap: .5em; margin-top: .4em; font-weight: 700; letter-spacing: .6px; font-size: .95em; color: #fff; text-shadow: 0 1px 3px #000; }
 #br-card .key b { display: inline-block; min-width: 1.5em; text-align: center; padding: 0 .3em; border: 1px solid rgba(255,255,255,.75); border-radius: 3px; background: rgba(0,0,0,.5); line-height: 1.5; }
 #br-card.far .key { visibility: hidden; }
@@ -318,3 +320,11 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 .mp-chatlog b { color: var(--accent); font-weight: 700; }
 .mp-chatlog .sys { opacity: .55; font-size: 14px; }
 #mp-chat { font-size: 16px; padding: 8px 10px; }
+/* weapon skins in the loadout */
+.seg.skins button { display: inline-flex; align-items: center; gap: 6px; }
+.seg.skins button i { display: inline-block; width: 12px; height: 12px; border: 1px solid rgba(255, 255, 255, .55); }
+/* Gun Game: your level under the score */
+#gun-panel { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 16px 6px; background: rgba(8, 10, 10, .62); font-weight: 700; text-align: center; white-space: nowrap; }
+#gun-panel b { font-family: var(--head); font-size: 20px; letter-spacing: 2px; color: var(--accent); }
+#gun-panel span { font-size: 14px; color: var(--text); }
+#gun-panel em { font-style: normal; font-size: 13px; color: var(--enemy); }

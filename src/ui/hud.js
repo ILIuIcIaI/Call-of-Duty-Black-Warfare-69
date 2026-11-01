@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp } from '../core/math.js';
 import { drawScope } from './scopes.js';
 import { esc } from '../net/net.js';
+import { GUN_TIERS, WEAPONS } from '../weapons/defs.js';
 const _p = new THREE.Vector3(), _f = new THREE.Vector3();
 
 // =============================================================================
@@ -124,12 +125,12 @@ export class HUD {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const x = c.getContext('2d');
     x.fillStyle = 'rgba(40,46,44,0.9)'; x.fillRect(0, 0, w, h);
-    const B = col.B;
+    const B = col.B, ceiling = g.mapDef.mmCeiling ?? 8;
     const items = [];
     for (let i = 0; i < col.n; i++) {
       const o = i * 6;
       const top = B[o + 4], bot = B[o + 1];
-      if (top < 0.3 || bot > 8 || B[o] > 1e5) continue;
+      if (top < 0.3 || bot > ceiling || B[o] > 1e5) continue;
       if (B[o + 3] - B[o] > 60 && B[o + 5] - B[o + 2] > 40) continue;
       items.push([B[o], B[o + 2], B[o + 3], B[o + 5], top]);
     }
@@ -347,7 +348,10 @@ export class HUD {
     } else this.el.hit.style.opacity = 0;
     // ---- ammo (hidden while dead)
     document.getElementById('ammo').style.opacity = p.alive && !(g.br && g.br.playerState === 'downed') ? 1 : 0;
-    if (wpn && wpn.w) {
+    this.updateGunPanel();
+    if (wpn && wpn.w && wpn.w.def.melee) {
+      if (this.lastAmmo !== 'knife') { this.lastAmmo = 'knife'; this.el.ammoMag.textContent = '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = 'scaleX(1)'; this.el.ammoHint.textContent = ''; }
+    } else if (wpn && wpn.w) {
       const w = wpn.w;
       const s = w.mag + '|' + w.reserve + '|' + w.def.name;
       if (s !== this.lastAmmo) {
@@ -393,6 +397,18 @@ export class HUD {
     if (this._mmT <= 0) { this._mmT = 1 / 30; this.drawMinimap(); }
   }
 
+  // Gun Game: your level, what comes next, and who is ahead
+  updateGunPanel() {
+    const g = this.game, m = g.match;
+    if (!m || !m.gun) { if (this.gunEl) { this.gunEl.remove(); this.gunEl = null; this.gunKey = ''; } return; }
+    if (!this.gunEl) { this.gunEl = document.createElement('div'); this.gunEl.id = 'gun-panel'; this.el.hud.appendChild(this.gunEl); this.gunKey = ''; }
+    const t = g.player.tier || 0, next = GUN_TIERS[t + 1], top = m.gunLeader(), key = t + '|' + (top ? top.name + '|' + (top.tier || 0) : '');
+    if (key === this.gunKey) return;
+    this.gunKey = key;
+    const lead = !top || top === g.player || (top.tier || 0) === t ? '' : '<em>Vorne: ' + esc(top.name) + ' · Stufe ' + ((top.tier || 0) + 1) + '</em>';
+    this.gunEl.innerHTML = '<b>STUFE ' + (t + 1) + ' / ' + GUN_TIERS.length + '</b><span>' + (next ? 'Nächste: ' + esc(WEAPONS[next].name) : 'Ein Kill mit dem Messer gewinnt') + '</span>' + lead;
+  }
+
   setScores(friendly, enemy, mode, ffaMine, ffaBest) {
     if (mode === 'ffa') { this.el.sbF.textContent = ffaMine; this.el.sbE.textContent = ffaBest; }
     else { this.el.sbF.textContent = friendly; this.el.sbE.textContent = enemy; }
@@ -417,6 +433,10 @@ export class HUD {
     } else if (m.mode === 'tdm') {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
       b.innerHTML = `<h3>${g.mapDef.name} — TEAM DEATHMATCH</h3><table>${head}<tr><th colspan="5" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="5" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
+    } else if (m.gun) {
+      const by = [...g.combatants].sort((a, c) => (c.tier || 0) - (a.tier || 0) || c.kills - a.kills);
+      const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td></tr>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — GUN GAME</h3><table><tr><th>NAME</th><th>STUFE</th><th>WAFFE</th><th>KILLS</th><th>TODE</th></tr>${by.map(line).join('')}</table>`;
     } else {
       b.innerHTML = `<h3>${g.mapDef.name} — FREE FOR ALL</h3><table>${head}${rows.map(row).join('')}</table>`;
     }

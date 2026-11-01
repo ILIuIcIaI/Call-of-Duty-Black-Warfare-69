@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { WEAPONS, PRIMARIES, SECONDARIES, OPTICS, opticFits } from '../weapons/defs.js';
 import { MAP_LIST } from '../world/maps/index.js';
 import { QUALITY } from '../core/engine.js';
-import { buildWeapon, weaponMaterials } from '../weapons/models.js';
+import { weaponMaterials } from '../weapons/models.js';
+import { SKINS, SKIN_IDS, skinOf, buildSkinned } from '../weapons/skins.js';
 
 // =============================================================================
 // Main menu, loadout editor (with live 3D weapon preview), settings, pause menu
@@ -25,7 +26,7 @@ export class Menu {
     this.tab = tab; this.mode = mode;
     const g = this.game, S = g.settings;
     const tabs = mode === 'pause'
-      ? (g.br ? [['resume', 'FORTSETZEN'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']] : [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']])
+      ? (g.br || (g.match && g.match.gun) ? [['resume', 'FORTSETZEN'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']] : [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']])
       : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['multi', 'MULTIPLAYER'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG']];
     let body = '';
     if (tab === 'play') body = this.playTab();
@@ -59,8 +60,8 @@ export class Menu {
       <canvas data-mapprev="${d.id}" width="260" height="130"></canvas><h4>${d.name}</h4><span class="tag">${d.size}</span><p>${d.desc}</p></div>`).join('');
     return `<div class="section-title">KARTE</div><div class="row">${maps}</div>
       <div class="section-title">MODUS</div>
-      <div class="seg" data-seg="mode"><button data-v="tdm" class="${m.mode === 'tdm' ? 'on' : ''}">TEAM DEATHMATCH</button><button data-v="ffa" class="${m.mode === 'ffa' ? 'on' : ''}">FREE FOR ALL</button></div>
-      <div class="hint">${m.mode === 'tdm' ? 'Bots werden auf dein Team und das Gegnerteam verteilt (Gegner bekommen bei ungerader Zahl einen mehr).' : 'Jeder gegen jeden — alle Bots sind deine Gegner.'}</div>
+      <div class="seg" data-seg="mode"><button data-v="tdm" class="${m.mode === 'tdm' ? 'on' : ''}">TEAM DEATHMATCH</button><button data-v="ffa" class="${m.mode === 'ffa' ? 'on' : ''}">FREE FOR ALL</button><button data-v="gun" class="${m.mode === 'gun' ? 'on' : ''}">GUN GAME</button></div>
+      <div class="hint">${m.mode === 'tdm' ? 'Bots werden auf dein Team und das Gegnerteam verteilt (Gegner bekommen bei ungerader Zahl einen mehr).' : m.mode === 'gun' ? 'Wettrüsten: Jeder gegen jeden, jeder Kill bringt die nächste Waffe. 14 Waffen, zuletzt das Messer: Wer damit einen Kill macht, gewinnt. Wer im Nahkampf stirbt, fällt eine Stufe zurück. Jede Waffe kommt mit einem zufälligen Skin.' : 'Jeder gegen jeden — alle Bots sind deine Gegner.'}</div>
       <div class="section-title">BOTS</div>
       <div class="opt"><label>Anzahl Bots</label><input type="range" min="1" max="8" step="1" value="${m.bots}" data-range="bots"><span class="val" id="v-bots">${m.bots}</span></div>
       <div class="opt"><label>Schwierigkeit</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
@@ -75,7 +76,7 @@ export class Menu {
       <p>20 Spieler springen aus einem Flugzeug über der Insel ab. Du landest nur mit einer einfachen Pistole. Suche Waffen und Platten, weiche der Zone aus und bleib als Letzter übrig.</p>
       <ul>
         ${li('Absprung', 'Gleiter steuern und mit der Sekundärwaffe schießen, während du hängst')}
-        ${li('Beute', 'Kisten und Bodenfunde: jede Waffe mit jedem Visier, in fünf Seltenheitsstufen')}
+        ${li('Beute', 'Kisten und Bodenfunde: jede Waffe mit jedem Visier und jedem Skin, in fünf Seltenheitsstufen')}
         ${li('Rüstung', 'Bis zu 5 Platten tragen, 3 gleichzeitig einsetzen')}
         ${li('Fahrzeuge', 'Kleinwagen, Limousine, Pickup, Jeep und Geländewagen')}
         ${li('Zone', 'Sie schrumpft in Etappen, außerhalb verlierst du Leben')}
@@ -98,16 +99,23 @@ export class Menu {
       return `<div class="seg wrap" data-seg="${seg}">${btns}</div>
         <div class="hint optic-hint">${o.desc}${cur === 'iron' ? '' : ` <b>Passt auf:</b> ${opticFits(cur).join(', ')}`}</div>`;
     };
+    // the skin of this gun: stays with the gun, also when another one is chosen for a while
+    const skins = (id, seg) => {
+      const cur = skinOf(this.game.settings.skins[id]);
+      return `<div class="seg wrap skins" data-seg="${seg}">${SKIN_IDS.map((k) => `<button data-v="${k}" class="${cur === k ? 'on' : ''}"><i style="background:${SKINS[k].swatch}"></i>${SKINS[k].name}</button>`).join('')}</div>`;
+    };
     const f = this.focus === 'secondary' ? [lo.secondary, lo.secondaryOptic] : [lo.primary, lo.primaryOptic];
-    const d = WEAPONS[f[0]], fo = OPTICS[f[1]] || OPTICS[d.optics[0]];
+    const d = WEAPONS[f[0]], fo = OPTICS[f[1]] || OPTICS[d.optics[0]], fs = SKINS[skinOf(this.game.settings.skins[f[0]])];
     const stat = (n, v) => `<div class="stat"><span>${n}</span><i><b style="width:${v}%"></b></i></div>`;
     return `<div class="section-title">PRIMÄRWAFFE</div><div class="wgrid">${PRIMARIES.map((id) => card(id, lo.primary === id, 'prim')).join('')}</div>
       <div class="section-title">VISIER</div>${optics(lo.primary, lo.primaryOptic, 'optic')}
+      <div class="section-title">SKIN</div>${skins(lo.primary, 'skin')}
       <div class="section-title">SEKUNDÄRWAFFE</div><div class="wgrid">${SECONDARIES.map((id) => card(id, lo.secondary === id, 'sec')).join('')}</div>
       <div class="section-title">VISIER</div>${optics(lo.secondary, lo.secondaryOptic, 'optic2')}
+      <div class="section-title">SKIN</div>${skins(lo.secondary, 'skin2')}
       ${this.mode === 'pause' ? '<div style="margin-top:18px"><button class="btn" id="resume-btn">WEITERSPIELEN</button></div><div class="hint">Die Waffen werden sofort getauscht, wenn du weiterspielst ([L] oder [Esc]). Tot: beim Respawn.</div>' : ''}
       <div class="wstats"><span class="tag">${d.cls.toUpperCase()}</span><h4>${d.name}</h4>
-        <div class="wstats-optic">${fo.name} · ${fo.power}</div>
+        <div class="wstats-optic">${fo.name} · ${fo.power} · ${fs.name}</div>
         ${stat('SCHADEN', d.stats.dmg)}${stat('FEUERRATE', d.stats.rof)}${stat('REICHWEITE', d.stats.rng)}${stat('PRÄZISION', d.stats.acc)}${stat('MOBILITÄT', d.stats.mob)}${stat('HANDLING', d.stats.hnd)}</div>`;
   }
 
@@ -155,6 +163,8 @@ export class Menu {
       if (k === 'mode' || k === 'difficulty') S.match[k] = v;
       else if (k === 'optic') { S.loadout.primaryOptic = v; this.focus = 'primary'; }
       else if (k === 'optic2') { S.loadout.secondaryOptic = v; this.focus = 'secondary'; }
+      else if (k === 'skin') { S.skins[S.loadout.primary] = v; this.focus = 'primary'; }
+      else if (k === 'skin2') { S.skins[S.loadout.secondary] = v; this.focus = 'secondary'; }
       else if (k === 'quality') S.quality = v;
       g.saveSettings();
       this.show(this.tab, this.mode);
@@ -207,7 +217,8 @@ export class Menu {
         boxC(cx, cz, w, dd, y, h, m, o) { this.box(cx - w / 2, y, cz - dd / 2, cx + w / 2, y + h, cz + dd / 2, m, o); }, geom() {}, glassPane() {}, pointLight() {} };
       fake.mirrored = () => ({ box: (x0, y0, z0, x1, y1, z1, m, o) => fake.box(-x1, y0, z0, -x0, y1, z1, m, o), boxC: (cx, cz, w, dd, y, h, m, o) => fake.boxC(-cx, cz, w, dd, y, h, m, o), geom() {}, glassPane() {}, pointLight() {}, mirrored: () => fake });
       fake.mirroredZ = () => ({ box: (x0, y0, z0, x1, y1, z1, m, o) => fake.box(x0, y0, -z1, x1, y1, -z0, m, o), boxC: (cx, cz, w, dd, y, h, m, o) => fake.boxC(cx, -cz, w, dd, y, h, m, o), geom() {}, glassPane() {}, pointLight() {}, mirroredZ: () => fake });
-      try { d.build(fake); } catch (e) { /* ignore */ }
+      if (d.previewBoxes) boxes.push(...d.previewBoxes());
+      else try { d.build(fake); } catch (e) { /* ignore */ }
       this._mapShapes[id] = boxes;
     }
     const b = d.bounds, sx = 240 / (b.maxX - b.minX), sz = 110 / (b.maxZ - b.minZ), s = Math.min(sx, sz);
@@ -235,11 +246,11 @@ export class Menu {
     }
     const lo = g.settings.loadout;
     const [id, optic] = this.focus === 'secondary' ? [lo.secondary, lo.secondaryOptic] : [lo.primary, lo.primaryOptic];
-    const key = id + '|' + optic;
+    const skin = skinOf(g.settings.skins[id]), key = id + '|' + optic + '|' + skin;
     if (this.preview.key !== key) {
       const h = this.preview.holder;
       h.clear();
-      const w = buildWeapon(WEAPONS[id].model, optic, weaponMaterials(g.tex));
+      const w = buildSkinned(WEAPONS[id].model, optic, weaponMaterials(g.tex), skin, { cracks: true });
       w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
       h.add(w.root);
       // centered, and scaled so a pistol and a 1.5 m rifle both fill the preview

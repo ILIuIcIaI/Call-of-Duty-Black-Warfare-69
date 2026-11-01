@@ -51,7 +51,7 @@ function place(mesh, x, y, z, rx = 0, ry = 0, rz = 0) {
 // even texel size over all the separate parts of a model
 export function evenUV(root, tile = 0.3) {
   root.traverse((o) => {
-    if (!o.isMesh || !o.material.isMeshLambertMaterial || !o.material.map) return;
+    if (!o.isMesh || !o.material.isMeshLambertMaterial || o.material.transparent) return; // (also without a texture: a skin may bring one)
     if (o.geometry.index) o.geometry = o.geometry.toNonIndexed();
     projectUV(o.geometry, tile);
   });
@@ -1286,7 +1286,27 @@ function buildHandcannon(m, opt) {
   };
 }
 
+// A combat knife in the fist, the handle where a pistol's grip would be
+function buildKnife(m) {
+  const root = new THREE.Group();
+  prof(root, m.rubber, [[0.012, 0.004], [0.042, 0.004], [0.068, -0.098], [0.042, -0.108], [0.022, -0.098]], 0.026, 0, 0.004);
+  box(root, m.steel, 0.034, 0.008, 0.052, 0, 0.007, 0.024, -0.22, 0, 0, 0.002);
+  box(root, m.steel, 0.028, 0.012, 0.03, 0, -0.106, 0.05, 0.2, 0, 0, 0.003);
+  prof(root, m.steel, [[0.04, 0.008], [0.002, 0.012], [-0.04, 0.08], [-0.074, 0.15], [-0.05, 0.145], [-0.016, 0.104], [0.014, 0.062], [0.04, 0.03]], 0.0048, 0, 0.0012);
+  prof(root, m.dark, [[0.028, 0.02], [0.006, 0.024], [-0.02, 0.07], [-0.012, 0.074], [0.016, 0.03]], 0.0056, 0, 0);
+  return {
+    root, parts: {}, ironY: 0.05, railY: 0.045, opticZ: 0.0,
+    anchors: {
+      rhand: rhandGrip(0, -0.04, 0.032, 0.32), lhand: null,
+      muzzle: new THREE.Vector3(0, 0.15, -0.074), eject: new THREE.Vector3(0.02, 0.04, -0.03),
+      magGrab: new THREE.Vector3(0, -0.06, 0.02), charge: new THREE.Vector3(0.0, 0.04, 0.03),
+    },
+    casing: 'pistol', sightZ: 0.05, eyeRelief: 0.3, pistol: true,
+  };
+}
+
 const BUILDERS = {
+  knife: buildKnife,
   ar: buildAR, smg: buildSMG, lmg: buildLMG, dmr: buildDMR, sniper: buildSniper, shotgun: buildShotgun,
   pistol: (m, o) => buildPistol(m, o), mpistol: (m, o) => buildPistol(m, o, 'auto'), revolver: buildRevolver,
   burst: buildBurst, pdw: buildPDW, amr: buildAMR, autoshot: buildAutoshot, handcannon: buildHandcannon,

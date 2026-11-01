@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { esc } from '../net/net.js';
 import { RARITY, PLATE_ARMOR, MAX_PLATES, MAX_ARMOR } from '../game/loot.js';
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
+import { SKINS } from '../weapons/skins.js';
 import { clamp } from '../core/math.js';
 
 // =============================================================================
@@ -26,7 +27,7 @@ export class BRHud {
     this.hintEl = add('br-hint');
     this.prompt = add('br-prompt');
     this.card = add('br-card');
-    this.card.innerHTML = '<div class="pan"><div class="na"></div><div class="cl"></div><i class="dm"></i><canvas class="ic"></canvas><div class="op"></div></div><div class="key"><b>F</b><span></span></div>';
+    this.card.innerHTML = '<div class="pan"><div class="na"></div><div class="cl"></div><i class="dm"></i><canvas class="ic"></canvas><div class="op"></div><div class="sk"></div></div><div class="key"><b>F</b><span></span></div>';
     this.cardIc = this.card.querySelector('.ic'); this.cardKey = this.card.querySelector('.key span');
     this.progress = add('br-progress'); this.progress.innerHTML = '<span></span><i><b></b></i>';
     this.gas = add('br-gas'); this.gas.innerHTML = '<div>DU BIST IN DER GAS-ZONE<small>Zurück in den sicheren Bereich!</small></div>';
@@ -142,14 +143,15 @@ export class BRHud {
       if (this.lastCard !== 'none') { this.card.classList.add('hidden'); this.lastCard = 'none'; if (!this.promptText && !this.promptOn) this.prompt.classList.add('hidden'); }
       return;
     }
-    const key = f.kind + '|' + (f.far ? 'far' : 'near') + '|' + (o.weaponId || o.kind) + '|' + (o.optic || '') + '|' + (o.rarity ?? '') + '|' + (o.count || 0);
+    const key = f.kind + '|' + (f.far ? 'far' : 'near') + '|' + (o.weaponId || o.kind) + '|' + (o.optic || '') + '|' + (o.rarity ?? '') + '|' + (o.skin || '') + '|' + (o.count || 0);
     if (this.lastCard === key) return;
     if (this.lastCard === 'none' || this.lastCard === '') { this.card.style.animation = 'none'; void this.card.offsetWidth; this.card.style.animation = ''; }
     this.lastCard = key;
     this.prompt.classList.add('hidden');
     this.card.classList.remove('hidden');
     this.card.classList.toggle('far', !!f.far);
-    const na = this.card.querySelector('.na'), cl = this.card.querySelector('.cl'), op = this.card.querySelector('.op');
+    const na = this.card.querySelector('.na'), cl = this.card.querySelector('.cl'), op = this.card.querySelector('.op'), sk = this.card.querySelector('.sk');
+    sk.textContent = '';
     if (f.kind === 'chest') {
       this.card.style.setProperty('--rar', '#b8913a');
       na.textContent = 'AUSRÜSTUNGSKISTE'; cl.textContent = 'Waffen, Platten, Munition'; op.textContent = '';
@@ -159,6 +161,7 @@ export class BRHud {
       this.card.style.setProperty('--rar', R.color);
       na.textContent = d.name; cl.textContent = d.cls + ' · ' + R.name.charAt(0) + R.name.slice(1).toLowerCase();
       op.textContent = o.optic === 'iron' ? '' : O.name + (O.power === '1x' ? '' : ' ' + O.power);
+      if (o.skin && o.skin !== 'standard' && SKINS[o.skin]) sk.textContent = 'Skin: ' + SKINS[o.skin].name; // (the other corner: the magazine hangs down in the middle)
       this.cardKey.textContent = W.slots[d.slot === 'primary' ? 0 : 1] ? 'TAUSCHEN' : 'AUFHEBEN';
     } else {
       const plate = o.kind === 'plate';
@@ -173,7 +176,7 @@ export class BRHud {
 
   // the picture on the card: rendered once per kind of thing, side on, in nothing but its own light
   drawIcon(o, kind) {
-    const key = kind === 'chest' ? 'chest' : o.kind === 'weapon' ? o.weaponId + '|' + o.optic : o.kind;
+    const key = kind === 'chest' ? 'chest' : o.kind === 'weapon' ? o.weaponId + '|' + o.optic + '|' + (o.skin || 'standard') : o.kind;
     const c = this.cardIc, W = 520, H = 200;
     if (c.width !== W) { c.width = W; c.height = H; }
     let img = this.icons.get(key);

@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WEAPONS, OPTICS, PRIMARIES, SECONDARIES } from '../weapons/defs.js';
-import { buildWeapon, weaponMaterials, buildPlate } from '../weapons/models.js';
+import { weaponMaterials, buildPlate } from '../weapons/models.js';
+import { buildSkinned, randomSkin } from '../weapons/skins.js';
 
 // =============================================================================
-// Warzone loot. Weapons and optics are rolled completely independently, so a
+// Warzone loot. Weapons, optics and skins are rolled completely independently, so a
 // pistol with the strongest sniper scope is a perfectly normal find. Rarity makes
 // the gun itself better. Chests throw out their content; everything can be picked up.
 // =============================================================================
@@ -44,7 +45,7 @@ export function makeWeaponDef(id, rarity = 0) {
 export function rollWeapon(odds) {
   const weaponId = ALL_WEAPONS[(Math.random() * ALL_WEAPONS.length) | 0];
   const optic = ALL_OPTICS[(Math.random() * ALL_OPTICS.length) | 0];
-  return { kind: 'weapon', weaponId, optic, rarity: roll(odds) };
+  return { kind: 'weapon', weaponId, optic, rarity: roll(odds), skin: randomSkin() };
 }
 
 const mats = {
@@ -324,16 +325,16 @@ export class Loot {
   }
 
   proto(it) {
-    const p = this.protos.get(it.weaponId + '|' + it.optic);
+    const p = this.protos.get(it.weaponId + '|' + it.optic + '|' + (it.skin || 'standard'));
     if (p) return p;
     if (this.buildsThisFrame > 0) return null; // one new model per frame keeps walking into town smooth
     this.buildsThisFrame++;
     return this.buildProto(it);
   }
   buildProto(it) {
-    const key = it.weaponId + '|' + it.optic;
+    const key = it.weaponId + '|' + it.optic + '|' + (it.skin || 'standard');
     if (this.protos.has(key)) return this.protos.get(key);
-    const w = buildWeapon(WEAPONS[it.weaponId].model, it.optic, weaponMaterials(this.game.tex));
+    const w = buildSkinned(WEAPONS[it.weaponId].model, it.optic, weaponMaterials(this.game.tex), it.skin);
     w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
     const root = bake(w.root), p = { root, center: new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3()) };
     this.protos.set(key, p);

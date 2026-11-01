@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, damp, lerp, Spring, wrapAngle, DEG } from '../core/math.js';
 import { Ragdoll } from './ragdoll.js';
 import { buildWeapon, weaponMaterials } from '../weapons/models.js';
+import { applySkin } from '../weapons/skins.js';
 import { projectUV } from '../world/textures.js';
 
 // =============================================================================
@@ -286,13 +287,16 @@ export class Soldier {
     this.weaponDrop = null;
   }
 
-  setWeapon(def, optic) {
+  // (no skin given: the one this soldier has had so far)
+  setWeapon(def, optic, skin) {
     if (this.weapon) this.weaponMount.remove(this.weapon.root);
+    if (skin !== undefined) this.skin = skin;
     const key = def.model + '|' + optic;
     Soldier.wcache = Soldier.wcache || {};
     if (!Soldier.wcache[key]) Soldier.wcache[key] = buildWeapon(def.model, optic, weaponMaterials(this.game.tex));
     const proto = Soldier.wcache[key];
     const root = proto.root.clone(true);
+    applySkin({ root, parts: { mag: root.getObjectByName('mag') } }, this.skin, weaponMaterials(this.game.tex));
     this.weapon = { root, proto, def };
     // hide PIP lens (not rendered for third person)
     root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });

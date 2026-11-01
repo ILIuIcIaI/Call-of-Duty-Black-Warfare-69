@@ -41,13 +41,16 @@ export class Bot {
     this.footPhase = 0;
   }
 
-  setWeapon(id) {
+  setWeapon(id, skin) {
     this.wdef = WEAPONS[id];
     const optic = this.wdef.optics.includes('reflex') ? 'reflex' : this.wdef.optics[0];
-    this.soldier.setWeapon(this.wdef, optic);
+    if (skin !== undefined) this.skin = skin;
+    this.optic = optic;
+    this.soldier.setWeapon(this.wdef, optic, this.skin || 'standard');
+    this.burst = 0; this.burstPause = 0; this.reloadT = 0;
     this.mag = this.wdef.mag;
     // preferred engagement distances per weapon class
-    this.prefDist = { smg: 8, pdw: 7, shotgun: 5, autoshot: 6, ar: 16, burst: 18, lmg: 22, dmr: 28, sniper: 38, amr: 42 }[id] || 15;
+    this.prefDist = { smg: 8, pdw: 7, shotgun: 5, autoshot: 6, ar: 16, burst: 18, lmg: 22, dmr: 28, sniper: 38, amr: 42, knife: 0.6 }[id] || 15;
   }
 
   get eyeH() { return this.downed ? 0.42 : this.prone ? 0.3 : this.crouching ? 1.12 : 1.6; }
@@ -268,6 +271,13 @@ export class Bot {
       else if (this.wantBack) wish.addScaledVector(toT, -0.8);
       speed = this.reloadT > 0 ? SPEED.walk : (this.wdef.id === 'smg' || this.wdef.id === 'pdw' || this.wdef.pellets ? SPEED.walk : SPEED.ads + 0.6);
       if (this.crouchT > 0) { this.crouchT -= dt; speed = SPEED.crouch * 0.6; }
+      // nothing but a knife: straight at them if that is possible, around whatever is in the way if not
+      if (this.wdef.melee) {
+        const up = Math.abs(this.target.pos.y - this.pos.y);
+        if (up < 1 && g.col.lineClear(this.pos.x, this.pos.y + 0.6, this.pos.z, this.target.pos.x, this.target.pos.y + 0.6, this.target.pos.z)) wish.copy(toT);
+        else if (this.path && this.wp < this.path.length) wish.copy(this.followPath(dt));
+        speed = SPEED.sprint; this.sprinting = true; this.crouchT = 0;
+      }
     } else if (this.path && this.wp < this.path.length) {
       wish.copy(this.followPath(dt));
       this.sprinting = true;
@@ -436,7 +446,8 @@ export class Bot {
       const tg = this.target;
       if (tg && tg.alive && tg.pos.distanceTo(this.pos) < 2.4) {
         g.audio.play('stab', { pos: tg.pos, vol: 0.9, maxDist: 25 });
-        g.applyDamage(tg, 75, this, { part: 'chest', dir: _d.set(tg.pos.x - this.pos.x, 0.1, tg.pos.z - this.pos.z).normalize().clone(), weapon: { name: 'MESSER', damage: [75, 75] }, point: tg.pos.clone().setY(tg.pos.y + 1.2) });
+        const stab = g.match && g.match.gun ? 105 : 75; // (in Gun Game the knife is the same for everyone)
+        g.applyDamage(tg, stab, this, { part: 'chest', dir: _d.set(tg.pos.x - this.pos.x, 0.1, tg.pos.z - this.pos.z).normalize().clone(), weapon: { name: 'MESSER', damage: [stab, stab] }, point: tg.pos.clone().setY(tg.pos.y + 1.2) });
       }
     }
     if (this.reactT > 0 || this.mantling) return;
@@ -446,6 +457,7 @@ export class Bot {
       g.audio.play('swing', { pos: this.pos, vol: 0.7, maxDist: 25 });
       return;
     }
+    if (def.melee) return;
     if (this.burstPause > 0) { this.burstPause -= dt; return; }
     if (t < this.nextShot) return;
     // only shoot when the crosshair is roughly on target
