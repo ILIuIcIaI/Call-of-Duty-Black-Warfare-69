@@ -109,7 +109,10 @@ export class Match {
   spawn(ent) {
     const p = this.chooseSpawn(ent);
     if (ent.isPlayer) return p;
-    ent.spawn(p.x + (Math.random() - 0.5) * 0.6, p.y, p.z + (Math.random() - 0.5) * 0.6, p.yaw);
+    // (the scatter keeps two from standing in each other, it never puts one into a wall: from inside a wall he could walk through it)
+    let x = p.x + (Math.random() - 0.5) * 0.6, z = p.z + (Math.random() - 0.5) * 0.6;
+    if (this.game.col.overlaps(x - 0.25, p.y + 0.05, z - 0.25, x + 0.25, p.y + 1.78, z + 0.25)) { x = p.x; z = p.z; }
+    ent.spawn(x, p.y, z, p.yaw);
     if (ent.pendingGun) { ent.setWeapon(ent.pendingGun[0], ent.pendingGun[1]); ent.pendingGun = null; }
     return p;
   }

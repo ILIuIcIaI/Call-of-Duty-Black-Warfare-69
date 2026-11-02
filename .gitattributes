@@ -6,3 +6,5 @@
 docs/ export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore
+*.woff2 binary
+*.ico binary

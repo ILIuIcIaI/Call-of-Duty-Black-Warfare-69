@@ -2,6 +2,50 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-02
+
+The Backrooms update: a new map, a Windows version, a browser version without a server, and smoother multiplayer. Nothing needs to be installed any more, Node.js included.
+
+### Added
+
+**Windows version**
+- The game as a Windows program: extract the zip and double-click `Black Warfare 69.exe`. It brings its own browser engine and Node.js along (Electron), so nothing needs to be installed.
+- Its own window that starts maximized, `F11` for full screen, and **BEENDEN** in the main menu to quit. A running match asks before the window closes.
+- The multiplayer server is built in: host a room or join one, and browsers on other computers can join it through the address the lobby shows.
+- On laptops with two graphics chips it uses the stronger one.
+
+**Browser version without a server**
+- The browser download is now a single page: double-click `index.html` and the game runs straight from the disk, alone against bots, with no server and no internet connection. PoolDay's map file and the fonts are packed inside it.
+- `start.bat` still runs the server for multiplayer if Node.js is installed. Without Node.js it explains the other ways instead of stopping there.
+
+**Backrooms**
+- A new map for Team Deathmatch, Free for All and Gun Game, after the Backrooms of internet legend: yellow wallpaper, damp carpet and fluorescent panels in a low suspended ceiling. Compact at 48 by 40 meters.
+- Its parts are the oddities of the legend's "Level 0": a pillar hall, pale rooms with arched doorways and windows, the red room, an office with half-height partitions, a room with holes in the floor that nobody comes back from, and a part where the lights have gone out.
+- Two spawn halls and a maze of partitions between them; no line of sight runs from one spawn to the other. Both halves mirror each other.
+- The light is worked out once when the map loads: pools of light under the panels, red light out of the red room, a few dead panels, some that flicker. The hum of the tubes follows the light and falls silent in the dark.
+- Small things on the walls and ceiling: wall sockets, air vents, a missing tile here and there, damp stains on the carpet.
+
+**Multiplayer**
+- The scoreboard shows everybody's ping in network matches.
+
+### Changed
+
+- Smoother movement of the others over the network: every position carries the time it was true, and the others play it back at the pace it really happened instead of the moment it arrived. On a wobbly Wi-Fi this took the jitter of the others' movement down to less than a tenth in our tests. When a message is late, the body keeps moving for a moment instead of freezing.
+- The others are shown closer to the present: about 65 ms behind on a cable instead of 110 ms, and the delay grows on its own only as far as the network needs it to.
+- Bots send their state 20 times a second instead of 10.
+- Everything a computer says in one moment goes out as one message, and the server sends out what it has for each player in one packet. On a slow line, outdated positions are skipped instead of piling up.
+- Loading over the network: a browser that already has a file only checks whether it changed, and code goes out compressed (three.js at a fifth of its size).
+- The two fonts come with the game. It makes no requests to Google or any other server any more.
+- The main menu shows the five maps in one row, down to a 1280-pixel-wide window.
+- Both computers need this version to play together: 0.4.0 and 0.5.0 don't mix, and the lobby says so.
+
+### Fixed
+
+- PoolDay: thin parts like the stall walls, chair backs, urinals and shower heads had gaps in their collision, so bullets and bodies could pass through in places. Tops nobody could stand on properly, like the tops of stall walls and lockers under the low ceiling, could be climbed onto and got you stuck; they can't any more.
+- Somebody pushed by others could end up a few centimeters inside a wall or a chair and then walk right through it. Nobody is pushed into anything now, on every map.
+- A bot that respawned close to a wall could start a few centimeters inside it.
+- A player who falls out of the world now dies, instead of falling forever.
+
 ## [0.4.0] - 2026-11-01
 
 The Gun Game update: a new mode, a new map straight from a Counter-Strike 1.6 map file, and six weapon skins.

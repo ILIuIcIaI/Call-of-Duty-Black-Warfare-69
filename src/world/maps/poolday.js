@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { readBsp, treeBoxes, mergeBoxes, lightAtlas, CONTENTS } from '../bsp.js';
+import { fileBytes } from '../../core/files.js';
 
 // =============================================================================
 // POOLDAY: the Counter-Strike 1.6 map by Squall, not rebuilt but taken
@@ -13,7 +14,7 @@ const UNIT = 0.0254;          // one map unit is an inch
 const OX = 2, OZ = 13;        // the building's middle goes to the world's middle
 const CLIMB = 2.6;            // bots climb this high, the pool's rim included
 
-const file = await fetch(new URL('./poolday.bsp', import.meta.url)).then((r) => { if (!r.ok) throw new Error('poolday.bsp: ' + r.status); return r.arrayBuffer(); });
+const file = await fileBytes(new URL('./poolday.bsp', import.meta.url));
 const bsp = readBsp(file);
 
 // map units -> world: x stays, z is up, y points the other way
@@ -110,8 +111,52 @@ function litMat(name) {
 }
 
 // ---- the solid world as boxes, in world space
-const worldBoxes = mergeBoxes(treeBoxes(bsp, bsp.models[0], (c) => c === CONTENTS.solid, 4)).map(toWorld);
+const worldBoxes = mergeBoxes(treeBoxes(bsp, bsp.models[0], (c) => c === CONTENTS.solid, 2)).map(toWorld);
+const glassBoxes = SOLID_GLASS.flatMap((m) => mergeBoxes(treeBoxes(bsp, bsp.models[m], (c) => c !== CONTENTS.empty, 8)).map(toWorld));
 function toWorld(b) { return [wx(b[0]), wy(b[2]), wz(b[4]), wx(b[3]), wy(b[5]), wz(b[1])]; }
+
+// In the original nobody gets high enough to leave. With wall jumps and climbing we would: a lid over the hall,
+// as high as the window band, that only stops bodies, not bullets.
+const LID = 4.06;
+
+// Our climbing also gets onto tops nobody could reach in the original. Two kinds are filled up to their ceiling, again
+// for bodies only: the stall walls, lockers and partitions 2.4 m up, where the ceiling leaves room only to crawl along
+// under it, and tops narrower than a foot (urinals, flush pipes, shower heads) that nobody could really stand on.
+const STAND_ROOM = 1.85, FOOT = 0.45;
+function narrowTop(b, boxes) {
+  // b's top together with everything touching it at the same height
+  const part = new Set([b]);
+  let x0 = b[0], x1 = b[3], z0 = b[2], z1 = b[5];
+  for (const a of part) for (const c of boxes) {
+    if (part.has(c) || Math.abs(c[4] - a[4]) > 0.01 || c[0] > a[3] + 0.01 || c[3] < a[0] - 0.01 || c[2] > a[5] + 0.01 || c[5] < a[2] - 0.01) continue;
+    part.add(c); x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[3]); z0 = Math.min(z0, c[2]); z1 = Math.max(z1, c[5]);
+    if (x1 - x0 >= FOOT && z1 - z0 >= FOOT) return false;
+  }
+  return x1 - x0 < FOOT || z1 - z0 < FOOT;
+}
+function unreachableTops(boxes) {
+  const out = [];
+  for (const b of boxes) {
+    const top = b[4];
+    if (top < 1 || top > LID - 0.5) continue;
+    // what lies over the top: its footprint is cut where those things begin and end, each piece gets its own ceiling
+    const over = boxes.filter((c) => c !== b && c[4] > top + 0.01 && c[0] < b[3] && c[3] > b[0] && c[2] < b[5] && c[5] > b[2]);
+    const xs = [b[0], b[3]], zs = [b[2], b[5]];
+    for (const c of over) { if (c[0] > b[0]) xs.push(c[0]); if (c[3] < b[3]) xs.push(c[3]); if (c[2] > b[2]) zs.push(c[2]); if (c[5] < b[5]) zs.push(c[5]); }
+    xs.sort((p, q) => p - q); zs.sort((p, q) => p - q);
+    for (let i = 0; i + 1 < xs.length; i++) for (let j = 0; j + 1 < zs.length; j++) {
+      const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1];
+      if (x1 - x0 < 0.005 || z1 - z0 < 0.005) continue;
+      let ceil = LID;
+      for (const c of over) if (c[0] < x1 && c[3] > x0 && c[2] < z1 && c[5] > z0) ceil = Math.min(ceil, Math.max(c[1], top));
+      const room = ceil - top;
+      if (room <= 0.5) continue; // covered, or no body fits in there anyway
+      if (room < STAND_ROOM || narrowTop(b, boxes)) out.push([x0, top, z0, x1, ceil, z1, 0]);
+    }
+  }
+  return mergeBoxes(out);
+}
+const fillBoxes = unreachableTops([...worldBoxes, ...glassBoxes]);
 
 // the texture on a box's top decides how it sounds to walk on
 const LOUD_METAL = new Set(['locker', 'lockerside', 'steel', 'stallred', 'walmart_blue']);
@@ -230,9 +275,9 @@ export default {
     shared(B.engine);
     // ---- the solid world
     worldBoxes.forEach((b, i) => B.col.add(b[0], b[1], b[2], b[3], b[4], b[5], worldSurfaces[i], 0));
-    for (const m of SOLID_GLASS) for (const b of mergeBoxes(treeBoxes(bsp, bsp.models[m], (c) => c !== CONTENTS.empty, 8)).map(toWorld)) B.col.add(b[0], b[1], b[2], b[3], b[4], b[5], 'glass', 1);
-    // In the original nobody gets high enough to leave. With wall jumps and climbing we would: a lid over the hall that only stops bodies, not bullets.
-    B.col.add(this.bounds.minX, 4.06, this.bounds.minZ, this.bounds.maxX, 9, this.bounds.maxZ, 'concrete', 0, true);
+    for (const b of glassBoxes) B.col.add(b[0], b[1], b[2], b[3], b[4], b[5], 'glass', 1);
+    B.col.add(this.bounds.minX, LID, this.bounds.minZ, this.bounds.maxX, 9, this.bounds.maxZ, 'concrete', 0, true);
+    for (const b of fillBoxes) B.col.add(b[0], b[1], b[2], b[3], b[4], b[5], 'concrete', 0, true);
     desertRocks(B.root);
     // ---- what it looks like
     const world = faceIdsOf(0);

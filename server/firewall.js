@@ -1,5 +1,6 @@
 // =============================================================================
-// Windows only. Before anybody can get into a room on this computer the firewall has to let Node.js through, and a
+// Windows only. Before anybody can get into a room on this computer the firewall has to let the game through (Node.js, or
+// the Windows app: whatever runs this, process.execPath), and a
 // network set to "public" keeps everybody out even after a yes for private networks. This looks at how things stand and
 // lets whoever sits at this computer fix it with one click. Windows asks for the rights itself, and the rule only covers
 // devices in the same network.

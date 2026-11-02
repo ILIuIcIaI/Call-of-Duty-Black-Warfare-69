@@ -86,7 +86,9 @@ export function hullContentsAt(bsp, head, x, y, z) {
 
 // Walks the tree of one model and returns everything that passes `keep(contents)` as boxes
 // [minx, miny, minz, maxx, maxy, maxz, contents] in the map's units. Straight planes cut a box exactly.
-// A slanted plane can't, so a box it runs through is halved until it is `res` units small and then decided by its middle.
+// A slanted plane can't, so a box it runs through is halved until it is `res` units small and then goes down both
+// sides: if anything in it passes, all of it does. Slanted things come out a little too big, thin ones (a chair's
+// back, a pipe, a urinal) don't fall through the cuts.
 export function treeBoxes(bsp, model, keep, res = 4, grow = 0) {
   const out = [], { nodes, planes, leaves } = bsp;
   const walk = (i, b) => {
@@ -106,7 +108,7 @@ export function treeBoxes(bsp, model, keep, res = 4, grow = 0) {
     if (lo >= 0) return walk(nd.front, b);
     if (hi <= 0) return walk(nd.back, b);
     const sx = b[3] - b[0], sy = b[4] - b[1], sz = b[5] - b[2], big = Math.max(sx, sy, sz);
-    if (big <= res) { const c = n[0] * (b[0] + b[3]) / 2 + n[1] * (b[1] + b[4]) / 2 + n[2] * (b[2] + b[5]) / 2 - pl.dist; return walk(c >= 0 ? nd.front : nd.back, b); }
+    if (big <= res) { walk(nd.front, b); walk(nd.back, b); return; }
     const a = big === sx ? 0 : big === sy ? 1 : 2, mid = (b[a] + b[a + 3]) / 2, p = b.slice(), q = b.slice();
     p[a + 3] = mid; q[a] = mid;
     walk(i, p); walk(i, q);

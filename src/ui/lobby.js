@@ -104,7 +104,7 @@ export class Lobby {
     // (the firewall of the computer the room is on, and only whoever sits there can do something about it)
     if (L.fw === 'blocked' && net.own && net.onThisPc) {
       out += this.fwState === 'busy' ? '<div class="mp-warn">Windows fragt gerade nach. Bitte dort bestätigen.</div>'
-        : this.fwState === 'failed' ? '<div class="mp-warn">Das hat nicht geklappt. Von Hand: Windows-Sicherheit, Firewall- &amp; Netzwerkschutz, Zugriff von Apps durch die Firewall zulassen, dort Node.js für Privat und Öffentlich ankreuzen.<button class="btn" id="mp-fw">NOCHMAL</button></div>'
+        : this.fwState === 'failed' ? '<div class="mp-warn">Das hat nicht geklappt. Von Hand: Windows-Sicherheit, Firewall- &amp; Netzwerkschutz, Zugriff von Apps durch die Firewall zulassen, dort Black Warfare 69 (oder Node.js, wenn du start.bat benutzt) für Privat und Öffentlich ankreuzen.<button class="btn" id="mp-fw">NOCHMAL</button></div>'
           : '<div class="mp-warn">Andere PCs kommen vermutlich nicht in diesen Raum: Die Windows-Firewall lässt das Spiel nicht durch.<button class="btn" id="mp-fw">FREIGEBEN</button><small>Gilt nur für Geräte in deinem Netzwerk. Windows fragt einmal nach.</small></div>';
     }
     for (const ip of L.blocked || []) out += `<div class="mp-warn">Auf <b>${esc(ip)}</b> läuft auch ein Raum, aber dieser PC lässt niemanden hinein. Klickt dort auf FREIGEBEN, dann seid ihr automatisch zusammen.</div>`;

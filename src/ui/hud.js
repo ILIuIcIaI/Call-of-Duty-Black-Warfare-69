@@ -425,18 +425,21 @@ export class HUD {
     if (!m) return;
     b.classList.remove('hidden');
     const rows = [...g.combatants].sort((a, c) => c.score - a.score || c.kills - a.kills);
-    const row = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${g.isFriendly(c, g.player) ? 'tf' : 'te'}">${esc(c.name)}</td><td>${esc(c.score)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td><td>${c.deaths ? (c.kills / c.deaths).toFixed(2) : c.kills.toFixed(2)}</td></tr>`;
-    const head = '<tr><th>NAME</th><th>PUNKTE</th><th>KILLS</th><th>TODE</th><th>K/D</th></tr>';
+    // over the network: how long a message takes there and back, for each person (bots run on somebody's computer)
+    const net = g.net && g.net.inMatch ? g.net : null, cols = net ? 6 : 5;
+    const ping = (c) => (!net ? '' : `<td>${c === g.player ? Math.round(net.rtt) || '–' : c.isBot ? '' : esc(net.pings[c.netId] ?? '–')}</td>`);
+    const row = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${g.isFriendly(c, g.player) ? 'tf' : 'te'}">${esc(c.name)}</td><td>${esc(c.score)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td><td>${c.deaths ? (c.kills / c.deaths).toFixed(2) : c.kills.toFixed(2)}</td>${ping(c)}</tr>`;
+    const head = '<tr><th>NAME</th><th>PUNKTE</th><th>KILLS</th><th>TODE</th><th>K/D</th>' + (net ? '<th>PING</th>' : '') + '</tr>';
     if (m.mode === 'br') {
       const alive = rows.filter((c) => (c.isPlayer ? c.alive : !c.out));
       b.innerHTML = `<h3>${g.mapDef.name} — WARZONE · ${alive.length} LEBEN NOCH</h3><table>${head}${rows.slice(0, 12).map(row).join('')}</table>`;
     } else if (m.mode === 'tdm') {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
-      b.innerHTML = `<h3>${g.mapDef.name} — TEAM DEATHMATCH</h3><table>${head}<tr><th colspan="5" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="5" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — TEAM DEATHMATCH</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
     } else if (m.gun) {
       const by = [...g.combatants].sort((a, c) => (c.tier || 0) - (a.tier || 0) || c.kills - a.kills);
-      const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td></tr>`;
-      b.innerHTML = `<h3>${g.mapDef.name} — GUN GAME</h3><table><tr><th>NAME</th><th>STUFE</th><th>WAFFE</th><th>KILLS</th><th>TODE</th></tr>${by.map(line).join('')}</table>`;
+      const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td>${ping(c)}</tr>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — GUN GAME</h3><table><tr><th>NAME</th><th>STUFE</th><th>WAFFE</th><th>KILLS</th><th>TODE</th>${net ? '<th>PING</th>' : ''}</tr>${by.map(line).join('')}</table>`;
     } else {
       b.innerHTML = `<h3>${g.mapDef.name} — FREE FOR ALL</h3><table>${head}${rows.map(row).join('')}</table>`;
     }

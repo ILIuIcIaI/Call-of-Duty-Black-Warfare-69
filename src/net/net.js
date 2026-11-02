@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Puppet, F, WEAPON_IDS, OPTIC_IDS } from './puppet.js';
+import { Clock } from './track.js';
 import { WEAPONS } from '../weapons/defs.js';
 import { SKIN_IDS } from '../weapons/skins.js';
 
@@ -8,7 +9,7 @@ import { SKIN_IDS } from '../weapons/skins.js';
 // a match has to tell the others or hears from them. Everybody owns his own body, one
 // player owns the bots; a hit goes to the owner, and he says when somebody is dead.
 // =============================================================================
-const VERSION = 2, SEND_EVERY = 0.05, BOTS_EVERY = 0.1;
+const VERSION = 3, SEND_EVERY = 0.05, BOTS_EVERY = 0.05, PING_MS = 2000, FULL_LINE = 32768;
 
 export class Net {
   constructor(game) {
@@ -19,6 +20,7 @@ export class Net {
     this.byId = new Map();
     this.sendT = 0; this.botsT = 0; this.counter = 0; this.clockT = 0;
     this.name = ''; this.tries = 0; this.own = false;
+    this.out = []; this.clocks = new Map(); this.rtt = 0; this.pings = {}; this.pinger = null;
   }
 
   changed() { if (this.onChange) this.onChange(); }
@@ -27,8 +29,10 @@ export class Net {
   async join(name) {
     this.name = name;
     this.status = 'search'; this.error = null; this.changed();
+    // (a page opened straight from the disk has no server behind it to find the others)
+    if (location.protocol === 'file:') return this.fail('Multiplayer braucht den Spielserver: Starte die Windows-Version oder start.bat. Mitspielen geht auch so: Öffne im Browser die Adresse, die ein anderer PC in seiner Lobby zeigt.');
     let r;
-    try { r = await (await fetch('/mp/find', { cache: 'no-store' })).json(); } catch (e) { return this.fail(this.onThisPc ? 'Der Spielserver antwortet nicht. Läuft start.bat noch?' : 'Der PC mit dem Raum antwortet nicht mehr. Läuft das Spiel dort noch?'); }
+    try { r = await (await fetch('/mp/find', { cache: 'no-store' })).json(); } catch (e) { return this.fail(this.onThisPc ? 'Der Spielserver antwortet nicht. Läuft das Spiel (Windows-Version oder start.bat) noch?' : 'Der PC mit dem Raum antwortet nicht mehr. Läuft das Spiel dort noch?'); }
     if (this.status !== 'search') return;
     if (r.error) return this.fail('Raumsuche fehlgeschlagen');
     this.own = !!r.own;
@@ -59,7 +63,7 @@ export class Net {
     const wasMatch = this.status === 'match';
     this.teardownMatch();
     // (it never got as far as a room: it won't get further by trying forever)
-    if (this.status === 'search' && ++this.tries >= 4) { this.tries = 0; return this.fail('Keine Verbindung zum Raum. Läuft das Spiel auf dem anderen PC noch, und lässt seine Firewall Node.js durch?'); }
+    if (this.status === 'search' && ++this.tries >= 4) { this.tries = 0; return this.fail('Keine Verbindung zum Raum. Läuft das Spiel auf dem anderen PC noch, und lässt seine Firewall das Spiel durch?'); }
     this.chat.push({ from: null, text: 'Verbindung zum Raum verloren, suche neu' });
     this.status = 'search'; this.changed();
     if (wasMatch) g.leaveNetMatch();
@@ -74,7 +78,26 @@ export class Net {
     this.lobby = null; this.chat = [];
   }
 
-  send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
+  // Everything said in one go leaves as one message, right after what is happening now is done.
+  // A state that can't get out because the line is full is left out: the next one is newer anyway.
+  send(m, droppable = false) {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== 1 || (droppable && ws.bufferedAmount > FULL_LINE)) return;
+    this.out.push(m);
+    if (this.out.length === 1) queueMicrotask(() => this.flush());
+  }
+  flush() {
+    const ws = this.ws, out = this.out;
+    this.out = [];
+    if (ws && ws.readyState === 1 && out.length) ws.send(JSON.stringify(out.length === 1 ? out[0] : { t: 'B', m: out }));
+  }
+  // the sender's clock, one per computer that sends states
+  clockOf(id) { let c = this.clocks.get(id); if (!c) this.clocks.set(id, (c = new Clock())); return c; }
+  // how long a message takes there and back, told to the room so everybody sees everybody's
+  startPing() {
+    clearInterval(this.pinger);
+    this.pinger = setInterval(() => { if (this.status === 'off' || !this.ws) { clearInterval(this.pinger); this.pinger = null; return; } this.send({ t: 'ping', c: performance.now(), r: Math.round(this.rtt) }); }, PING_MS);
+  }
   vote(stage, v) { this.send({ t: 'vote', stage, v }); }
   say(text) { this.send({ t: 'chat', text }); }
   solo() { this.send({ t: 'solo' }); }
@@ -87,7 +110,8 @@ export class Net {
   receive(m) {
     const g = this.game;
     switch (m.t) {
-      case 'welcome': this.you = m.you; this.tries = 0; this.chat = m.chat || []; this.status = 'lobby'; g.player.netId = m.you; this.changed(); this.measure(); break;
+      case 'welcome': this.you = m.you; this.tries = 0; this.chat = m.chat || []; this.status = 'lobby'; g.player.netId = m.you; this.changed(); this.measure(); this.startPing(); break;
+      case 'pong': { const r = performance.now() - m.c; this.rtt = this.rtt ? this.rtt * 0.7 + r * 0.3 : r; break; }
       case 'refused': this.fail(m.why); break;
       case 'lobby': this.lobby = m; this.lobbyAt = performance.now(); if (this.status === 'search') this.status = 'lobby'; this.changed(); break;
       case 'chat': this.chat.push(m); if (this.chat.length > 200) this.chat.shift(); this.changed(); if (m.from && this.status === 'lobby') g.audio.play('uiClick', { vol: 0.25 }); break;
@@ -101,8 +125,8 @@ export class Net {
         if (!g.input.locked && !g.input.hoverLook && !g.dev && g.hud) g.hud.message('<span style="font-size:22px">Ins Bild klicken, um die Maus zu fangen</span>', 5);
         break;
       case 'clock': this.clock(m); break;
-      case 'st': { const p = this.byId.get(m.from); if (p && p.receive) p.receive(m.s); break; }
-      case 'bots': if (!this.isAuth) for (const k of Object.keys(m.s)) { const p = this.byId.get(k); if (p && p.receive) p.receive(m.s[k]); } break;
+      case 'st': { const p = this.byId.get(m.from); if (p && p.receive) { const ck = this.clockOf(m.from); p.receive(m.s, m.c === undefined ? performance.now() : ck.local(m.c, performance.now()), ck); } break; }
+      case 'bots': if (!this.isAuth) { const ck = this.clockOf(m.from), t = m.c === undefined ? performance.now() : ck.local(m.c, performance.now()); for (const k of Object.keys(m.s)) { const p = this.byId.get(k); if (p && p.receive) p.receive(m.s[k], t, ck); } } break;
       case 'shot': this.onShot(m); break;
       case 'hit': this.onHit(m); break;
       case 'died': this.onDied(m); break;
@@ -262,6 +286,7 @@ export class Net {
 
   clock(m) {
     const g = this.game, br = g.br;
+    if (m.pings) this.pings = m.pings;
     if (g.netWait || !g.match) return;
     if (!br) { if (m.left) g.match.timeLeft = m.left / 1000; return; }
     // the zone and the plane run on the same time everywhere
@@ -274,14 +299,14 @@ export class Net {
     const g = this.game;
     if (!this.inMatch || g.netWait) return;
     this.sendT -= dt;
-    if (this.sendT <= 0) { this.sendT = SEND_EVERY; this.send({ t: 'st', s: this.playerState() }); }
+    if (this.sendT <= 0) { this.sendT = Math.max(0, this.sendT + SEND_EVERY); this.send({ t: 'st', s: this.playerState(), c: Math.round(performance.now()) }, true); }
     if (this.isAuth) {
       this.botsT -= dt;
       if (this.botsT <= 0) {
-        this.botsT = BOTS_EVERY;
+        this.botsT = Math.max(0, this.botsT + BOTS_EVERY);
         const s = {};
         for (const b of g.bots) if (!b.remote && b.netId) s[b.netId] = this.botState(b);
-        if (Object.keys(s).length) this.send({ t: 'bots', s });
+        if (Object.keys(s).length) this.send({ t: 'bots', s, c: Math.round(performance.now()) }, true);
       }
     }
   }
@@ -416,6 +441,7 @@ export class Net {
   // what is left when a match is over: nobody here any more
   teardownMatch() {
     this.byId.clear();
+    this.clocks.clear();
     this.cfg = null;
   }
 }

@@ -284,6 +284,56 @@ const GENERATORS = {
     P.speckle(0.04);
     return P;
   },
+  // old wallpaper (light, tinted by the material): columns of stacked chevrons between fine double lines, paper grain, a damp blotch
+  wallpaper() {
+    const S = 128, P = new Painter(S, 181), grain = makeFbm(181, 16, 2), damp = makeFbm(183, 2, 3);
+    P.each((x, y, u, v) => {
+      const c = 0.9 + (grain(u, v) - 0.5) * 0.06 - Math.max(0, damp(u, v) - 0.6) * 0.22;
+      P.set(x, y, c, c * 0.97, c * 0.9);
+    });
+    for (let k = 0; k < 4; k++) {
+      const x0 = k * 32, cx = x0 + 16, off = (k % 2) * 8;
+      for (let y = 0; y < S; y++) { P.mul(x0, y, 0.86); if (y % 4 < 2) P.mul(x0 + 3, y, 0.92); }
+      // chevrons pointing up, and a dot between them
+      for (let y0 = off - 16; y0 < S; y0 += 16) {
+        for (let d = -6; d <= 6; d++) { const y = y0 + ((Math.abs(d) * 0.75) | 0); P.mul(cx + d, y, 0.8); P.mul(cx + d, y + 1, 0.87); }
+        P.mul(cx, y0 + 9, 0.84); P.mul(cx + 1, y0 + 9, 0.9);
+      }
+    }
+    P.speckle(0.015);
+    return P;
+  },
+  // looped carpet (light, tinted by the material): rows of tiny loops, worn and mottled
+  berber() {
+    const S = 128, P = new Painter(S, 191), f = makeFbm(191, 4, 3), fine = makeFbm(193, 32, 2);
+    P.each((x, y, u, v) => {
+      const loop = ((x + (y >> 1) * 3) % 4 === 0 ? 0.9 : 1) * (y % 2 ? 0.96 : 1.03);
+      const c = (0.8 + (f(u, v) - 0.5) * 0.16 + (fine(u, v) - 0.5) * 0.12) * loop;
+      P.set(x, y, c, c * 0.95, c * 0.86);
+    });
+    P.speckle(0.06);
+    return P;
+  },
+  // suspended ceiling: two by two acoustic tiles with pinholes and fissures in a thin metal grid, a water stain
+  ceiltile() {
+    const S = 128, P = new Painter(S, 201), f = makeFbm(201, 8, 2), stain = makeFbm(203, 2, 3);
+    P.each((x, y, u, v) => { const c = 0.86 + (f(u, v) - 0.5) * 0.08 - Math.max(0, stain(u, v) - 0.64) * 0.55; P.set(x, y, c, c * 0.98, c * 0.92); });
+    for (let k = 0; k < 900; k++) P.mul((P.rng() * S) | 0, (P.rng() * S) | 0, 0.84);
+    for (let k = 0; k < 40; k++) P.scratch(P.rng() * S, P.rng() * S, 2 + P.rng() * 4, (P.rng() - 0.5) * 2, (P.rng() - 0.5) * 2, 0.88);
+    for (let i = 0; i < S; i++) for (const g of [0, 64]) { P.set(g, i, 0.96, 0.95, 0.9); P.set(i, g, 0.96, 0.95, 0.9); P.mul(g + 1, i, 0.8); P.mul(i, g + 1, 0.8); }
+    return P;
+  },
+  // fluorescent troffer, stretched over 1.2 x 0.6 m: a prismatic lens with two tubes glowing through, in a metal frame
+  troffer() {
+    const S = 64, P = new Painter(S, 211);
+    P.each((x, y, u, v) => {
+      const tube = Math.max(Math.exp(-((v - 0.33) ** 2) / 0.006), Math.exp(-((v - 0.67) ** 2) / 0.006));
+      const c = (0.8 + tube * 0.2) * ((x + y) % 3 === 0 ? 0.96 : 1);
+      P.set(x, y, c, c, c * 0.97);
+    });
+    for (let i = 0; i < S; i++) for (const e of [0, 1, S - 2, S - 1]) { P.set(i, e, 0.5, 0.5, 0.48); P.set(e, i, 0.5, 0.5, 0.48); }
+    return P;
+  },
   // worn finish for guns and gear (neutral, tinted by the material): mottled, with scratches and bright wear
   gunmetal() {
     const S = 64, P = new Painter(S, 161), f = makeFbm(161, 4, 3), wear = makeFbm(163, 8, 2);

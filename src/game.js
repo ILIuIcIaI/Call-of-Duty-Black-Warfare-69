@@ -7,7 +7,7 @@ import { loadSettings, saveSettings } from './core/settings.js';
 import { TextureLib } from './world/textures.js';
 import { MapBuilder } from './world/mapBuilder.js';
 import { createEnvironment } from './world/environment.js';
-import { Player } from './player/player.js';
+import { Player, MOVE } from './player/player.js';
 import { Shake, DEG, clamp, damp, lerp, rand } from './core/math.js';
 import { MAPS } from './world/maps/index.js';
 import { Effects } from './fx/effects.js';
@@ -271,6 +271,7 @@ export class Game {
 
   loadMap(id) {
     const def = MAPS[id] || MAPS.drydock;
+    if (this.mapDef && this.mapDef.unload) this.mapDef.unload(this);
     this.scene.clear();
     this.playerCorpse = null; // its meshes went away with the old scene
     this.mapDef = def;
@@ -641,9 +642,12 @@ export class Game {
     this.events.emit('shot', { shooter: this.player, def, pos: this.player.pos });
   }
 
-  // push overlapping combatants apart (XZ circles)
+  // push overlapping combatants apart (XZ circles), but never into a wall or a chair: a body that is inside a box
+  // isn't stopped by it any more and walks on through
   separate(ent) {
     if (this.br) this.br.pushOutOfVehicles(ent);
+    const r = ent.isBot ? 0.25 : MOVE.radius;
+    const h = ent.isBot ? (ent.downed || ent.prone ? 0.62 : ent.crouching || ent.sliding > 0 ? 1.2 : 1.8) : ent.height || 1.8;
     for (const c of this.combatants) {
       if (c === ent || !c.alive) continue;
       const dx = ent.pos.x - c.pos.x, dz = ent.pos.z - c.pos.z;
@@ -651,8 +655,9 @@ export class Game {
       const d2 = dx * dx + dz * dz, R = 0.62;
       if (d2 < R * R && d2 > 1e-6) {
         const d = Math.sqrt(d2), push = (R - d) * 0.5;
-        const nx = dx / d, nz = dz / d;
-        ent.pos.x += nx * push; ent.pos.z += nz * push;
+        const x = ent.pos.x + dx / d * push, z = ent.pos.z + dz / d * push;
+        if (this.col.overlaps(x - r, ent.pos.y + 0.05, z - r, x + r, ent.pos.y + h - 0.02, z + r)) continue;
+        ent.pos.x = x; ent.pos.z = z;
       }
     }
   }

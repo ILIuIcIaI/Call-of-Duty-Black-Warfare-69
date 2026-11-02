@@ -11,17 +11,17 @@ const os = require('os');
 const net = require('net');
 const firewall = require('./firewall.js');
 
-const VERSION = 2;
+const VERSION = 3;
 const UDP_PORT = 48069, GROUP = '239.69.0.69';
 const LOOK_MS = 900, BEACON_MS = 1000;
 const REACH_MS = 1500, RETRY_MS = 3000, SWEEP_TICKS = 6, FIREWALL_TICKS = 15;
 // network cards that aren't the way to the others: virtual machines, VPNs, Bluetooth and the like
 const VIRTUAL = /v-?ethernet|virtual|vmware|vmnet|vbox|hyper-?v|wsl|docker|virbr|^br-|bridge|loopback|bluetooth|tailscale|zerotier|hamachi|radmin|wireguard|nordlynx|vpn|^tap|^tun|^utun|^wg\d|awdl|llw|lan-verbindung\s*\*|local area connection\s*\*/i;
-const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40;
+const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40, FULL_LINE = 262144;
 const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10 };
 const GUN_LEVELS = 15; // Gun Game: 14 guns, then the knife
 const MATCH_MS = 600000;
-const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday'];
+const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms'];
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
 const FFA_OUTFITS = ['raven', 'jungle', 'urban', 'desert', 'vanguard'];
@@ -53,8 +53,12 @@ class Socket {
     let head;
     if (n < 126) head = Buffer.from([0x80 | op, n]);
     else if (n < 65536) { head = Buffer.alloc(4); head[0] = 0x80 | op; head[1] = 126; head.writeUInt16BE(n, 2); } else { head = Buffer.alloc(10); head[0] = 0x80 | op; head[1] = 127; head.writeBigUInt64BE(BigInt(n), 2); }
-    this.sock.write(Buffer.concat([head, data]));
+    // (everything written for him while this one message is being handled leaves in one packet: fewer packets, and no wait)
+    if (!this.corked) { this.corked = true; this.sock.cork(); process.nextTick(() => { this.corked = false; this.sock.uncork(); }); }
+    this.sock.write(head); this.sock.write(data);
   }
+  // how much is still waiting to go out to him: a slow line gets no stale states piled up
+  get backlog() { return this.sock.writableLength; }
   send(obj) { if (!this.closed) { try { this.frame(0x1, Buffer.from(JSON.stringify(obj))); } catch (e) { this.gone(); } } }
   sendRaw(text) { if (!this.closed) { try { this.frame(0x1, Buffer.from(text)); } catch (e) { this.gone(); } } }
   feed(d) {
@@ -163,7 +167,8 @@ class Room {
     this.broadcastLobby();
   }
 
-  others(from, msg) { const text = JSON.stringify(msg); for (const q of this.players.values()) if (q !== from && (q.inMatch || msg.t === 'left' || msg.t === 'auth')) q.sock.sendRaw(text); }
+  // droppable: a state, the next one will be newer, so it is skipped for whoever can't keep up
+  others(from, msg, droppable = false) { const text = JSON.stringify(msg); for (const q of this.players.values()) if (q !== from && (q.inMatch || msg.t === 'left' || msg.t === 'auth') && !(droppable && q.sock.backlog > FULL_LINE)) q.sock.sendRaw(text); }
   everyone(msg) { const text = JSON.stringify(msg); for (const q of this.players.values()) q.sock.sendRaw(text); }
 
   say(from, text) {
@@ -287,7 +292,7 @@ class Room {
     this.everyone({ t: 'go', auth: m.auth });
     this.broadcastLobby();
     if (m.endsAt) this.matchTimer = setTimeout(() => this.endMatch(this.leader()), MATCH_MS);
-    this.clock = setInterval(() => this.others(null, { t: 'clock', ms: Date.now() - m.startedAt, left: m.endsAt ? m.endsAt - Date.now() : 0 }), 3000);
+    this.clock = setInterval(() => this.others(null, { t: 'clock', ms: Date.now() - m.startedAt, left: m.endsAt ? m.endsAt - Date.now() : 0, pings: this.pings() }), 3000);
   }
 
   // time is up: whoever is ahead, if anybody is
@@ -374,9 +379,12 @@ class Room {
     this.broadcastLobby();
   }
 
+  pings() { const o = {}; for (const p of this.players.values()) o[p.id] = p.rtt || 0; return o; }
+
   // ---- everything that arrives
   receive(p, m) {
     switch (m.t) {
+      case 'ping': p.rtt = Math.max(0, Math.min(9999, Math.round(+m.r) || 0)); p.sock.send({ t: 'pong', c: m.c }); break;
       case 'chat': { const text = String(m.text || '').trim().slice(0, 160); if (text) this.say(p, text); break; }
       case 'vote': this.vote(p, m.stage, m.v); break;
       case 'solo': this.solo(p); break;
@@ -403,7 +411,10 @@ class Room {
         this.others(p, { ...m, from: p.id });
         break;
       }
-      case 'st': case 'bots': case 'shot': case 'ev':
+      case 'st': case 'bots':
+        if (this.match && p.inMatch) this.others(p, { ...m, from: p.id }, true);
+        break;
+      case 'shot': case 'ev':
         if (this.match && p.inMatch) this.others(p, { ...m, from: p.id });
         break;
       case 'bye': this.remove(p); p.sock.close(); break;
@@ -642,7 +653,11 @@ class Service {
         p.guest = guest;
         return;
       }
-      try { if (room()) room().receive(p, m); } catch (e) { console.error('mp: ' + e.message); }
+      try {
+        const r = room();
+        if (!r) return;
+        if (m.t === 'B' && Array.isArray(m.m)) { for (const x of m.m.slice(0, 64)) if (x && typeof x === 'object' && x.t !== 'B') r.receive(p, x); } else r.receive(p, m);
+      } catch (e) { console.error('mp: ' + e.message); }
     };
   }
 }

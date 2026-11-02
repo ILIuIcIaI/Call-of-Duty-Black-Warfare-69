@@ -1,8 +1,10 @@
-// Minimal file server for Black Warfare 69 (no dependencies), and the multiplayer room, see server/mp.js
+// Minimal file server for Black Warfare 69 (no dependencies), and the multiplayer room, see server/mp.js.
+// `node server.js` (start.bat) runs it on its own, the Windows app starts it with serve().
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 const { Service } = require('./server/mp.js');
 
@@ -14,7 +16,8 @@ const MIME = {
   '.svg': 'image/svg+xml', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.woff2': 'font/woff2', '.ico': 'image/x-icon'
 };
 // the game and nothing else: this can be reached from the network once someone plays multiplayer
-const ALLOWED = (p) => p === '/index.html' || p.startsWith('/src/') || p.startsWith('/node_modules/three/');
+// (game.js: the whole game in one file, in the packed builds)
+const ALLOWED = (p) => p === '/index.html' || p === '/game.js' || p.startsWith('/src/') || p.startsWith('/node_modules/three/');
 
 const service = new Service(PORT);
 
@@ -40,13 +43,30 @@ function handle(req, res) {
   if (p === '/') p = '/index.html';
   const fp = path.normalize(path.join(ROOT, p));
   if (!fp.startsWith(ROOT + path.sep) || !ALLOWED(p.replace(/\\/g, '/')) || p.includes('..')) { res.writeHead(404); return res.end('Not found'); }
-  fs.readFile(fp, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-store'
+  serveFile(req, res, fp);
+}
+
+// A browser that has a file already only asks whether it changed (and gets a few bytes back), the rest
+// goes out packed when the browser can unpack it: three.js is a fifth of its size that way.
+const PACK = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.bsp']);
+const packed = new Map(); // file -> { tag, gz }
+function serveFile(req, res, fp) {
+  fs.stat(fp, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404); return res.end('Not found'); }
+    const ext = path.extname(fp).toLowerCase(), tag = '"' + st.size.toString(36) + '-' + Math.floor(st.mtimeMs).toString(36) + '"';
+    const head = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: tag };
+    if (req.headers['if-none-match'] === tag) { res.writeHead(304, head); return res.end(); }
+    fs.readFile(fp, (err2, data) => {
+      if (err2) { res.writeHead(404); return res.end('Not found'); }
+      if (PACK.has(ext) && /gzip/.test(String(req.headers['accept-encoding']))) {
+        let p = packed.get(fp);
+        if (!p || p.tag !== tag) packed.set(fp, (p = { tag, gz: zlib.gzipSync(data, { level: 6 }) }));
+        res.writeHead(200, { ...head, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+        return res.end(p.gz);
+      }
+      res.writeHead(200, head);
+      res.end(data);
     });
-    res.end(data);
   });
 }
 const upgrade = (req, sock) => {
@@ -114,4 +134,19 @@ service.onLan = () => {
   if (!lanTimer) lanTimer = setInterval(openLan, 3000);
 };
 
-start(PORT);
+// The Windows app's way in: the same server on the first free port from `port` on, without opening a browser or
+// giving way to one that runs already. Resolves with the port.
+function serve(port = PORT) {
+  return new Promise((resolve, reject) => {
+    const at = (p) => {
+      const local = http.createServer(handle);
+      local.on('upgrade', upgrade);
+      local.once('error', (e) => { if (e.code === 'EADDRINUSE' && p < port + 10) at(p + 1); else reject(e); });
+      local.listen(p, '127.0.0.1', () => { PORT = p; service.port = p; resolve(p); });
+    };
+    at(port);
+  });
+}
+
+if (require.main === module) start(PORT);
+module.exports = { serve };

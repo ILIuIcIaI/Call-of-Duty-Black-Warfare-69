@@ -1,0 +1,16 @@
+{
+  "name": "black-warfare-69-desktop",
+  "private": true,
+  "description": "Builds the Windows app and the browser version of Black Warfare 69: npm install, then npm run build. npm start runs the Windows app from the source.",
+  "main": "main.js",
+  "scripts": {
+    "build": "node build.js",
+    "start": "electron ."
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.1",
+    "esbuild": "0.28.2"
+  }
+}

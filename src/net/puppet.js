@@ -4,15 +4,16 @@ import { makeCanopy, openCanopy, OPEN_PULL, OPEN_BLOOM } from '../bots/brbot.js'
 import { WEAPONS, OPTICS } from '../weapons/defs.js';
 import { SKIN_IDS } from '../weapons/skins.js';
 import { angleDiff } from '../core/math.js';
+import { Track } from './track.js';
 
 // =============================================================================
 // Somebody who runs on somebody else's computer, a player or a bot: a body that does
-// what the network says, a little in the past so it never has to guess. To everything
+// what the network says, a little in the past so it never has to guess (track.js). To everything
 // else in the game it looks like a bot: it can be seen, shot and finished.
 // =============================================================================
 export const WEAPON_IDS = Object.keys(WEAPONS), OPTIC_IDS = Object.keys(OPTICS);
 export const F = { crouch: 1, slide: 2, dive: 4, prone: 8, supine: 16, air: 32, mantle: 64, tac: 128, sprint: 256, reload: 512, fall: 1024, seat: 2048, downed: 4096, reviving: 8192, chute: 16384, alive: 32768, plane: 65536, ads: 131072 };
-const DELAY = 0.11, _seat = new THREE.Vector3();
+const _seat = new THREE.Vector3();
 
 export class Puppet {
   constructor(game, entry) {
@@ -28,7 +29,7 @@ export class Puppet {
     this.alive = false; this.health = 100; this.maxHealth = 100; this.armor = 0;
     this.lastDamage = -99; this.lastAttacker = null;
     this.hb = []; this.hbFrame = -1;
-    this.buf = [];
+    this.track = new Track(); this.clock = null; this.smp = {};
     this.flags = 0; this.out = false; this.sky = null; this.downed = false; this.prone = false; this.crouching = false; this.scripted = false;
     this.st = { yaw: 0, pitch: 0, speed: 0, moveAngle: 0, floorY: 0 };
     this.wid = -1; this.oid = -1;
@@ -71,11 +72,11 @@ export class Puppet {
     this.soldier.die(info && info.dir ? info.dir : new THREE.Vector3(0, 0, 1), { part: info && info.part, point: info && info.point, strength, vel: this.vel.clone(), staged: info && info.staged });
   }
 
-  // ---- what came in: [x, y, z, yaw, pitch, bodyYaw, speed, moveAngle, flags, proneSpin, weapon, optic, health, armor]
-  receive(s) {
-    const now = performance.now() / 1000;
-    this.buf.push({ t: now, s });
-    if (this.buf.length > 24) this.buf.shift();
+  // ---- what came in: [x, y, z, yaw, pitch, bodyYaw, speed, moveAngle, flags, proneSpin, weapon, optic, health, armor, skin]
+  // t: when it was true, in this computer's time (ms); clock: the sender's, it knows how much his states wobble
+  receive(s, t = performance.now(), clock = null) {
+    this.track.push(t, s);
+    if (clock) this.clock = clock;
   }
 
   closeCanopy() { if (this.canopy) this.canopy.visible = false; this.chuteT = undefined; }
@@ -84,7 +85,7 @@ export class Puppet {
     const g = this.game;
     if (this.soldier.dead) {
       // he is on the ground here, and the state says he is up again: a new life
-      const last = this.buf[this.buf.length - 1];
+      const last = this.track.last;
       if (!g.br && last && (last.s[8] & F.alive) && g.time - this.deathT > 1) this.reborn(last.s);
       else {
         if (g.br && g.time - this.deathT > 16) { this.soldier.setVisible(false); return; }
@@ -93,11 +94,10 @@ export class Puppet {
       }
     }
     if (this.scripted) return;
-    const b = this.buf;
-    if (!b.length) return;
-    const at = performance.now() / 1000 - DELAY;
-    while (b.length > 2 && b[1].t <= at) b.shift();
-    const A = b[0], B = b[1] || b[0], u = B.t > A.t ? Math.min(1.2, Math.max(0, (at - A.t) / (B.t - A.t))) : 1, a = A.s, c = B.s;
+    const tr = this.track;
+    if (!tr.buf.length) return;
+    // (past the newest state u runs on beyond 1 for a moment: the last movement carries on)
+    const o = tr.sample(performance.now() - tr.delay(this.clock), this.smp), u = o.u, a = o.A.s, c = o.B.s;
     const px = this.pos.x, pz = this.pos.z, py = this.pos.y;
     this.pos.set(a[0] + (c[0] - a[0]) * u, a[1] + (c[1] - a[1]) * u, a[2] + (c[2] - a[2]) * u);
     if (dt > 0 && py > -400) this.vel.set((this.pos.x - px) / dt, (this.pos.y - py) / dt, (this.pos.z - pz) / dt);
@@ -145,7 +145,7 @@ export class Puppet {
     so.setWeapon(this.wdef, this.optic, this.skin);
     so.setVisible(true);
     this.alive = true;
-    this.buf = [{ t: performance.now() / 1000, s }];
+    this.track.reset(performance.now(), s);
     this.pos.set(s[0], s[1], s[2]);
   }
 

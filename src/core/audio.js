@@ -203,6 +203,11 @@ export class Audio {
     this.revGain.gain.setTargetAtTime(0.42 * (1 - amount) + 0.08, t, 0.3);
     this.revGainIn.gain.setTargetAtTime(0.35 * amount, t, 0.3);
   }
+  // the outdoor air under everything: indoor maps turn it down
+  setWind(v) {
+    this.wind = v;
+    if (this.ambGain) this.ambGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.4);
+  }
   // low health / explosion style muffling
   setMuffle(amount) {
     if (!this.ctx) return;
@@ -317,7 +322,7 @@ export class Audio {
       for (let i = 0; i < f; i++) { const k = i / f; d[i] = d[i] * k + d[n - f + i] * (1 - k); }
     }
     const s = c.createBufferSource(); s.buffer = b; s.loop = true;
-    const g = c.createGain(); g.gain.value = 0.16;
+    const g = c.createGain(); g.gain.value = this.wind ?? 0.16;
     s.connect(g); g.connect(this.master); s.start();
     this.ambGain = g;
   }
@@ -404,6 +409,11 @@ export class Audio {
       if (kind === 'wind') {
         lp += (w - lp) * 0.06; lp2 += (w - lp2) * 0.012;
         d[i] = (lp * 1.3 + lp2 * 3.2) * (0.72 + 0.28 * Math.sin(t * Math.PI * 2 * 1.5));
+      } else if (kind === 'hum') {
+        // fluorescent tubes on a 60 Hz grid: the hum at 120 Hz with its overtones, and the rasp of a tired ballast on the peaks
+        const s1 = Math.sin(t * Math.PI * 2 * 120);
+        lp += (w - lp) * 0.45;
+        d[i] = s1 * 0.3 + Math.sin(t * Math.PI * 2 * 240 + 0.7) * 0.18 + Math.sin(t * Math.PI * 2 * 360 + 1.9) * 0.08 + Math.sin(t * Math.PI * 2 * 480 + 0.3) * 0.05 + Math.pow(Math.abs(s1), 14) * lp * 0.55 + w * 0.015;
       } else if (kind === 'plane') {
         lp += (w - lp) * 0.03;
         d[i] = (saw(t, 45) * 0.3 + saw(t, 46) * 0.3 + saw(t, 90) * 0.14 + saw(t, 136) * 0.06) * 0.7 + lp * 1.1;

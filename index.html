@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Black Warfare 69</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="./src/ui/icon.ico">
 <link rel="stylesheet" href="./src/ui/styles.css">
 <script type="importmap">
 { "imports": {
@@ -64,5 +63,9 @@
   <div id="loading"><div class="load-title">BLACK WARFARE <b>69</b></div><div id="load-msg">Lade...</div><div class="load-bar"><div id="load-fill"></div></div></div>
 </div>
 <script type="module" src="./src/main.js"></script>
+<script>
+  // (this copy of the game needs its server: opened straight from the disk the browser refuses to load it)
+  if (location.protocol === 'file:' && !window.BW69_FILES) document.getElementById('load-msg').textContent = 'Diese Fassung braucht ihren Server: start.bat starten. Zum direkten Öffnen gibt es die Browser-Version auf der Release-Seite.';
+</script>
 </body>
 </html>

@@ -311,7 +311,7 @@ export class Player {
     this.game.separate(this);
 
     // keep inside world
-    if (this.pos.y < -20) this.game.match && this.game.match.killPlayerFall && this.game.match.killPlayerFall(this);
+    if (this.pos.y < -20 && this.alive && this.game.match) this.game.kill(this, null, { part: 'chest', weapon: { name: 'ABSTURZ', damage: [0, 0] } });
 
     this.speedH = Math.hypot(this.vel.x, this.vel.z);
 

@@ -2,15 +2,41 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. One map, PoolDay, comes from a Counter-Strike 1.6 map file ([credits](#credits-and-license)). Apart from that, no code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter that runs in your browser. Jump out of a plane in Warzone, a battle royale for 20 players, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on four maps. All of it also works together with your friends over the local network.
+A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on five maps. All of it also works together with your friends over the local network, and nothing needs to be installed.
 
 Apart from that one map file, the game has no model, texture or audio files: every soldier, weapon, skin, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
 ![Gun Game on PoolDay: level 9 of 15, a rifle in the Glutglas skin, soldiers around the empty pool](docs/screenshots/gungame-hud.jpg)
 
-**Current version: [0.4.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases).
+**Current version: [0.5.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
 
 ## Features
+
+### Backrooms
+
+The newest map, for Team Deathmatch, Free for All and Gun Game: the Backrooms, the internet legend of endless empty back rooms. Yellow wallpaper, damp carpet and a low suspended ceiling full of fluorescent panels that hum. The map is compact, 48 by 40 meters, and its parts are the oddities the legend tells of:
+
+![The pillar hall: rows of wallpapered pillars under the panels of the suspended ceiling, a soldier between them](docs/screenshots/backrooms-pillars.jpg)
+
+- **The pillar hall** in the middle, a pillar on every second corner, with long lanes and plenty to hide behind.
+- **The arch rooms** in the north: pale rooms with arched doorways, and arched windows you can shoot and vault through.
+- **The red room** between them: red walls, red carpet, and red light that spills out of its doors.
+- **The office** in the south, with half-height partitions to crouch behind.
+- **The holes:** a room with pits in the floor. The light doesn't reach the bottom, and whoever falls in doesn't come back. Bots keep clear of them.
+- **The dark:** a part where the lights have gone out, apart from one that flickers.
+- **Two spawn halls** and, between them and the pillar hall, a maze of partitions laid out so that no line of sight runs from one spawn to the other.
+
+The hum of the tubes is loud under the lights, stutters when one flickers and falls silent in the dark. Like everything else it is made in code: the wallpaper, carpet and ceiling are painted textures, and the light is worked out once when the map loads. Both halves mirror each other, so both teams get the same ways.
+
+| The red room | The arch rooms |
+|---|---|
+| ![Red walls, red carpet and red light under the panels, a soldier at the far end](docs/screenshots/backrooms-red.jpg) | ![The pale gallery with its arched windows, a soldier coming down it](docs/screenshots/backrooms-arches.jpg) |
+
+| The holes | The office |
+|---|---|
+| ![A room with dark pits in the carpet, a missing ceiling tile and a soldier between the pits](docs/screenshots/backrooms-holes.jpg) | ![Half-height partitions with wooden caps, a soldier behind one of them](docs/screenshots/backrooms-office.jpg) |
+
+![The dark: dim corridors between partitions, a dead panel in the ceiling, light from the next room](docs/screenshots/backrooms-dark.jpg)
 
 ### Warzone
 
@@ -42,7 +68,7 @@ Everyone for themselves, and every kill puts the next weapon in your hands. The 
 - **The knife:** two stabs on someone at full health, or one on a bot from behind. It's the only thing you hold on the last level, and the left mouse button stabs with it.
 - **Skins:** every new weapon comes with a random skin, the standard look included.
 - **No loadout:** the ladder decides what you carry. The HUD shows your level, the next weapon and who is ahead, and the scoreboard shows everyone's level and weapon.
-- **Bots** climb the same ladder and come at you with the knife when they get there. It works on all four maps, and with your friends over the network.
+- **Bots** climb the same ladder and come at you with the knife when they get there. It works on all five maps, and with your friends over the network.
 
 | Who is ahead, and with what | The last level |
 |---|---|
@@ -160,7 +186,7 @@ Aiming against an edge rests the weapon on it for less recoil, and at corners yo
 
 ### Maps
 
-Besides the island of Serena, four maps for Team Deathmatch, Free for All and Gun Game:
+Besides the island of Serena, five maps for Team Deathmatch, Free for All and Gun Game:
 
 | Map | Size | Setting |
 |---|---|---|
@@ -168,6 +194,7 @@ Besides the island of Serena, four maps for Team Deathmatch, Free for All and Gu
 | **Citadel** | Small to medium | Mediterranean old town at noon with a piazza and fountain, a market alley and a roof terrace; lots of height and flanking routes |
 | **Blacksite** | Small | Research facility at dusk with a lab and glass server room, a helipad, a watchtower and trenches as flanking routes |
 | **PoolDay** | Very small | The Counter-Strike 1.6 classic by Squall: an open swimming hall with an empty pool, locker rooms, showers and toilets |
+| **[Backrooms](#backrooms)** | Small | Endless yellow back rooms: a pillar hall, arch rooms, the red room, an office, holes in the floor and a part where the lights are out |
 
 **PoolDay** isn't rebuilt. The game reads the original map file when it starts: every wall, the original textures and the baked light, the solid parts, the spawn points and the stall doors. The pool in the middle is dry, so you jump in and climb back out. The whirlpool still has its water, the stall doors open as you walk up to them, and `F` at a urinal does what it always did.
 
@@ -201,7 +228,7 @@ Besides the island of Serena, four maps for Team Deathmatch, Free for All and Gu
 
 | Match setup | Death camera |
 |---|---|
-| ![Main menu with the four maps, the three modes and the bot settings](docs/screenshots/menu-play.jpg) | ![Third-person death camera looking down at the fallen player](docs/screenshots/death-cam.jpg) |
+| ![Main menu with the five maps, the three modes and the bot settings](docs/screenshots/menu-play.jpg) | ![Third-person death camera looking down at the fallen player](docs/screenshots/death-cam.jpg) |
 
 ### The look
 
@@ -209,14 +236,15 @@ Low-resolution textures painted in code, in the spirit of late-'90s PC shooters,
 
 ## Getting started
 
-You need [Node.js](https://nodejs.org/) and a browser with WebGL 2. Chrome or Edge is recommended; other browsers are untested.
+There are two downloads on the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases). Neither needs anything installed, Node.js included.
 
-**From the release (nothing to install besides Node.js):**
+**Windows version** (`Black-Warfare-69-0.5.0-Windows.zip`): extract it and double-click `Black Warfare 69.exe`. The game is a program of its own, with its own window, `F11` for full screen, **BEENDEN** in the menu to quit, and the multiplayer server built in. On laptops with two graphics chips it uses the stronger one. The download is about 140 MB because it brings its own browser engine and Node.js along ([Electron](https://www.electronjs.org/)). Windows may warn the first time about an app from an unknown publisher: click "More info", then "Run anyway".
 
-1. Download the zip from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases) and extract it.
-2. On Windows, double-click `start.bat`. Anywhere else, run `node server.js` in the folder and open <http://localhost:8069>.
+**Browser version** (`Black-Warfare-69-0.5.0-Browser.zip`, about 1 MB): extract it and double-click `index.html`. The game runs straight from the disk in Chrome, Edge or Firefox, alone against bots, with no server and no internet connection. For multiplayer the browser needs the game's server: open the address that the lobby of a computer running the Windows version shows, or run `start.bat` in the folder (that one needs [Node.js](https://nodejs.org/)).
 
-**From the source:**
+Any browser needs WebGL 2. Chrome or Edge is recommended.
+
+**From the source** (needs Node.js):
 
 ```bash
 git clone https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69.git
@@ -225,13 +253,13 @@ npm install
 npm start
 ```
 
-Then open <http://localhost:8069> and click into the game to capture the mouse. Until you open Multiplayer, the server only accepts connections from your own computer. Set the `PORT` environment variable to use a different port.
+Then open <http://localhost:8069> and click into the game to capture the mouse. Until you open Multiplayer, the server only accepts connections from your own computer. Set the `PORT` environment variable to use a different port. To build both downloads yourself: `cd desktop`, `npm install`, `npm run build`. They end up in `dist/`.
 
 Good to know:
 
 - The in-game text is currently in German.
-- Your settings stay in your browser's local storage. The only outside requests are for the two interface fonts (Teko and Rajdhani) from Google Fonts. Without internet access the game uses system fonts instead.
-- Browsers don't let a page block `Ctrl+W`. If you crouch with `Ctrl` while walking forward, the browser may try to close the tab, so the game asks for confirmation first. `C` crouches too.
+- Your settings stay on your computer: in the browser's local storage, or in `%APPDATA%\black-warfare-69` for the Windows version. The game makes no requests to any other server; its two fonts come with it.
+- Browsers don't let a page block `Ctrl+W`. If you crouch with `Ctrl` while walking forward, the browser may try to close the tab, so the game asks for confirmation first. `C` crouches too. The Windows version doesn't have that problem.
 - Where a browser can't capture the mouse, the camera follows the cursor and keeps turning at the window edge.
 
 ## Multiplayer
@@ -242,7 +270,7 @@ Play over your local network, with no account and no internet connection.
 |---|---|
 | ![The multiplayer lobby with two players, the vote on the map for Gun Game and the chat](docs/screenshots/multiplayer-lobby.jpg) | ![A teammate with a name tag in a Team Deathmatch](docs/screenshots/multiplayer-match.jpg) |
 
-1. Everybody starts the game and clicks **MULTIPLAYER**, then picks a name.
+1. Everybody starts the game, the Windows version or in a browser, and clicks **MULTIPLAYER**, then picks a name.
 2. The first player finds no room and opens one. Everybody after that lands in it automatically.
 3. Nobody runs the room. Everybody votes: the mode (Team Deathmatch, Free for All, Gun Game or Warzone), the map, and whether bots fill the free slots. The lobby has a chat.
 
@@ -250,13 +278,14 @@ If you die in Warzone you can watch the others or go back to the lobby. In Team 
 
 Good to know:
 
-- The first time, Windows asks whether Node.js may use the network. Allow it, also for public networks if the dialog offers that. If the firewall still keeps others out, the lobby tells you and offers a **FREIGEBEN** button: one click, Windows asks once, and the rule only covers devices in your own network.
+- The first time, Windows asks whether Black Warfare 69 (or Node.js, with `start.bat`) may use the network. Allow it, also for public networks if the dialog offers that. If the firewall still keeps others out, the lobby tells you and offers a **FREIGEBEN** button: one click, Windows asks once, and the rule only covers devices in your own network.
 - As long as one computer lets others in, you end up together: a room nobody can get into gives way to one that works. The computers keep looking for each other while you wait, even if your router drops the usual network announcements between devices.
-- If a computer doesn't find the room, open the address shown in the lobby in its browser. That computer doesn't need Node.js at all.
+- If a computer doesn't find the room, open the address shown in the lobby in its browser. That computer doesn't need to install anything.
 - The room lives on the computer that opened it. If that one goes away, everybody else looks for a new room.
-- Bots run in one player's browser: the first computer that runs the game smoothly. A slow computer is spared that, and if it takes too long to load a match it simply comes in later.
+- Bots run in one player's game: the first computer that runs it smoothly. A slow computer is spared that, and if it takes too long to load a match it simply comes in later.
 - The computers have to be able to reach each other. Guest networks and some public networks keep their devices apart on purpose, and no game can get past that. A different network, a phone's hotspot or a cable between the computers will do.
 - Everybody needs the same version of the game. The lobby says so if another version is on the network.
+- Movement stays smooth on a shaky Wi-Fi too: every position goes out 20 times a second with the time it was true, and the others play it back a fraction of a second behind, at the pace it really happened. If a message is late, the body keeps moving for a moment instead of freezing. The scoreboard shows everyone's ping.
 
 | When your own firewall keeps others out | When another computer lets nobody in |
 |---|---|
@@ -288,18 +317,21 @@ Good to know:
 | `Tab` | Scoreboard |
 | `L` | Change loadout, also in the middle of a round (not in Gun Game) |
 | `Esc` | Pause |
+| `F11` | Windows version: full screen |
 
 ## For developers
 
 - `?dev=1&map=citadel&bots=5` skips the menu and starts a match straight away.
-- `?dev=1&map=poolday&bots=5&mode=gun` picks the mode as well.
+- `?dev=1&map=poolday&bots=5&mode=gun` picks the mode as well; `map=backrooms` is the newest map.
 - `?dev=1&br=1&bots=19` does the same for Warzone.
 - `&autopilot=1` lets an AI control the player for a hands-free playtest.
 
 ## Credits and license
 
 - Built with [three.js](https://threejs.org/) (MIT license).
-- Fonts: [Teko](https://fonts.google.com/specimen/Teko) and [Rajdhani](https://fonts.google.com/specimen/Rajdhani) (SIL Open Font License), loaded from Google Fonts.
+- Fonts: [Teko](https://fonts.google.com/specimen/Teko) and [Rajdhani](https://fonts.google.com/specimen/Rajdhani) (SIL Open Font License), included in `src/ui/fonts` with their licenses.
+- The Windows version runs on [Electron](https://www.electronjs.org/) (MIT license), which brings Chromium and Node.js along; their licenses come with it.
+- Backrooms: the map is this game's own design, after the internet legend that began on 4chan in 2019 and the variations of its "Level 0" that fans have described since. Nothing from any Backrooms game, video or picture is used.
 - PoolDay: the map is by Squall, made for Counter-Strike 1.6. Its file (`src/world/maps/poolday.bsp`) is included with its original textures and baked light, with one change: a crate texture was replaced by plain planks. All rights to the map stay with its author. The sky, the rocks on the horizon and the sound of the urinals are made in this game's code, because the map file doesn't contain them.
 
 No open-source license has been chosen for this project's own code yet, so all rights are reserved for now. "Call of Duty" is a trademark of Activision Publishing, Inc. and "Counter-Strike" of Valve Corporation; both are used here only to describe this fan project.

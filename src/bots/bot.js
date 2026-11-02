@@ -19,7 +19,7 @@ export const DIFFICULTY = {
 };
 
 const SPEED = { walk: 5.2, sprint: 7.5, tac: 9.0, crouch: 3.0, ads: 3.0 };
-const _v = new THREE.Vector3(), _d = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
+const _v = new THREE.Vector3(), _d = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _k = new THREE.Vector3();
 
 export class Bot {
   constructor(game, opts) {
@@ -293,6 +293,11 @@ export class Bot {
       this.moveYaw = Math.atan2(-wish.x, -wish.z);
       // edge safety: don't strafe off ledges / into the void
       if (engaging && !this.groundAhead(wish)) { wish.set(0, 0, 0); this.strafeDir *= -1; }
+      // and never run into a hole without a bottom, where a path cuts a corner at a sprint
+      else if (this.bottomless(wish, 0.7)) {
+        wish.set(0, 0, 0); this.vel.x *= 0.2; this.vel.z *= 0.2;
+        if ((this.edgeT = (this.edgeT || 0) + dt) > 0.4) { this.edgeT = 0; this.path = null; this.pickRoamGoal(); }
+      }
     }
     this.crouching = this.crouchT > 0 || this.state === 'cover';
 
@@ -318,7 +323,7 @@ export class Bot {
       this.onGround = res.ground;
       if (res.hitWall && this.path && !engaging) this.handleBlocked(wish);
       g.separate(this);
-      if (this.pos.y < -15) { this.health = 0; g.kill(this, null, {}); return; }
+      if (this.pos.y < -15) { this.health = 0; g.kill(this, null, { part: 'chest', weapon: { name: 'ABSTURZ', damage: [0, 0] } }); return; }
     }
 
     // ---- stuck detection
@@ -326,7 +331,11 @@ export class Bot {
     if (this.stuckT > 1.2) {
       const moved = this.pos.distanceTo(this.lastProgress);
       if (moved < 0.6 && wish.lengthSq() > 0 && !engaging) {
-        if (this.onGround) { this.vel.y = 6.2; this.vel.x += rand(-2, 2); this.vel.z += rand(-2, 2); }
+        if (this.onGround) {
+          const kx = rand(-2, 2), kz = rand(-2, 2), kl = Math.hypot(kx, kz) || 1;
+          this.vel.y = 6.2;
+          if (!this.bottomless(_k.set(kx / kl, 0, kz / kl), 1.4)) { this.vel.x += kx; this.vel.z += kz; }
+        }
         if (moved < 0.2) { this.path = null; this.pickRoamGoal(); }
       }
       this.stuckT = 0; this.lastProgress.copy(this.pos);
@@ -357,6 +366,12 @@ export class Bot {
     const x = this.pos.x + dir.x * 0.9, z = this.pos.z + dir.z * 0.9;
     const f = col.floorBelow(x, z, 0.15, this.pos.y + 0.5, this.pos.y - 1.2);
     return isFinite(f);
+  }
+
+  // nothing at all to land on down there: a pit, not a ledge to drop from
+  bottomless(dir, d) {
+    const x = this.pos.x + dir.x * d, z = this.pos.z + dir.z * d;
+    return !isFinite(this.game.col.floorBelow(x, z, 0.1, this.pos.y + 0.5, this.pos.y - 8));
   }
 
   followPath(dt) {
