@@ -653,6 +653,19 @@ const GENERATORS = {
     P.speckle(0.07);
     return P;
   },
+  // terrazzo floor of a station: chips of marble in grey cement, big slabs with dark joints
+  terrazzo() {
+    const S = 128, P = new Painter(S, 401), big = makeFbm(401, 4, 3);
+    P.each((x, y, u, v) => { const c = 0.62 + (big(u, v) - 0.5) * 0.12; P.set(x, y, c, c * 0.98, c * 0.95); });
+    for (let k = 0; k < 700; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0, t = P.rng(), r = P.rng() < 0.8 ? 0 : 1;
+      const col = t < 0.4 ? [0.86, 0.84, 0.8] : t < 0.7 ? [0.38, 0.37, 0.36] : t < 0.85 ? [0.7, 0.5, 0.42] : [0.5, 0.56, 0.52];
+      for (let a = 0; a <= r; a++) for (let b = 0; b <= r; b++) P.set(x + a, y + b, col[0], col[1], col[2]);
+    }
+    for (let i = 0; i < S; i++) for (const g of [0, 64]) { P.mul(g, i, 0.6); P.mul(i, g, 0.6); P.mul(g + 1, i, 1.08); P.mul(i, g + 1, 1.08); }
+    P.speckle(0.03);
+    return P;
+  },
   // yard gravel: small grey-beige stones, each with a lit top and a shadow under it
   gravel() {
     const S = 128, P = new Painter(S, 371), f = makeFbm(371, 4, 3);
@@ -710,6 +723,38 @@ function signAtlas() {
   return t;
 }
 
+// Posters and boards of the metro station: one sheet, two columns of four (index = row * 2 + column)
+export const POSTERS = [
+  ['LINIE 69', 'ENDSTATION · BITTE ALLE AUSSTEIGEN', '#1c2a5a', '#ffd23c'],
+  ['BITTE NICHT CAMPEN', 'Das gilt auch für dich.', '#c8302a', '#ffffff'],
+  ['NÄCHSTER ZUG', 'IRGENDWANN', '#101010', '#ffb43c'],
+  ['FAHRSCHEIN?', 'Nie gehört.', '#2e7a4a', '#f4f0e0'],
+  ['BLACK WARFARE 69', 'Jetzt auch unterirdisch', '#141414', '#ff7a2a'],
+  ['ZURÜCKBLEIBEN!', 'Die Türen schließen. Vielleicht.', '#f2efe6', '#c8302a'],
+  ['NOTAUSGANG', '→ wenn du ihn findest', '#1e8a46', '#ffffff'],
+  ['DÖNER 24/7', 'Gleis 2 · auch mit scharf', '#e84a8a', '#fff04a'],
+];
+function posterAtlas() {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const x = c.getContext('2d');
+  POSTERS.forEach(([title, line, bg, fg], i) => {
+    const px = (i % 2) * 512, py = ((i / 2) | 0) * 256;
+    x.fillStyle = bg; x.fillRect(px, py, 512, 256);
+    x.strokeStyle = fg; x.lineWidth = 6; x.strokeRect(px + 12, py + 12, 488, 232);
+    x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
+    let size = 92; x.font = `bold ${size}px Arial, sans-serif`;
+    while (x.measureText(title).width > 450) { size -= 4; x.font = `bold ${size}px Arial, sans-serif`; }
+    x.fillText(title, px + 256, py + 104);
+    size = 40; x.font = `${size}px Arial, sans-serif`;
+    while (x.measureText(line).width > 450) { size -= 2; x.font = `${size}px Arial, sans-serif`; }
+    x.fillText(line, px + 256, py + 186);
+    for (let k = 0; k < 900; k++) { x.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`; x.fillRect(px + Math.random() * 512, py + Math.random() * 256, 2, 2); } // worn
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4;
+  return t;
+}
+
 export class TextureLib {
   constructor(engine) {
     this.engine = engine;
@@ -728,6 +773,7 @@ export class TextureLib {
   generate(name) {
     if (this.tex[name]) return this.tex[name];
     if (name === 'signs') return (this.tex[name] = { map: signAtlas() });
+    if (name === 'posters') return (this.tex[name] = { map: posterAtlas() });
     const P = GENERATORS[name](), S = P.S;
     const col = new Uint8ClampedArray(S * S * 4);
     // limited color depth, like a palette texture

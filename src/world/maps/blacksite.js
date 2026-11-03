@@ -58,8 +58,8 @@ export default {
     B.box(-1.1, 0.35, 17.75, 1.1, 0.36, 18.25, 'paintYellow', { collide: false, ao: false });
     B.box(-1.25, 0.65, 15.6, 1.25, 2.7, 20.0, 'carPaintGreen', { pen: 0.3 });           // fuselage
     B.box(-1.15, 1.6, 15.2, 1.15, 2.6, 15.6, 'carGlass', { pen: 0.9 });                // cockpit glass
-    B.box(-0.35, 1.6, 20.0, 0.35, 2.3, 25.0, 'carPaintGreen', { collide: false });     // tail boom
-    B.box(-0.08, 2.3, 24.0, 0.08, 3.4, 24.8, 'carPaintGreen', { collide: false });
+    B.box(-0.35, 1.6, 20.0, 0.35, 2.3, 25.0, 'carPaintGreen', { pen: 0.3 });           // tail boom (at head height: solid)
+    B.box(-0.08, 2.3, 24.0, 0.08, 3.4, 24.8, 'carPaintGreen', { pen: 0.3 });
     B.box(-1.4, 0.35, 16.0, -1.25, 0.65, 19.6, 'metalDark'); B.box(1.25, 0.35, 16.0, 1.4, 0.65, 19.6, 'metalDark'); // skids
     B.box(-0.25, 2.7, 17.5, 0.25, 3.0, 18.0, 'metalDark', { collide: false });
     for (const a of [0.4, 0.4 + Math.PI / 2]) B.geom(new THREE.BoxGeometry(11, 0.05, 0.32), 'metalDark', mtx(0, 3.02, 17.75, a));

@@ -145,7 +145,7 @@ export function car(b, x, z, along = 'x', paint = 'carPaintRed') {
   for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) {
     const wx = along === 'x' ? x + s1 * (hx - 0.75) : x + s2 * (hx - 0.05);
     const wz = along === 'x' ? z + s2 * (hz - 0.05) : z + s1 * (hz - 0.75);
-    b.geom(wheel, 'rubber', mtx(wx, 0.33, wz, along === 'x' ? 0 : Math.PI / 2, 1, 1, 1, 0, Math.PI / 2));
+    b.geom(wheel, 'rubber', mtx(wx, 0.33, wz, along === 'x' ? 0 : Math.PI / 2, 1, 1, 1, Math.PI / 2, 0));   // (axle across the car)
   }
   // lights
   const fx = along === 'x' ? x + hx : x, fz = along === 'x' ? z : z + hz;
@@ -173,19 +173,25 @@ export function truck(b, x, z, along = 'x', paint = 'carPaintWhite', dir = 1) {
   const wheel = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 16);
   for (const p of [-L / 2 + 1.0, -L / 2 + 2.2, L / 2 - 1.2]) for (const s of [-1, 1]) {
     const wx = ax ? x + dir * p : x + s * (hx - 0.1), wz = ax ? z + s * (hz - 0.1) : z + dir * p;
-    b.geom(wheel, 'rubber', mtx(wx, 0.5, wz, ax ? 0 : Math.PI / 2, 1, 1, 1, 0, Math.PI / 2));
+    b.geom(wheel, 'rubber', mtx(wx, 0.5, wz, ax ? 0 : Math.PI / 2, 1, 1, 1, Math.PI / 2, 0));   // (axle across the truck)
   }
 }
 
 export function forklift(b, x, z, rot = 0) {
-  const g = new THREE.Group();
-  b.box(x - 0.6, 0, z - 1.0, x + 0.6, 1.3, z + 1.0, 'metalYellow', { visual: false });
+  const c = Math.cos(rot), s = Math.sin(rot);
+  // collision turned with it: the body, and the mast in front of it (a box in its own frame, as the world sees it)
+  const solid = (lx0, lz0, lx1, lz1, y1) => {
+    const xs = [], zs = [];
+    for (const lx of [lx0, lx1]) for (const lz of [lz0, lz1]) { xs.push(x + lx * c + lz * s); zs.push(z - lx * s + lz * c); }
+    b.box(Math.min(...xs), 0, Math.min(...zs), Math.max(...xs), y1, Math.max(...zs), 'metalYellow', { visual: false });
+  };
+  solid(-0.6, -0.94, 0.6, 0.9, 1.3);
+  solid(-0.55, -1.06, 0.55, -0.94, 2.2);
   b.geom(new THREE.BoxGeometry(1.2, 0.9, 1.8), 'metalYellow', mtx(x, 0.75, z, rot));
-  b.geom(new THREE.BoxGeometry(1.1, 0.06, 1.2), 'metalDark', mtx(x, 2.2, z + Math.cos(rot) * 0.2, rot));
-  for (const s of [-0.5, 0.5]) b.geom(new THREE.BoxGeometry(0.06, 1.9, 0.06), 'metalDark', mtx(x + s * Math.cos(rot), 1.25, z - s * Math.sin(rot), rot));
-  b.geom(new THREE.BoxGeometry(1.1, 2.2, 0.12), 'metalDark', mtx(x - Math.sin(rot) * 1.0, 1.1, z - Math.cos(rot) * 1.0, rot));
-  b.geom(new THREE.BoxGeometry(0.9, 0.06, 1.1), 'metalDark', mtx(x - Math.sin(rot) * 1.55, 0.15, z - Math.cos(rot) * 1.55, rot));
-  void g;
+  b.geom(new THREE.BoxGeometry(1.1, 0.06, 1.2), 'metalDark', mtx(x + s * 0.2, 2.2, z + c * 0.2, rot));
+  for (const k of [-0.5, 0.5]) b.geom(new THREE.BoxGeometry(0.06, 1.9, 0.06), 'metalDark', mtx(x + k * c, 1.25, z - k * s, rot));
+  b.geom(new THREE.BoxGeometry(1.1, 2.2, 0.12), 'metalDark', mtx(x - s * 1.0, 1.1, z - c * 1.0, rot));
+  b.geom(new THREE.BoxGeometry(0.9, 0.06, 1.1), 'metalDark', mtx(x - s * 1.55, 0.15, z - c * 1.55, rot));
 }
 
 // --- Street furniture -------------------------------------------------------------

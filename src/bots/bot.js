@@ -172,7 +172,10 @@ export class Bot {
     const onObj = obj && Math.hypot(obj.x - this.pos.x, obj.z - this.pos.z) < obj.r - 0.5 && Math.abs(obj.y - this.pos.y) < 2.4;
     const nearObj = (p) => !obj || Math.hypot(obj.x - p.x, obj.z - p.z) < 16;
     if (this.target && this.targetVisible) {
-      if (hurt && this.state !== 'cover' && Math.random() < 0.5 && this.findCover()) this.state = 'cover';
+      // seen in cover all the same (it got there and the cover doesn't hide it, or it has been on its way too long):
+      // fight it out, and no new cover for a moment
+      if (this.state === 'cover' && (!this.path || this.wp >= this.path.length || t - this.coverT > 2.5)) { this.state = 'engage'; this.coverCd = t + 4; }
+      else if (hurt && this.state !== 'cover' && t > (this.coverCd || 0) && Math.random() < 0.5 && this.findCover()) this.state = 'cover';
       else if (this.state !== 'cover') this.state = 'engage';
     } else if (this.state === 'cover') {
       if (this.health > this.maxHealth * 0.85 || t - this.coverT > 7) this.state = 'roam';
@@ -370,10 +373,10 @@ export class Bot {
       this.stuckT = 0; this.lastProgress.copy(this.pos);
     }
 
-    // ---- aim
-    this.updateAim(dt, engaging);
-    // ---- weapon
-    this.updateWeapon(dt, engaging);
+    // ---- aim and weapon (on its way into cover it shoots back at whoever it can see)
+    const firing = engaging || (this.state === 'cover' && this.target && this.targetVisible);
+    this.updateAim(dt, firing);
+    this.updateWeapon(dt, firing);
     if (this.scripted) return; // (that last hit started a scene: the pose is the scene's now)
     if (this.meleeT > 0) this.meleeT -= dt;
     // ---- health regen

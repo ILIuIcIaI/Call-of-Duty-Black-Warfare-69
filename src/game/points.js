@@ -65,7 +65,10 @@ export class Points {
       const fill = new THREE.Mesh(new THREE.CircleGeometry(P.r - 0.16, 48).rotateX(-Math.PI / 2),
         new THREE.MeshBasicMaterial({ color: COLORS.none, transparent: true, opacity: 0.07, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       fill.position.y = 0.025; fill.renderOrder = 1;
-      const stand = new THREE.Mesh(poleG, pole); stand.position.y = P.top + 1.6;
+      // under a low ceiling (the Backrooms) the pole ends just below it, and the flag climbs only that far
+      const up = g.col.raycast(P.x, P.y + P.top + 0.3, P.z, 0, 1, 0, 3.2, {}), H = up ? Math.min(3.2, up.t + 0.22) : 3.2;
+      P.flagTop = H - 0.35;
+      const stand = new THREE.Mesh(poleG, pole); stand.scale.y = H / 3.2; stand.position.y = P.top + H / 2;
       const foot = new THREE.Mesh(footG, pole); foot.position.y = P.top + 0.07;
       const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7).translate(0.58, 0, 0), new THREE.MeshBasicMaterial({ map: flagTexture(P.id), side: THREE.DoubleSide }));
       flag.position.y = P.top + 0.6;
@@ -149,7 +152,7 @@ export class Points {
       const taking = P.cap >= 0 && P.k > 0, team = taking ? P.cap : P.owner;
       const col = this.colorOf(team);
       P.flag.material.color.setHex(col);
-      P.flag.position.y = P.top + (taking ? 0.5 + 2.35 * P.k : P.owner >= 0 ? 2.85 : 0.6);
+      P.flag.position.y = P.top + (taking ? 0.5 + (P.flagTop - 0.5) * P.k : P.owner >= 0 ? P.flagTop : 0.6);
       P.flag.rotation.y = Math.sin(t * 0.7 + P.i * 2) * 0.35;
       P.ring.material.color.setHex(this.colorOf(P.owner));
       P.ring.material.opacity = P.contested ? 0.45 + 0.4 * Math.abs(Math.sin(t * 6)) : 0.8;

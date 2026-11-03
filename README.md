@@ -2,7 +2,7 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. One map, PoolDay, comes from a Counter-Strike 1.6 map file ([credits](#credits-and-license)). Apart from that, no code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for two points in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on ten maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
+A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for two points in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on eleven maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
 
 Apart from that one map file, the game has no model, texture or audio files: every soldier, weapon, skin, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
@@ -35,9 +35,9 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 
 ![The settings: graphics level Auto, which picked Toaster on a computer without a graphics chip](docs/screenshots/settings-graphics.jpg)
 
-### Five new maps
+### Six new maps
 
-**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Two more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, point A in the saw hall over the water and point B on the timber landing by the jetty; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, point A up on the gondola deck and point B in the hut by the tiled stove.
+**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, point A in the saw hall over the water and point B on the timber landing by the jetty; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, point A up on the gondola deck and point B in the hut by the tiled stove; and **Nightline**, the terminus of a metro line at night after the last train, point A on the platform in front of a parked train you can run through and point B in the ticket hall behind the turnstiles.
 
 | Sirocco | Sirocco, the well square |
 |---|---|
@@ -59,6 +59,10 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 |---|---|
 | ![The snowy saddle from above: the cable car station, the hut with its balcony, the summit cross and the garages, mountains behind](docs/screenshots/cornice-overview.jpg) | ![The parlour of the hut: benches and tables around the green tiled stove](docs/screenshots/cornice-hut.jpg) |
 
+| Nightline | Nightline, the ticket hall |
+|---|---|
+| ![The platform of the terminus at night: the parked train on the left, orange tiled pillars, point A round the kiosk and the balcony of the mezzanine at the far end](docs/screenshots/nightline-platform.jpg) | ![Point B in the ticket hall: the glass ticket booth in the circle, the turnstiles beside it and the shuttered street exit up on the landing behind the railing](docs/screenshots/nightline-ticket-hall.jpg) |
+
 ### Bodies that fight as they fall
 
 A soldier hit for the last time doesn't topple over like a board any more. For a moment the body still fights: it staggers a step or two to keep its balance, a hand goes to the wound, the knees give, the arms reach for the ground it falls toward, and the chin tucks when it goes over backwards. Once it is down, a leg draws up one last time before it lies still. The hit decides how it goes: a head shot drops it where it stands, a shotgun up close throws it off its feet, a shot in the back pitches it forward, a runner stumbles on and catches itself on its hands, and a body shot in front of a wall slides down it.
@@ -73,10 +77,10 @@ A map for Team Deathmatch, Free for All, Gun Game and Wingman: the Backrooms, th
 
 - **The pillar hall** in the middle, a pillar on every second corner, with long lanes and plenty to hide behind.
 - **The arch rooms** in the north: pale rooms with arched doorways, and arched windows you can shoot and vault through.
-- **The red room** between them: red walls, red carpet, and red light that spills out of its doors.
+- **The red room** between them: red walls, red carpet, and red light that spills out of its doors and fades into the yellow halls around it.
 - **The office** in the south, with half-height partitions to crouch behind.
 - **The holes:** a room with pits in the floor. The light doesn't reach the bottom, and whoever falls in doesn't come back. Bots keep clear of them.
-- **The dark:** a part where the lights have gone out, apart from one that flickers.
+- **The dark:** a part where the lights have gone out, apart from one that flickers. The light fades out at its doorways.
 - **Two spawn halls** and, between them and the pillar hall, a maze of partitions laid out so that no line of sight runs from one spawn to the other.
 
 The hum of the tubes is loud under the lights, stutters when one flickers and falls silent in the dark. Like everything else it is made in code: the wallpaper, carpet and ceiling are painted textures, and the light is worked out once when the map loads. Both halves mirror each other, so both teams get the same ways.
@@ -121,7 +125,7 @@ Everyone for themselves, and every kill puts the next weapon in your hands. The 
 - **The knife:** two stabs on someone at full health, or one on a bot from behind. It's the only thing you hold on the last level, and the left mouse button stabs with it.
 - **Skins:** every new weapon comes with a random skin, the standard look included.
 - **No loadout:** the ladder decides what you carry. The HUD shows your level, the next weapon and who is ahead, and the scoreboard shows everyone's level and weapon.
-- **Bots** climb the same ladder and come at you with the knife when they get there. It works on all ten maps, and with your friends over the network.
+- **Bots** climb the same ladder and come at you with the knife when they get there. It works on all eleven maps, and with your friends over the network.
 
 | Who is ahead, and with what | The last level |
 |---|---|
@@ -239,7 +243,7 @@ Aiming against an edge rests the weapon on it for less recoil, and at corners yo
 
 ### Maps
 
-Besides the island of Serena, ten maps for Team Deathmatch, Free for All and Gun Game, nine of them for [Wingman](#wingman) as well:
+Besides the island of Serena, eleven maps for Team Deathmatch, Free for All and Gun Game, ten of them for [Wingman](#wingman) as well:
 
 | Map | Size | Setting |
 |---|---|---|
@@ -248,11 +252,12 @@ Besides the island of Serena, ten maps for Team Deathmatch, Free for All and Gun
 | **Blacksite** | Small | Research facility at dusk with a lab and glass server room, a helipad, a watchtower and trenches as flanking routes |
 | **PoolDay** | Very small | The Counter-Strike 1.6 classic by Squall: an open swimming hall with an empty pool, locker rooms, showers and toilets |
 | **[Backrooms](#backrooms)** | Small | Endless yellow back rooms: a pillar hall, arch rooms, the red room, an office, holes in the floor and a part where the lights are out |
-| **[Sirocco](#five-new-maps)** | Small to medium | A walled caravan town in the desert: a domed market, the well square, a caravanserai, roofs and bridges |
-| **[Atrium](#five-new-maps)** | Small to medium | An office building in the evening: two floors around a glass-roofed lobby, offices, a server room, a canteen |
-| **[Dynamo](#five-new-maps)** | Small to medium | A coal-fired power station at dusk: a turbine hall with catwalks, a coal heap, a switchyard |
-| **[Millrace](#five-new-maps)** | Small | A sawmill on a mill stream, built for Wingman: a saw hall over the water, a timber landing by the jetty, a weir |
-| **[Cornice](#five-new-maps)** | Small | A cable car station and a mountain hut in the snow, built for Wingman: the gondola deck, the hut's parlour, the summit rock |
+| **[Sirocco](#six-new-maps)** | Small to medium | A walled caravan town in the desert: a domed market, the well square, a caravanserai, roofs and bridges |
+| **[Atrium](#six-new-maps)** | Small to medium | An office building in the evening: two floors around a glass-roofed lobby, offices, a server room, a canteen |
+| **[Dynamo](#six-new-maps)** | Small to medium | A coal-fired power station at dusk: a turbine hall with catwalks, a coal heap, a switchyard |
+| **[Millrace](#six-new-maps)** | Small | A sawmill on a mill stream, built for Wingman: a saw hall over the water, a timber landing by the jetty, a weir |
+| **[Cornice](#six-new-maps)** | Small | A cable car station and a mountain hut in the snow, built for Wingman: the gondola deck, the hut's parlour, the summit rock |
+| **[Nightline](#six-new-maps)** | Small | The terminus of a metro line at night, built for Wingman: the platform with a parked train, the ticket hall behind the turnstiles, a transfer hall with a bridge and escalators |
 
 **PoolDay** isn't rebuilt. The game reads the original map file when it starts: every wall, the original textures and the baked light, the solid parts, the spawn points and the stall doors. The pool in the middle is dry, so you jump in and climb back out. The whirlpool still has its water, the stall doors open as you walk up to them, and `F` at a urinal does what it always did.
 
@@ -286,7 +291,7 @@ Besides the island of Serena, ten maps for Team Deathmatch, Free for All and Gun
 
 | Match setup | Death camera |
 |---|---|
-| ![Main menu with the ten maps](docs/screenshots/menu-play.jpg) | ![Third-person death camera looking down at the fallen player](docs/screenshots/death-cam.jpg) |
+| ![The match setup: the last row of map cards with the new Nightline, then the mode, the number of bots and the difficulty](docs/screenshots/menu-play.jpg) | ![Third-person death camera looking down at the fallen player](docs/screenshots/death-cam.jpg) |
 
 ### The look
 
@@ -316,7 +321,7 @@ Then open <http://localhost:8069> and click into the game to capture the mouse. 
 Good to know:
 
 - The in-game text is currently in German.
-- Your settings stay on your computer: in the browser's local storage, or in `%APPDATA%\black-warfare-69` for the Windows version. The game makes no requests to any other server; its two fonts come with it.
+- Your settings stay on your computer: in the browser's local storage, or in `%APPDATA%\Black Warfare 69` for the Windows version. The game makes no requests to any other server; its two fonts come with it.
 - Browsers don't let a page block `Ctrl+W`. If you crouch with `Ctrl` while walking forward, the browser may try to close the tab, so the game asks for confirmation first. `C` crouches too. The Windows version doesn't have that problem.
 - Where a browser can't capture the mouse, the camera follows the cursor and keeps turning at the window edge.
 

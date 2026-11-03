@@ -55,6 +55,7 @@ function dozer(b, x, z) {
   b.box(x - 1.1, 0, z - 1.6, x + 1.1, 0.7, z + 1.6, 'rubber', flat);
   b.box(x - 0.9, 0.7, z - 1.3, x + 0.9, 1.5, z + 1.2, 'metalYellow', flat);
   b.box(x - 0.8, 1.5, z + 0.1, x + 0.8, 2.6, z + 1.2, 'metalYellow', flat);
+  b.box(x - 0.8, 1.9, z + 0.1, x + 0.8, 2.6, z + 1.2, 'metalYellow', { visual: false, pen: 0.3 });   // the cab above the body's box
   b.box(x - 0.7, 1.7, z + 0.08, x + 0.7, 2.4, z + 0.12, 'carGlass', flat);
   b.box(x - 1.3, 0.1, z - 2.3, x + 1.3, 1.2, z - 1.9, 'metalDark', { pen: 0.2 });
 }
@@ -128,8 +129,9 @@ export default {
     // the turbine set: pedestal, turbine under its hood, generator, exciter
     b.box(-12, 0, 1.4, 10.5, 0.8, 4.2, 'concrete');
     b.box(-11, 0.8, 1.6, 3, 2.0, 4.0, 'machineGreen', { pen: 0.2 });
-    b.box(-11, 2.0, 1.6, 3, 3.0, 4.0, 'machineGreen', { visual: false, pen: 0.2 });
-    b.geom(new THREE.CylinderGeometry(1.2, 1.2, 14, 16, 1, false, 0, Math.PI), 'machineGreen', mtx(-4, 2.0, 2.8, Math.PI / 2, 1, 1, 1, 0, Math.PI / 2));
+    b.box(-11, 2.0, 1.7, 3, 2.5, 3.9, 'machineGreen', { visual: false, pen: 0.2 });     // the hood, in two steps
+    b.box(-11, 2.5, 2.0, 3, 3.1, 3.6, 'machineGreen', { visual: false, pen: 0.2 });
+    b.geom(new THREE.CylinderGeometry(1.2, 1.2, 14, 16, 1, false, 0, Math.PI), 'machineGreen', mtx(-4, 2.0, 2.8, 0, 1, 1, 1, 0, Math.PI / 2));
     b.box(3, 0.8, 1.9, 3.5, 1.8, 3.7, 'metalDark', { pen: 0.2 });
     b.box(3.5, 0.8, 1.6, 9.5, 3.3, 4.0, 'machineBlue', { pen: 0.2 });
     for (let x = 4.0; x < 9.3; x += 0.5) b.box(x - 0.06, 1.0, 1.55, x + 0.06, 3.1, 4.05, 'metalDark', flat);
@@ -237,7 +239,7 @@ export default {
     b.box(29.4, 0, 8.5, 31, 4.2, 14.5, 'concrete');
     gantry(b, 16.2, 29.8, 16.4, 8);
     for (const x of [21.0, 23.4]) { b.box(x - 0.3, 0, 7.6, x + 0.3, 0.5, 8.2, 'concrete'); b.geom(new THREE.CylinderGeometry(0.1, 0.1, 2.6, 8), 'metal', mtx(x, 1.8, 7.9)); for (let k = 0; k < 5; k++) b.geom(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 10), 'clay', mtx(x, 2.4 + k * 0.22, 7.9)); }
-    b.box(20.6, 0, 7.5, 23.8, 0.6, 8.3, 'concrete', { visual: false });
+    b.box(20.6, 0, 7.5, 23.8, 0.6, 8.3, 'concrete');                                 // their plinth (what stops you is there to see)
     for (const [x, z] of [[27.0, 5.6], [16.6, 6.2]]) { b.box(x - 0.6, 0, z - 0.5, x + 0.6, 1.6, z + 0.5, 'metalWhite', { pen: 0.4 }); b.box(x - 0.5, 0.9, z + 0.5, x + 0.5, 1.4, z + 0.52, 'black', flat); }
     railing(b, 15, 19, 21, 19, 2.0, 'metalDark', true);
     railing(b, 25, 19, 31, 19, 2.0, 'metalDark', true);

@@ -472,7 +472,7 @@ function hamlets(b, out) {
   on(cottage, O.x - 11, O.z - 14); on(garage, O.x + 11, O.z - 13); on(townhouse, O.x - 11, O.z + 14, 2); on(ruin, O.x + 12, O.z + 15, 0, { w: 12, d: 10 });
   un(villa, S.x - 2, S.z - 7); un(shop, S.x - 10, S.z + 12, 2, { sign: 'POST', w: 12, d: 10 }); un(cottage, S.x + 12, S.z + 12, 2);
   const A = new Kit(b, out, { y: O.y }), B = new Kit(b, out, { y: S.y });
-  coverPile(A, O.x + rnd(-3, 3), O.z + rnd(-3, 3)); coverPile(B, S.x + 5, S.z + 2);
+  coverPile(A, O.x + rnd(-3, 3), O.z + rnd(-4, -1)); coverPile(B, S.x + 5, S.z + 2);   // (north of the sedan, never into it)
   A.vehicle('sedan', O.x, O.z + 3.5, 1.57); B.vehicle('jeep', S.x + 15, S.z - 4, 0);
 }
 

@@ -20,8 +20,9 @@ const LOFT = 3.0;                // loft in the hall, roof of the sharpening sho
 const EAVES = 5.6, RIDGE = 8.4;
 const DZ0 = 8, DZ1 = 17.8;       // timber landing over the brook (B)
 const WALK = 3.4;                // crane walkway along the south side of the landing
-const WEIR = 2.0;                // north face of the weir
+const WEIR = 2.4;                // north face of the weir (far enough from the bridge to step off its sill before the bridge is overhead)
 const flat = { ao: false };
+const noStand = { visual: false, noBullet: true };   // over roofs and machines nobody is meant to stand on: shots pass
 const noCol = { collide: false, ao: false };
 
 // a decorative piece moved into place with world-space UVs, so its texture is as big as on the boxes around it
@@ -83,7 +84,7 @@ function logTruck(b, x0, x1, z) {
   b.box(x1 - 2.0, 1.15, z - 1.25, x1, 2.5, z + 1.25, 'carPaintGreen', { pen: 0.4 });
   b.box(x1 - 1.9, 2.5, z - 1.15, x1 - 0.25, 3.2, z + 1.15, 'carPaintGreen', { pen: 0.4 });
   b.box(x1 - 0.25, 2.6, z - 1.1, x1 - 0.22, 3.1, z + 1.1, 'carGlass', noCol);
-  b.box(x1 - 2.0, 3.2, z - 1.25, x1, 9, z + 1.25, 'concrete', { visual: false });
+  b.box(x1 - 2.0, 3.2, z - 1.25, x1, 9, z + 1.25, 'concrete', noStand);
   const wheel = new THREE.CylinderGeometry(0.52, 0.52, 0.4, 14);
   for (const wx of [x1 - 1.0, x0 + 2.6, x0 + 1.4]) for (const s of [-1, 1]) b.geom(wheel, 'rubber', mtx(wx, 0.52, z + s * 1.05, 0, 1, 1, 1, Math.PI / 2));
   for (const bx of [x1 - 2.6, x0 + 0.5]) {
@@ -139,7 +140,7 @@ export default {
     B.box(-8.2, LOFT - 0.2, MZ0 + 0.3, 8.2, LOFT, -16.0, 'woodDark');                 // loft along the north wall
     railing(B, -6.8, -16.0, 6.8, -16.0, 1.0, 'woodDark', true, LOFT);
     for (const x of [-4.2, 4.2]) B.box(x - 0.11, 0, -16.11, x + 0.11, LOFT - 0.2, -15.89, 'woodDark');
-    B.box(-8.5, EAVES, MZ0, 8.5, 12, MZ1, 'concrete', { visual: false });       // nobody stands on the walls or the roof
+    B.box(-8.5, EAVES, MZ0, 8.5, 12, MZ1, 'concrete', noStand);                 // nobody stands on the walls or the roof
     // roof: two slopes up to a ridge along x, gable ends in the side walls (half() builds those)
     const zr = (MZ0 + MZ1) / 2, run = MZ1 - zr + 0.45, rise = RIDGE - EAVES + 0.25, len = Math.hypot(run, rise), ang = Math.atan2(rise, run);
     for (const s of [-1, 1]) {
@@ -154,7 +155,7 @@ export default {
     // (one block for the whole saw: the capture point finds its sides from it and looks at the circle from there,
     // and the flag stands on top of it)
     B.box(-1.95, 0, -12.85, 1.95, 3.9, -11.15, 'metalDark', { visual: false, pen: 0.2 });
-    B.box(-1.95, 3.9, -12.85, 1.95, EAVES, -11.15, 'metalDark', { visual: false });         // and nobody on the saw
+    B.box(-1.95, 3.9, -12.85, 1.95, EAVES, -11.15, 'metalDark', noStand);                   // and nobody on the saw
     for (const s of [-1, 1]) {
       B.box(s * 1.5 - 0.22, 0, -12.7, s * 1.5 + 0.22, 3.9, -11.3, 'metalDark', { collide: false });
       B.geom(new THREE.CylinderGeometry(0.85, 0.85, 0.16, 18), 'metalDark', mtx(s * 1.85, 1.3, -12.0, 0, 1, 1, 1, 0, Math.PI / 2));
@@ -299,6 +300,7 @@ export default {
     b.box(-14.8, 0, 1.6, -11.2, 0.7, 5.2, 'sawdust');
     b.box(-14.0, 0.7, 2.4, -12.0, 1.4, 4.4, 'sawdust');
     b.geom(placed(new THREE.ConeGeometry(1.3, 0.5, 9), mtx(-13.0, 1.65, 3.4), 3), 'sawdust');
+    b.box(-13.5, 1.4, 2.9, -12.5, 1.7, 3.9, 'sawdust', { visual: false });                           // (its tip: a step, not a mound you sink into)
     b.box(-7.6, 0, 2.2, -5.8, 0.9, 3.0, 'woodDark');
     b.geom(new THREE.CylinderGeometry(0.42, 0.42, 0.02, 20), 'metal', mtx(-6.7, 0.95, 2.6, 0, 1, 1, 1, Math.PI / 2));
     logPile(b, -7.6, 3.4, -5.6, 4.6, 1.2, 'z');
@@ -313,7 +315,7 @@ export default {
     stairs(b, -13.4, 16.9, '+x', 1.8, WALK, 4.8, 'metalDark');
     b.box(-16.6, 0, DZ1, -10, 3.4, 21, 'barnRed');                                                // office
     b.box(-17.0, 3.4, DZ1 - 0.4, -10, 3.7, 21, 'roofSlate', noCol);
-    b.box(-16.6, 3.4, DZ1, -10, 9, 21, 'concrete', { visual: false });
+    b.box(-16.6, 3.4, DZ1, -10, 9, 21, 'concrete', noStand);
     b.box(-15.6, 1.2, DZ1 - 0.04, -14.2, 2.3, DZ1, 'black', noCol);
     b.box(-15.7, 1.12, DZ1 - 0.06, -14.1, 1.2, DZ1, 'trimWhite', noCol);
     b.pointLight(-14.9, 1.8, DZ1 - 0.5, 0xffd8a0, 1.2, 5);
@@ -329,7 +331,7 @@ export default {
     for (const s of [-1, 1]) for (const [x, y] of [[-23.4, 3.82], [-21.0, 3.8]]) log(b, x, y, s * 8.8, 1.6, 0.34, 'z');
     logTruck(b, -26.6, -17.4, -17.6);
     b.box(-26.6, 0, 12.4, -21.6, 3.0, 18.2, 'barnGrey');                                         // woodcutters' hut
-    b.box(-26.6, 3.0, 12.4, -21.6, 9, 18.2, 'concrete', { visual: false });
+    b.box(-26.6, 3.0, 12.4, -21.6, 9, 18.2, 'concrete', noStand);
     const hut = new THREE.Shape();
     hut.moveTo(-0.4, 0); hut.lineTo(5.8 + 0.4, 0); hut.lineTo(2.9, 1.9); hut.closePath();
     b.geom(placed(new THREE.ExtrudeGeometry(hut, { depth: 5.4, bevelEnabled: false }), mtx(-26.8, 3.0, 18.2, Math.PI / 2), 2), 'shingle');

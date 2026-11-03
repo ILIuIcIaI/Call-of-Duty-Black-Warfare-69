@@ -4,7 +4,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [0.6.0] - 2026-11-03
 
-The Wingman update: a new mode for 2 against 2, five new maps, bodies that fight as they fall, and a game that runs on very weak computers too.
+The Wingman update: a new mode for 2 against 2, six new maps, bodies that fight as they fall, and a game that runs on very weak computers too.
 
 ### Added
 
@@ -19,15 +19,16 @@ The Wingman update: a new mode for 2 against 2, five new maps, bodies that fight
 - The team that holds both points at the same time wins at once. After 7 minutes, the team with more kills wins. Respawns never run out, and you always come back at your own base.
 - The flag of whoever is taking a point climbs the pole, the owner's flag flies at the top, in blue for your team and red for the others. Both points show under the score, as markers over the map (held at the edge of the screen when they are off to the side or behind you), and on the minimap. Standing in a circle shows how far the taking has come, or that it is contested.
 - Bots play for the points: with both points open the two of a team split up, the last one they take together, and whoever is closer runs back when the others start taking one of theirs. On a point they hold it instead of chasing every shot they hear, and when the others are in the circle too they go round and look for them.
-- On Millrace and Cornice, built for the mode, and on Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point was measured so that both teams walk the same distance to it and no spawn can see it. On Blacksite one point is up on the guard tower and the other one around the helicopter; on Sirocco the flags stand on the dome of the cistern and of the well. PoolDay is too small for the mode.
+- On Millrace, Cornice and Nightline, built for the mode, and on Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point was measured so that both teams walk the same distance to it and no spawn can see it. On Blacksite one point is up on the guard tower and the other one around the helicopter; on Sirocco the flags stand on the dome of the cistern and of the well. PoolDay is too small for the mode.
 - In multiplayer the vote decides on bots as usual: with bots it is 2 against 2, without them only the players play, so two of you play 1 against 1. The computer that runs the bots decides the points and tells everybody else, and someone who joins a running match sees how they stand.
 
-**Five new maps** for Team Deathmatch, Free for All, Gun Game and Wingman, each with its own layout, mirror-symmetric so both teams get the same ways:
+**Six new maps** for Team Deathmatch, Free for All, Gun Game and Wingman, each with its own layout, mirror-symmetric so both teams get the same ways:
 - **Sirocco**: a walled caravan town in the desert in the late afternoon. A domed market hall in the middle with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses you run through and flat roofs connected by a bridge over the street.
 - **Atrium**: an office building on a weekday evening, two floors around a glass-roofed lobby with a gallery. Open-plan offices with cubicles, a server room and a boardroom behind glass, storage, a canteen, loading yards with an outside stair, and a service alley and a forecourt as flanks.
 - **Dynamo**: a coal-fired power station at dusk. The turbine hall with two turbine sets as long cover, catwalks along its walls and a bridge across, the coal yard with a heap you can climb, the switchyard with its control house and transformers, and pipe yards with water tanks. The teams start north and south instead of west and east.
 - **Millrace**: a sawmill on a mill stream in a pine forest in the morning mist, built for Wingman. Point A is in the saw hall over the stream around the frame saw, with a loft above it, point B on the timber landing by the jetty under the crane walkway. Between them a footbridge and a weir, and the stream bed is the low way from one point to the other.
 - **Cornice**: the top station of a cable car and a mountain hut on a snowy saddle at sunset, built for Wingman. Point A is up on the gondola deck of the station, reached through the ski depot underneath or the outside stair; point B is in the hut's parlour around the tiled stove, with a terrace in front and a balcony above. The summit rock with its cross stands in the middle, and you can climb it from every side.
+- **Nightline**: the terminus of metro line 69 at night, after the last train, built for Wingman. Point A is on the platform in front of the parked train, which you can run through; point B is in the ticket hall behind the turnstiles. Between them the transfer hall, with a bridge across it and escalators up to the bridge.
 - Bots now take stairs and climb ledges from both sides on every map, not only on the new ones.
 
 **Graphics: Toaster and Auto**
@@ -49,10 +50,21 @@ Performance, measured against 0.5.0 in the same conditions:
 - Dynamic resolution has targets per graphics level and goes further down on the weak ones. On screens with display scaling above 100 percent, Mittel draws at most at 150 percent and Niedrig and Toaster at 100 percent, so a sharp laptop screen doesn't quietly cost twice the work.
 - Both computers need this version to play together: 0.5.0 and 0.6.0 don't mix, and the lobby says so.
 
+**Maps**
+- The light in the Backrooms is softer: shadows have soft edges, the dark part fades in at its doorways, and the red room blends into the yellow halls around it instead of ending at a hard line.
+
 ### Fixed
 
 - The hands of other soldiers now close round the grip and the handguard of every gun. Before, each hand sat a few centimeters below its grip, and on pistols the hands held the gun from underneath. On long guns the support shoulder comes forward a little when the handguard is just out of reach.
+- A hurt bot that went into cover while you could still see it crouched there without shooting until it died. Now it shoots back on its way into cover, and when the cover doesn't hide it, it fights it out.
+- Under a low ceiling the Wingman flagpole now stops just below it. In the Backrooms it went through the ceiling, and on Millrace the flag of point A flew above the roof of the saw hall, out of sight from inside.
+- Pressed against the edge of a wall, a crate or a car, you could end up a few centimeters inside it and from there walk straight through it. Now the edge stops you, and backing out, sliding along it and jumping work as before.
+- Cars and trucks on every map have their wheels turned the right way instead of sticking out of the bodywork, and forklifts are solid wherever they stand, mast included.
+- Dynamo: the turbine hoods lay crosswise through the hall; now they sit on their turbines and are solid. The bulldozer cab is solid, and an invisible low block between two insulators is now a plinth you can see. Blacksite: you could walk and shoot through the helicopter's tail at head height. Sirocco: nobody stands inside or shoots through the domes over points A and B any more, and shots pass under the handcarts.
+- Millrace: the weir moved a little away from the bridge, so you no longer bump your head walking along the stream, and the sawdust heap is solid. Cornice: the folded parasol is solid, and the panelling of the hut no longer runs across its doors. On both maps the invisible blocks that keep you off roofs and machines no longer stop bullets.
+- The arches in the Backrooms stop shots along their whole edge, and on the island a cover pile no longer lands inside the parked car in the eastern hamlet.
 - PoolDay printed a warning for a texture it doesn't have.
+- The README and the README.txt of the Windows version named the wrong folder for its settings. It is `%APPDATA%\Black Warfare 69`.
 
 ## [0.5.0] - 2026-11-02
 

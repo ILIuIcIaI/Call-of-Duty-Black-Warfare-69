@@ -58,13 +58,14 @@ const PANELS = [];
 // ---------------------------------------------------------------- geometry, collected per material
 class Geo {
   constructor() { this.P = []; this.N = []; this.U = []; this.C = []; }
-  // four corners, wound to face along n
+  // four corners, wound to face along n (shade: a brightness, or an [r, g, b] tint)
   quad(p, n, uv, shade) {
     const ax = p[1][0] - p[0][0], ay = p[1][1] - p[0][1], az = p[1][2] - p[0][2], bx = p[2][0] - p[0][0], by = p[2][1] - p[0][1], bz = p[2][2] - p[0][2];
     const flip = (ay * bz - az * by) * n[0] + (az * bx - ax * bz) * n[1] + (ax * by - ay * bx) * n[2] < 0;
     for (const i of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
       const q = p[i], t = uv(q), s = shade(q);
-      this.P.push(q[0], q[1], q[2]); this.N.push(n[0], n[1], n[2]); this.U.push(t[0], t[1]); this.C.push(s, s, s);
+      this.P.push(q[0], q[1], q[2]); this.N.push(n[0], n[1], n[2]); this.U.push(t[0], t[1]);
+      if (typeof s === 'number') this.C.push(s, s, s); else this.C.push(s[0], s[1], s[2]);
     }
   }
 }
@@ -79,8 +80,8 @@ function wall(g, axis, at, from, to, y0, y1, dir, s = SCALE.paper) {
   const n = axis === 'z' ? [0, 0, dir] : [dir, 0, 0];
   g.quad(pts, n, axis === 'z' ? (q) => [q[0] / s, q[1] / s] : (q) => [q[2] / s, q[1] / s], wallShade);
 }
-function flat(g, y, x0, x1, z0, z1, dir, s, ou = 0, ov = 0) {
-  g.quad([[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], [0, dir, 0], (q) => [(q[0] - ou) / s, (q[2] - ov) / s], flatShade);
+function flat(g, y, x0, x1, z0, z1, dir, s, ou = 0, ov = 0, shade = flatShade) {
+  g.quad([[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], [0, dir, 0], (q) => [(q[0] - ou) / s, (q[2] - ov) / s], shade);
 }
 
 // ---------------------------------------------------------------- the build: boxes for the collision, faces for the eye
@@ -97,6 +98,47 @@ function build() {
     flat(g, y0 + 0.1, axis === 'x' ? Math.min(at, o) : from, axis === 'x' ? Math.max(at, o) : to, axis === 'z' ? Math.min(at, o) : from, axis === 'z' ? Math.max(at, o) : to, 1, SCALE.trim);
   };
   const zoneOf = (c, r) => (c >= 0 && c < COLS && r >= 0 && r < ROWS ? plan.cells[r][c].zone : null);
+  // the dark part has the plain paper and carpet; of two zones, the red one stands out most
+  const MAT = (z) => (z === 'd' ? ' ' : z), RANK = { ' ': 0, p: 1, r: 2 };
+
+  // Where two zones meet without a wall, the plainer carpet takes on the other one's colour round the seam, over a
+  // cell's width, in the cell behind it and the open ones beside that: no line across the floor where the red room ends.
+  const seams = []; // { axis, at: x or z of the seam, from..to along it, c, r: the cell that fades, other: the zone across }
+  const seamAt = (c0, r0, c1, r1, axis, at, from) => {
+    const a = zoneOf(c0, r0), b = zoneOf(c1, r1);
+    if (a === null || b === null || MAT(a) === MAT(b)) return;
+    const [c, r, other] = RANK[MAT(a)] < RANK[MAT(b)] ? [c0, r0, b] : [c1, r1, a];
+    seams.push({ axis, at, from, to: from + CELL, c, r, other: MAT(other) });
+  };
+  for (let r = 1; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (' ^A'.includes(plan.hE[r][c])) seamAt(c, r - 1, c, r, 'z', Z0 - r * CELL, X0 + c * CELL);
+  for (let r = 0; r < ROWS; r++) for (let k = 1; k < COLS; k++) if (' ^A'.includes(plan.vE[r][k])) seamAt(k - 1, r, k, r, 'x', X0 + k * CELL, Z0 - (r + 1) * CELL);
+  const open = (c0, r0, c1, r1) => (r0 === r1 ? plan.vE[r0][Math.max(c0, c1)] : plan.hE[Math.max(r0, r1)][c0]) === ' ';
+  const fadesIn = new Map(); // "c,r" -> the seams whose colour reaches its carpet
+  for (const s of seams) {
+    for (const [c, r] of [[s.c, s.r], ...(s.axis === 'z' ? [[s.c - 1, s.r], [s.c + 1, s.r]] : [[s.c, s.r - 1], [s.c, s.r + 1]])]) {
+      const zc = zoneOf(c, r);
+      if (zc === null || RANK[MAT(zc)] >= RANK[s.other] || ((c !== s.c || r !== s.r) && !open(s.c, s.r, c, r))) continue;
+      const k = c + ',' + r;
+      if (!fadesIn.has(k)) fadesIn.set(k, []);
+      fadesIn.get(k).push(s);
+    }
+  }
+  const carpetShade = (c, r, zone) => {
+    const list = fadesIn.get(c + ',' + r);
+    if (!list) return null;
+    const own = new THREE.Color(CARPET[MAT(zone)]);
+    return (q) => {
+      let t = 0, to = null;
+      for (const s of list) {
+        const u = s.axis === 'z' ? q[0] : q[2], v = s.axis === 'z' ? q[2] : q[0];
+        const w = 1 - Math.hypot(Math.max(0, s.from - u, u - s.to), v - s.at) / CELL;
+        if (w > t) { t = w; to = s.other; }
+      }
+      if (!to) return 1;
+      const o = new THREE.Color(CARPET[to]), w = t * t * (3 - 2 * t);
+      return [1 + (o.r / own.r - 1) * w, 1 + (o.g / own.g - 1) * w, 1 + (o.b / own.b - 1) * w];
+    };
+  };
 
   // A straight piece of wall along `axis` ('x' runs along x at z = m, 'z' along z at x = m), a0..a1, y0..y1.
   // zp: zone on the + side, zn: on the - side (null: nobody sees it).
@@ -139,7 +181,7 @@ function build() {
     // collision: a lintel and two steps down along the curve at each side, never into the open middle
     const box = (u0, u1, y0) => solid(axis === 'x' ? [u0, y0, m - E, u1, H, m + E] : [m - E, y0, u0, m + E, H, u1]);
     box(a0, a1, yOf(ac - R * 0.35));
-    for (const w of [0.18, 0.4]) { box(a0, a0 + R * w, yOf(a0 + R * w)); box(a1 - R * w, a1, yOf(a1 - R * w)); }
+    for (const w of [0.06, 0.14, 0.24, 0.36, 0.5]) { box(a0, a0 + R * w, yOf(a0 + R * w)); box(a1 - R * w, a1, yOf(a1 - R * w)); }   // (fine steps: no wall left that shots pass through)
   }
 
   // ---- every edge of the plan
@@ -169,19 +211,25 @@ function build() {
     const x = X0 + k * CELL, z1 = Z0 - r * CELL;
     edge('z', t, z1 - CELL, z1, x, zoneOf(k, r), zoneOf(k - 1, r), [[k, r], [k, r + 1]]);
   }
-  // corners where walls meet: a post as thick as the walls fills the gap between their ends
+  // corners where walls meet: a post as thick as the walls fills the gap between their ends, each face in the
+  // paper of the room it looks into (no yellow stripe at the edge of the red room)
   for (const [key, top] of corner) {
     const [k, r] = key.split(',').map(Number), x = X0 + k * CELL, z = Z0 - r * CELL;
     if (plan.posts.some((p) => p[0] === k && p[1] === r)) continue;
-    const zone = zoneOf(Math.min(k, COLS - 1), Math.min(r, ROWS - 1)) || ' ';
-    block([x - E, 0, z - E, x + E, top, z + E], zone, (k === 0 || k === COLS || r === 0 || r === ROWS) ? 0 : 0.45, false);
+    const face = (axis, dir) => {
+      const cells = axis === 'x' ? [[dir > 0 ? k : k - 1, r - 1], [dir > 0 ? k : k - 1, r]] : [[k - 1, dir > 0 ? r - 1 : r], [k, dir > 0 ? r - 1 : r]];
+      let best = ' ';
+      for (const [cc, rr] of cells) { const zc = zoneOf(cc, rr); if (zc !== null && RANK[MAT(zc)] > RANK[MAT(best)]) best = zc; }
+      return best;
+    };
+    block([x - E, 0, z - E, x + E, top, z + E], face, (k === 0 || k === COLS || r === 0 || r === ROWS) ? 0 : 0.45, false);
   }
-  // a free-standing block: pillars and posts
+  // a free-standing block: pillars and posts (zone: one for all faces, or (axis, dir) => the zone of that face)
   function block(b, zone, pen, light = true) {
-    const [x0, y0, z0, x1, y1, z1] = b, g = paper(zone);
+    const [x0, y0, z0, x1, y1, z1] = b, side = typeof zone === 'function' ? (a, d) => paper(zone(a, d)) : () => paper(zone);
     solid(b, 'concrete', pen);
-    wall(g, 'x', x1, z0, z1, y0, y1, 1); wall(g, 'x', x0, z0, z1, y0, y1, -1);
-    wall(g, 'z', z1, x0, x1, y0, y1, 1); wall(g, 'z', z0, x0, x1, y0, y1, -1);
+    wall(side('x', 1), 'x', x1, z0, z1, y0, y1, 1); wall(side('x', -1), 'x', x0, z0, z1, y0, y1, -1);
+    wall(side('z', 1), 'z', z1, x0, x1, y0, y1, 1); wall(side('z', -1), 'z', z0, x0, x1, y0, y1, -1);
     trim('x', x1, z0, z1, 1); trim('x', x0, z0, z1, -1); trim('z', z1, x0, x1, 1); trim('z', z0, x0, x1, -1);
     if (y1 < H - 1e-3) flat(G('trim'), y1, x0, x1, z0, z1, 1, SCALE.trim);
     if (light) blockers.push(['b', x0, x1, z0, z1]);
@@ -204,12 +252,18 @@ function build() {
         else if (roll < 0.075) flat(G('gap'), H - 0.002, xc - 0.6, xc, zc - 0.3, zc + 0.3, -1, 1);
       }
       if (cell.what === 'pillar') block([x0 + 0.5, 0, z0 + 0.5, x1 - 0.5, H, z1 - 0.5], cell.zone, 0);
-      if (cell.what !== 'hole') { flat(carpet, 0, x0, x1, z0, z1, 1, SCALE.carpet); if (run === null) run = c; continue; }
+      const fade = carpetShade(c, r, cell.zone);
+      if (cell.what !== 'hole') {
+        if (!fade) flat(carpet, 0, x0, x1, z0, z1, 1, SCALE.carpet);
+        else for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) flat(carpet, 0, x0 + (a * CELL) / 4, x0 + ((a + 1) * CELL) / 4, z0 + (b * CELL) / 4, z0 + ((b + 1) * CELL) / 4, 1, SCALE.carpet, 0, 0, fade);
+        if (run === null) run = c;
+        continue;
+      }
       flush(c);
       const m = (CELL - HOLE) / 2, hx0 = x0 + m, hx1 = x1 - m, hz0 = z0 + m, hz1 = z1 - m;
       holes.push([hx0, hz0, hx1, hz1]);
       for (const f of [[x0, z0, x1, hz0], [x0, hz1, x1, z1], [x0, hz0, hx0, hz1], [hx1, hz0, x1, hz1]]) {
-        flat(carpet, 0, f[0], f[2], f[1], f[3], 1, SCALE.carpet);
+        flat(carpet, 0, f[0], f[2], f[1], f[3], 1, SCALE.carpet, 0, 0, fade || flatShade);
         solid([f[0], -0.5, f[1], f[2], 0, f[3]], 'dirt', 0);
       }
       // the shaft: the carpet's edge going down into black, and walls so nobody slides off under the floor
@@ -273,23 +327,50 @@ function bake(blockers) {
       }
     }
   }
-  // light thrown back by walls and carpet: a soft blur of the direct light on top of it
-  const blur = (src, ch) => {
-    const out = new Float32Array(src.length), tmp = new Float32Array(src.length), R = 6;
-    for (let k = 0; k < ch; k++) {
-      for (let j = 0; j < LH; j++) { let acc = 0, n = 0; for (let i = -R; i < LW + R; i++) { if (i + R < LW) { acc += src[(j * LW + i + R) * ch + k]; n++; } if (i - R - 1 >= 0) { acc -= src[(j * LW + i - R - 1) * ch + k]; n--; } if (i >= 0 && i < LW) tmp[(j * LW + i) * ch + k] = acc / n; } }
-      for (let i = 0; i < LW; i++) { let acc = 0, n = 0; for (let j = -R; j < LH + R; j++) { if (j + R < LH) { acc += tmp[((j + R) * LW + i) * ch + k]; n++; } if (j - R - 1 >= 0) { acc -= tmp[((j - R - 1) * LW + i) * ch + k]; n--; } if (j >= 0 && j < LH) out[(j * LW + i) * ch + k] = acc / n; } }
+  // A box blur along the rows, then the columns, that stops at walls (where less than half the light gets through):
+  // light spreads over a room and out through its openings, never through a wall. Twice over it is soft as a bell.
+  const wallBlur = (src, ch, R, rounds = 2) => {
+    let a = Float32Array.from(src), b = new Float32Array(src.length);
+    const line = (n, at) => {
+      for (let s = 0; s < n;) {
+        if (pass[at(s)] < 0.5) { for (let k = 0; k < ch; k++) b[at(s) * ch + k] = a[at(s) * ch + k]; s++; continue; }
+        let e = s;
+        while (e < n && pass[at(e)] >= 0.5) e++;
+        for (let k = 0; k < ch; k++) {
+          let acc = 0, cnt = 0;
+          for (let q = s; q < Math.min(e, s + R); q++) { acc += a[at(q) * ch + k]; cnt++; }
+          for (let q = s; q < e; q++) {
+            if (q + R < e) { acc += a[at(q + R) * ch + k]; cnt++; }
+            if (q - R - 1 >= s) { acc -= a[at(q - R - 1) * ch + k]; cnt--; }
+            b[at(q) * ch + k] = acc / cnt;
+          }
+        }
+        s = e;
+      }
+    };
+    for (let round = 0; round < rounds; round++) {
+      for (let j = 0; j < LH; j++) line(LW, (i) => j * LW + i);
+      [a, b] = [b, a];
+      for (let i = 0; i < LW; i++) line(LH, (j) => j * LW + i);
+      [a, b] = [b, a];
     }
-    return out;
+    return a;
   };
-  const brgb = blur(rgb, 3), bfl = blur(fl, 1);
+  // the edges of the shadows a metre wide; the light thrown back by walls and carpet on top, from a few metres round;
+  // and where the lights are out, what spills in from next door only gets a little way, fading out over two metres
+  const srgb = wallBlur(rgb, 3, 2), sfl = wallBlur(fl, 1, 2);
+  const brgb = wallBlur(srgb, 3, 7), bfl = wallBlur(sfl, 1, 7);
+  const dark = new Float32Array(LW * LH);
+  for (let o = 0; o < LW * LH; o++) {
+    const c = Math.floor(((o % LW) + 0.5) * LR / CELL), r = Math.floor(ROWS - (Math.floor(o / LW) + 0.5) * LR / CELL);
+    dark[o] = plan.cells[r] && plan.cells[r][c] && plan.cells[r][c].zone === 'd' ? 0.42 : 1;
+  }
+  const dim = wallBlur(dark, 1, 4);
   const data = new Uint8Array(LW * LH * 4), lum = new Float32Array(LW * LH);
   for (let o = 0; o < LW * LH; o++) {
-    // where the lights are out, what spills in from next door only gets a little way
-    const c = Math.floor(((o % LW) + 0.5) * LR / CELL), r = Math.floor(ROWS - (Math.floor(o / LW) + 0.5) * LR / CELL), dim = plan.cells[r] && plan.cells[r][c] && plan.cells[r][c].zone === 'd' ? 0.42 : 1;
-    for (let k = 0; k < 3; k++) { rgb[o * 3 + k] *= dim; data[o * 4 + k] = Math.min(255, Math.round(((rgb[o * 3 + k] + brgb[o * 3 + k] * 0.35 * dim + 0.035 * dim) / LMAX) * 255)); }
-    data[o * 4 + 3] = Math.min(255, Math.round(((fl[o] + bfl[o] * 0.35) / LMAX) * 255));
-    lum[o] = (rgb[o * 3] + rgb[o * 3 + 1]) * 0.5 + fl[o];
+    for (let k = 0; k < 3; k++) data[o * 4 + k] = Math.min(255, Math.round((((srgb[o * 3 + k] + brgb[o * 3 + k] * 0.35 + 0.035) * dim[o]) / LMAX) * 255));
+    data[o * 4 + 3] = Math.min(255, Math.round(((sfl[o] + bfl[o] * 0.35) / LMAX) * 255));
+    lum[o] = (srgb[o * 3] + srgb[o * 3 + 1]) * 0.5 * dim[o] + sfl[o];
   }
   return { data, lum };
 }

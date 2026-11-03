@@ -111,6 +111,22 @@ export class CollisionWorld {
       const b = this.cand[k] * 6;
       if (!(B[b + a1] < hmax[a1] - EPS && B[b + 3 + a1] > hmin[a1] + EPS)) continue;
       if (!(B[b + a2] < hmax[a2] - EPS && B[b + 3 + a2] > hmin[a2] + EPS)) continue;
+      const o0 = Math.min(hmax[axis], B[b + 3 + axis]) - Math.max(hmin[axis], B[b + axis]);
+      if (o0 > EPS) {
+        // Already a little way in (a spawn right at a crate, a push from the crowd): out again, yes, but no deeper,
+        // or 1 cm into a crate was a way through it. Only along the side it is shallowly in: a floor it has sunk
+        // into a hair still lets it walk across, a wall it scrapes still lets it slide along and jump.
+        if (o0 < 0.25) {
+          const o1 = Math.min(hmax[a1], B[b + 3 + a1]) - Math.max(hmin[a1], B[b + a1]);
+          const o2 = Math.min(hmax[a2], B[b + 3 + a2]) - Math.max(hmin[a2], B[b + a2]);
+          if (o0 <= (axis === 1 ? Math.min(o1, o2) : axis === 0 ? o1 : o2)) {
+            const c = hmin[axis] + hmax[axis], bc = B[b + axis] + B[b + 3 + axis];
+            if (d > 0 && c < bc) allowed = Math.min(allowed, 0);
+            else if (d < 0 && c > bc) allowed = Math.max(allowed, 0);
+          }
+        }
+        continue;
+      }
       if (d > 0) {
         if (B[b + axis] >= hmax[axis] - EPS) {
           const gap = B[b + axis] - hmax[axis];

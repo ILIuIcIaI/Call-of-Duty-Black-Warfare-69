@@ -21,9 +21,9 @@ const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40, FU
 const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10, wing: 4 };
 const GUN_LEVELS = 15; // Gun Game: 14 guns, then the knife
 const MATCH_MS = 600000, WING_MS = 420000; // (Wingman: 7 minutes)
-const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms', 'sirocco', 'atrium', 'dynamo', 'millrace', 'cornice'];
+const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms', 'sirocco', 'atrium', 'dynamo', 'millrace', 'cornice', 'nightline'];
 // the maps that have the two points of Wingman (src/game/points.js, or the map's own wingman list)
-const WING_MAPS = ['millrace', 'cornice', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock'];
+const WING_MAPS = ['millrace', 'cornice', 'nightline', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock'];
 const TEAMS = (mode) => mode === 'tdm' || mode === 'wing';
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };

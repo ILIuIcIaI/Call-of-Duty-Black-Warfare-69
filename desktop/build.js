@@ -96,7 +96,7 @@ async function main() {
     'Windows may warn about an app from an unknown publisher the first time: "More info", then "Run anyway".',
     'For multiplayer Windows asks once whether the game may use the network: allow it for private networks.', '',
     'Others in the same network can join with this program or with any browser: the lobby shows the address.',
-    'Settings are kept in %APPDATA%\\black-warfare-69.', '',
+    `Settings are kept in %APPDATA%\\${NAME}.`, '',
     'https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69', '',
   ].join('\r\n'));
 

@@ -181,7 +181,7 @@ function stall(b, x, z, along, awning, k = 0) {
 function cart(b, x, z, along) {
   const ax = along === 'x', L = 1.4, W = 0.75;
   const hx = ax ? L : W, hz = ax ? W : L;
-  b.box(x - hx, 0, z - hz, x + hx, 1.2, z + hz, 'wood', { visual: false, pen: 0.7 });
+  b.box(x - hx, 0.55, z - hz, x + hx, 1.05, z + hz, 'wood', { visual: false, pen: 0.7 });   // (from the bed up: open underneath, as it looks)
   b.box(x - hx, 0.55, z - hz, x + hx, 0.68, z + hz, 'wood', flat);
   for (const s of [-1, 1]) {
     if (ax) b.box(x - hx, 0.68, z + s * W - 0.05, x + hx, 1.0, z + s * W + 0.05, 'wood', flat); else b.box(x + s * W - 0.05, 0.68, z - hz, x + s * W + 0.05, 1.0, z + hz, 'wood', flat);
@@ -280,6 +280,7 @@ export default {
     B.box(-1.9, 2.8, WZ - 1.9, 1.9, 3.05, WZ + 1.9, 'sandstone');
     const cap = new THREE.SphereGeometry(1.5, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2).toNonIndexed(); projectUV(cap, 2.4);
     B.geom(cap, 'sandstone', mtx(0, 3.05, WZ, 0, 1, 0.7, 1));
+    for (const [h, y0, y1] of [[0.95, 3.05, 3.5], [0.6, 3.5, 3.9]]) B.box(-h, y0, WZ - h, h, y1, WZ + h, 'sandstone', { visual: false });   // the dome, in steps
     for (const s of [-1, 1]) B.box(s * 1.55 - 0.07, 0, WZ - 1.37, s * 1.55 + 0.07, 2.45, WZ + 1.37, 'shutterGreen', { pen: 0.8 }); // lattice screens east and west
     B.box(-1.4, 2.2, WZ - 0.05, 1.4, 2.3, WZ + 0.05, 'woodDark', flat);
     B.geom(new THREE.CylinderGeometry(0.16, 0.16, 0.12, 10), 'woodDark', mtx(0, 2.1, WZ, 0, 1, 1, 1, Math.PI / 2, 0));
@@ -317,6 +318,7 @@ export default {
     B.box(-1.4, 0, -19.6, 1.4, 2.2, -16.4, 'sandstone');
     const cdome = new THREE.SphereGeometry(1.3, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2).toNonIndexed(); projectUV(cdome, 2.4);
     B.geom(cdome, 'sandstone', mtx(0, 2.2, -18, 0, 1, 0.8, 1));
+    for (const [h, y0, y1] of [[0.85, 2.2, 2.6], [0.55, 2.6, 3.0]]) B.box(-h, y0, -18 - h, h, y1, -18 + h, 'sandstone', { visual: false });   // the dome, in steps
     for (const s of [-1, 1]) {
       B.box(-0.5, 0.6, s * 1.62 - 18 - 0.02, 0.5, 1.5, s * 1.62 - 18 + 0.02, 'black', flat);
       crate(B, s * 4.1, -15.4, 1.0); crate(B, s * 4.6, -16.25, 0.7);

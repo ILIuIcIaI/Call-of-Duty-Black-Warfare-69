@@ -150,6 +150,16 @@ export const MATERIALS = {
   gondolaRed: { tex: 'paint', color: 0xb83a32, scale: 2, surface: 'metal', pen: 0.6 },
   stoveTiles: { tex: 'tiles', color: 0x6a9a7c, scale: 0.9, surface: 'concrete' },
   pinewood: { tex: 'wood', color: 0xfff0d4, scale: 1.1, surface: 'wood', pen: 0.7 },
+  // the metro station
+  terrazzo: { tex: 'terrazzo', color: 0xffffff, scale: 3, surface: 'concrete' },
+  ballast: { tex: 'gravel', color: 0x7a7066, scale: 2, surface: 'dirt' },
+  tilesOrange: { tex: 'tiles', color: 0xf0a050, scale: 0.6, surface: 'concrete' },
+  tilesCream: { tex: 'tiles', color: 0xf4ead4, scale: 0.6, surface: 'concrete' },
+  trainSilver: { tex: 'metal', color: 0xc8ccd0, scale: 2, surface: 'metal', pen: 0.5 },
+  posters: { tex: 'posters', color: 0xffffff, scale: 1, surface: 'wood' },
+  neonPink: { tex: null, color: 0xff6ab8, emissive: 0xff3ca8, emissiveIntensity: 2.4, surface: 'glass' },
+  neonCyan: { tex: null, color: 0x8af4ff, emissive: 0x3ce8ff, emissiveIntensity: 2.2, surface: 'glass' },
+  neonYellow: { tex: null, color: 0xffe68a, emissive: 0xffd23c, emissiveIntensity: 2.2, surface: 'glass' },
 };
 
 export class MapBuilder {
