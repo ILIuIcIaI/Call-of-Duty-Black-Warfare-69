@@ -5,7 +5,8 @@ export const DEFAULTS = {
   adsSens: 0.85,         // ADS multiplier (also scaled by zoom)
   fov: 100,              // horizontal FOV
   volume: 0.8,
-  quality: 'medium',
+  quality: 'auto',       // 'auto' looks at the graphics chip, see engine.js
+  autoDown: null,        // Auto ran too slow here once: start no higher than this
   dynamicRes: true,
   autoSprint: false,
   showFps: true,
@@ -18,6 +19,8 @@ export const DEFAULTS = {
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '{}');
+    // up to 0.5.0 everybody got 'medium' saved without choosing it: that becomes Auto (a chosen Niedrig or Hoch stays)
+    if (s.quality === 'medium' && !s.qualityPicked) s.quality = 'auto';
     return { ...DEFAULTS, ...s, loadout: { ...DEFAULTS.loadout, ...(s.loadout || {}) }, match: { ...DEFAULTS.match, ...(s.match || {}) }, skins: { ...(s.skins || {}) } };
   } catch (e) { return structuredClone(DEFAULTS); }
 }

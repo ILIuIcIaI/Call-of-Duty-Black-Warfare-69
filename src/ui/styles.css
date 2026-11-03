@@ -93,7 +93,7 @@ body.hoverlook #game-canvas { cursor: none; }
 #movement-hud { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); text-align: center; }
 #tac-bar { width: 120px; height: 3px; background: rgba(255,255,255,.15); margin: 0 auto; opacity: 0; transition: opacity .3s; }
 #tac-bar.show { opacity: 1; }
-#tac-fill { height: 100%; width: 100%; background: var(--accent); }
+#tac-fill { height: 100%; width: 100%; background: var(--accent); transform-origin: left center; }
 #move-state { font-weight: 700; letter-spacing: 3px; font-size: 13px; color: rgba(255,255,255,.55); margin-top: 6px; height: 16px; }
 
 #center-msg { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-family: var(--head); font-size: 42px; letter-spacing: 3px; text-shadow: 0 3px 12px #000; text-align: center; }
@@ -146,6 +146,7 @@ body.hoverlook #game-canvas { cursor: none; }
 .btn { font-family: var(--head); font-size: 30px; letter-spacing: 4px; padding: 8px 40px 2px; background: var(--accent); color: #111; border: none; cursor: pointer; transition: filter .12s, transform .1s; }
 .btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
 .btn.ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); }
+.btn.small { font-size: 17px; letter-spacing: 2px; padding: 5px 14px 1px; margin-left: 8px; vertical-align: middle; }
 .opt { display: flex; align-items: center; gap: 14px; margin: 8px 0; font-weight: 700; letter-spacing: 1px; }
 .opt label { width: 220px; color: #cfd4cc; }
 .opt input[type=range] { width: 240px; accent-color: var(--accent); }
@@ -193,6 +194,28 @@ body.hoverlook #game-canvas { cursor: none; }
 #hud.br .sb-friendly::after { content: 'LEBEN'; }
 #hud.br .sb-enemy::after { content: 'KILLS'; }
 #sb-timer.urgent { color: #ff8a4a; }
+/* Wingman: the two points under the score, a marker over each in the world, the circle you stand in */
+#sb-points { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+#sb-points .pt { position: relative; width: 40px; height: 34px; display: flex; align-items: center; justify-content: center; font-family: var(--head); font-size: 27px; line-height: 1; padding-top: 3px; color: #fff; background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.55); overflow: hidden; }
+#sb-points .pt.own { background: rgba(72,184,255,.85); border-color: var(--friendly); color: #071621; }
+#sb-points .pt.enemy { background: rgba(255,74,58,.85); border-color: var(--enemy); color: #210806; }
+#sb-points .pt i { position: absolute; left: 0; bottom: 0; width: 100%; height: 5px; transform-origin: left center; transform: scaleX(0); background: #fff; }
+#sb-points .pt.taking-own i { background: var(--friendly); }
+#sb-points .pt.taking-enemy i { background: var(--enemy); }
+#sb-points .pt.contest, .ptmark.contest b { animation: ptBlink .45s infinite alternate; }
+@keyframes ptBlink { from { box-shadow: 0 0 0 0 rgba(255,255,255,0); } to { box-shadow: 0 0 10px 2px rgba(255,210,80,.9); } }
+.ptmark { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; pointer-events: none; }
+.ptmark b { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--head); font-size: 22px; padding-top: 3px; box-sizing: border-box; color: #fff; background: rgba(0,0,0,.5); border: 2px solid #fff; }
+.ptmark.own b { color: var(--friendly); border-color: var(--friendly); }
+.ptmark.enemy b { color: var(--enemy); border-color: var(--enemy); }
+.ptmark.here { display: none; }
+.ptmark span { font-weight: 700; font-size: 12px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+#cap-status { position: absolute; left: 50%; top: 71%; transform: translateX(-50%); text-align: center; font-family: var(--head); font-size: 24px; letter-spacing: 3px; color: #fff; text-shadow: 0 2px 8px #000; white-space: nowrap; }
+#cap-status i { display: block; width: 240px; height: 6px; margin: 4px auto 0; background: rgba(255,255,255,.22); }
+#cap-status i b { display: block; width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0); background: #fff; }
+#cap-status.own { color: var(--friendly); } #cap-status.own i b { background: var(--friendly); }
+#cap-status.enemy { color: var(--enemy); } #cap-status.enemy i b { background: var(--enemy); }
+#cap-status.contest { color: #ffd04a; }
 #br-status { position: absolute; left: 22px; bottom: 26px; width: 280px; }
 .br-armor { display: flex; gap: 4px; margin-bottom: 4px; }
 .br-armor i { flex: 1; height: 9px; background: rgba(0,0,0,.5); position: relative; border: 1px solid rgba(255,255,255,.14); }

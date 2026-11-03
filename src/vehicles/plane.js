@@ -457,7 +457,7 @@ function buildKit() {
     hull: lam({ map: paintHull() }), wing: lam({ map: paintWing() }), fin: lam({ map: paintFin() }), engine: lam({ map: paintEngine() }),
     tank: lam({ color: 0x6a6f5e }), dark: lam({ color: 0x151615 }), metal: lam({ color: 0x8b8f8b }), spinner: lam({ color: 0x2b2d2a }),
     blades: lam({ vertexColors: true, side: THREE.DoubleSide }),
-    disc: new THREE.MeshBasicMaterial({ map: paintBlur(), transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+    disc: new THREE.MeshBasicMaterial({ map: paintBlur(), transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, fog: false }),
     hold: new THREE.MeshBasicMaterial({ map: paintHold(), side: THREE.BackSide }), holdEnd: new THREE.MeshBasicMaterial({ color: 0x1a0a08 }),
     holdFloor: new THREE.MeshBasicMaterial({ color: 0x2a1512 }), lamps: new THREE.MeshBasicMaterial({ color: 0xc23a26 }),
     ramp: lam({ map: paintTread() }), rail: lam({ color: 0x3a3d36 }),

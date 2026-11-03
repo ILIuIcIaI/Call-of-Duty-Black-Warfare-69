@@ -168,6 +168,9 @@ export class IslandNav extends NavGraph {
     return Math.abs(prevY - by) < STEP + 0.05;
   }
 
+  // on open ground the start node can be meters away: always straight on to the second waypoint
+  firstWaypoint(pos, way) { return way.length > 1 ? 1 : 0; }
+
   coarseClear(a, c) {
     const t = this.t, ax = this.X[a], az = this.Z[a], cx = this.X[c], cz = this.Z[c], d = Math.hypot(cx - ax, cz - az);
     if (Math.abs(this.Y[c] - this.Y[a]) / d > 1.0) return false;

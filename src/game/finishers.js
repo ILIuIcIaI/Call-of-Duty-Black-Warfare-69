@@ -1821,7 +1821,13 @@ export const FINISHERS = [
   },
 ];
 
-export function bakeFinishers() { for (const F of FINISHERS) clipOf(F); }
+// soon: one scene now and then instead of all at once (whatever is needed earlier bakes itself right then, see clipOf)
+export function bakeFinishers(soon = false) {
+  if (!soon) { for (const F of FINISHERS) clipOf(F); return; }
+  const left = FINISHERS.filter((F) => !F.clip);
+  const next = () => { const F = left.shift(); if (!F) return; clipOf(F); setTimeout(next, 120); };
+  setTimeout(next, 1500);
+}
 // which way round a scene has to stand for the attacker to start at dx, dz from the victim
 export function startYaw(F, dx, dz) { const P = clipOf(F).a.pos; return Math.atan2(dx, dz) - Math.atan2(P[0], P[2]); }
 // where the victim's hips look at a time in the scene

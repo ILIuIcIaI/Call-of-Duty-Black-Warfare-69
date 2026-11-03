@@ -2,6 +2,58 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-03
+
+The Wingman update: a new mode for 2 against 2, five new maps, bodies that fight as they fall, and a game that runs on very weak computers too.
+
+### Added
+
+**Bodies that fight as they fall**
+- A soldier hit for the last time no longer topples over like a board. For a moment the body still fights: it staggers a step or two to keep its balance, a hand goes to a wound in the chest or the belly, the knees give, the arms reach for the ground it falls toward, and the chin tucks when it goes over backwards. Once it is down, a leg draws up one last time, then the muscles let go and it lies still.
+- The hit decides how a body falls: a head shot drops it where it stands, a shotgun or a heavy rifle up close throws it off its feet, a shot in the back pitches it forward, a runner stumbles on and catches itself on its hands, a shot leg buckles first, and a shot arm hangs. Shot in front of a wall or a fountain, it slides down it and slumps.
+- The body bends at the waist and the neck now, its joints stop where real ones do (knees and elbows only one way, the hips not backwards), and it weighs what a soldier in gear weighs: a heavy torso, light hands. On the ground it slides with real friction and then lies still instead of trembling. Boots that stood a little in the floor no longer kick the body up.
+
+**Wingman**
+- A new mode for 2 against 2: you and a bot against two bots, or players together over the local network. Two points, A and B, stand on the map, each a circle with a flagpole in the middle.
+- Stand in a circle to take it: 10 seconds alone, about 7 with your teammate. With both teams in the circle nothing moves, and a half-taken point slowly falls back when everybody leaves it. The owners standing on their point undo what the others had started.
+- The team that holds both points at the same time wins at once. After 7 minutes, the team with more kills wins. Respawns never run out, and you always come back at your own base.
+- The flag of whoever is taking a point climbs the pole, the owner's flag flies at the top, in blue for your team and red for the others. Both points show under the score, as markers over the map (held at the edge of the screen when they are off to the side or behind you), and on the minimap. Standing in a circle shows how far the taking has come, or that it is contested.
+- Bots play for the points: with both points open the two of a team split up, the last one they take together, and whoever is closer runs back when the others start taking one of theirs. On a point they hold it instead of chasing every shot they hear, and when the others are in the circle too they go round and look for them.
+- On Millrace and Cornice, built for the mode, and on Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point was measured so that both teams walk the same distance to it and no spawn can see it. On Blacksite one point is up on the guard tower and the other one around the helicopter; on Sirocco the flags stand on the dome of the cistern and of the well. PoolDay is too small for the mode.
+- In multiplayer the vote decides on bots as usual: with bots it is 2 against 2, without them only the players play, so two of you play 1 against 1. The computer that runs the bots decides the points and tells everybody else, and someone who joins a running match sees how they stand.
+
+**Five new maps** for Team Deathmatch, Free for All, Gun Game and Wingman, each with its own layout, mirror-symmetric so both teams get the same ways:
+- **Sirocco**: a walled caravan town in the desert in the late afternoon. A domed market hall in the middle with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses you run through and flat roofs connected by a bridge over the street.
+- **Atrium**: an office building on a weekday evening, two floors around a glass-roofed lobby with a gallery. Open-plan offices with cubicles, a server room and a boardroom behind glass, storage, a canteen, loading yards with an outside stair, and a service alley and a forecourt as flanks.
+- **Dynamo**: a coal-fired power station at dusk. The turbine hall with two turbine sets as long cover, catwalks along its walls and a bridge across, the coal yard with a heap you can climb, the switchyard with its control house and transformers, and pipe yards with water tanks. The teams start north and south instead of west and east.
+- **Millrace**: a sawmill on a mill stream in a pine forest in the morning mist, built for Wingman. Point A is in the saw hall over the stream around the frame saw, with a loft above it, point B on the timber landing by the jetty under the crane walkway. Between them a footbridge and a weir, and the stream bed is the low way from one point to the other.
+- **Cornice**: the top station of a cable car and a mountain hut on a snowy saddle at sunset, built for Wingman. Point A is up on the gondola deck of the station, reached through the ski depot underneath or the outside stair; point B is in the hut's parlour around the tiled stove, with a terrace in front and a balcony above. The summit rock with its cross stands in the middle, and you can climb it from every side.
+- Bots now take stairs and climb ledges from both sides on every map, not only on the new ones.
+
+**Graphics: Toaster and Auto**
+- A new graphics level for very weak computers, **Toaster**: a smaller picture that dynamic resolution moves between 35 and 75 percent, simple bodies at almost any distance, no shadows and no extra lights, a sky without clouds, fewer particles and bullet holes, smaller weapon skins and a minimap that is drawn less often. Its target is a steady 30 to 45 frames instead of 60.
+- **Auto**, the new default, picks the level from the graphics chip when the game starts: Toaster without a usable chip or on very old ones, Niedrig on most Intel HD and UHD chips and older AMD ones, Mittel on everything else. With two processor cores or 2 GB of memory it goes one level lower. If the game still runs slowly with the smallest picture, it starts one level lower next time and says so. Hoch is only ever your own choice.
+- The settings show what Auto picked and on which chip, and a new level can be applied right away from the main menu.
+- The Windows version now also starts on a computer with no usable graphics chip at all: the processor draws the picture then, and Auto picks Toaster.
+
+### Changed
+
+Performance, measured against 0.5.0 in the same conditions:
+- Soldiers that are small on screen are drawn as a simple body: plain boxes and tubes in the colours of their uniform, one draw call instead of about eleven and a tenth of the triangles, with their gun in one piece as well. How small depends on the graphics level and the screen, and in a scope the magnified picture counts. On Mittel they switch somewhere between 13 and 20 meters, where you can't tell the two apart.
+- Up close, small parts like laces, webbing and rails are plain boxes now, the guns in other soldiers' hands are built lighter, and all the blob shadows under the soldiers are one draw call.
+- The gun in your hands has materials of its own, so the graphics card no longer has to switch a material between two scenes several times a frame. See-through things that are flat or glow (tracers, the shadows at the foot of walls, water) are drawn in one pass instead of two.
+- The HUD only writes to the page when a value changes, and checks who can be seen for the name tags a few times a second instead of every frame.
+- Less garbage for the memory cleanup every frame: the animation of the soldiers and the ragdolls reuse their scratch values.
+- Loading: the soldiers in one uniform share their geometry, the weapon skins are painted when a match needs them instead of at the start, and your own body and guns for the death camera are built while the match loads, not at your first death. In Warzone the finisher scenes are prepared while the plane flies.
+- Together, with a processor slowed to a quarter of its speed, Drydock now runs at 159 instead of 109 frames per second, and a frame takes 3.8 instead of 6.9 milliseconds of game code; at a sixth, at 147 instead of 75. Drawn by the processor alone (no graphics chip) on Mittel, 52 instead of 7 frames. Warzone runs at 144 instead of 118 frames and loads in 9.7 instead of 15.1 seconds, Drydock in 2.0 instead of 4.6.
+- Dynamic resolution has targets per graphics level and goes further down on the weak ones. On screens with display scaling above 100 percent, Mittel draws at most at 150 percent and Niedrig and Toaster at 100 percent, so a sharp laptop screen doesn't quietly cost twice the work.
+- Both computers need this version to play together: 0.5.0 and 0.6.0 don't mix, and the lobby says so.
+
+### Fixed
+
+- The hands of other soldiers now close round the grip and the handguard of every gun. Before, each hand sat a few centimeters below its grip, and on pistols the hands held the gun from underneath. On long guns the support shoulder comes forward a little when the handguard is just out of reach.
+- PoolDay printed a warning for a texture it doesn't have.
+
 ## [0.5.0] - 2026-11-02
 
 The Backrooms update: a new map, a Windows version, a browser version without a server, and smoother multiplayer. Nothing needs to be installed any more, Node.js included.

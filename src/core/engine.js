@@ -1,17 +1,47 @@
 import * as THREE from 'three';
 
 // Graphics presets. Everything expensive is tied to these so weak PCs stay smooth.
+// scale: share of the screen's pixels drawn (dynamic resolution moves it between minScale and maxScale)
+// dpr: at most this many pixels per CSS pixel (high-DPI laptops), lodPx: a body smaller than this on screen (pixels tall) is drawn simple
+// sky: 'flat' leaves out the clouds, hudHz: how often the minimap is drawn, skinRes: size of the painted weapon skins
+// fps: below the first the picture gets smaller, above the second bigger again (a weak PC trades smoothness for a clearer picture)
 export const QUALITY = {
-  low: { label: 'Niedrig', scale: 0.75, maxScale: 0.85, shadows: 0, aa: false, standard: false, particles: 0.5, decals: 60, viewDist: 140, anisotropy: 1, pipRes: 256 },
-  medium: { label: 'Mittel', scale: 1.0, maxScale: 1.0, shadows: 2048, aa: true, standard: true, particles: 0.8, decals: 120, viewDist: 220, anisotropy: 4, pipRes: 384 },
-  high: { label: 'Hoch', scale: 1.0, maxScale: 1.5, shadows: 4096, aa: true, standard: true, particles: 1.0, decals: 200, viewDist: 300, anisotropy: 8, pipRes: 512 },
+  toaster: { label: 'Toaster', scale: 0.6, minScale: 0.35, maxScale: 0.75, dpr: 1, shadows: 0, aa: false, standard: false, particles: 0.35, decals: 30, viewDist: 110, anisotropy: 1, pipRes: 192, lodPx: 300, sky: 'flat', hudHz: 12, skinRes: 192, fps: [30, 45] },
+  low: { label: 'Niedrig', scale: 0.75, minScale: 0.45, maxScale: 0.85, dpr: 1, shadows: 0, aa: false, standard: false, particles: 0.5, decals: 60, viewDist: 140, anisotropy: 1, pipRes: 256, lodPx: 130, sky: 'clouds', hudHz: 20, skinRes: 256, fps: [40, 62] },
+  medium: { label: 'Mittel', scale: 1.0, minScale: 0.5, maxScale: 1.0, dpr: 1.5, shadows: 2048, aa: true, standard: true, particles: 0.8, decals: 120, viewDist: 220, anisotropy: 4, pipRes: 384, lodPx: 75, sky: 'clouds', hudHz: 30, skinRes: 384, fps: [48, 75] },
+  high: { label: 'Hoch', scale: 1.0, minScale: 0.5, maxScale: 1.5, dpr: 2, shadows: 4096, aa: true, standard: true, particles: 1.0, decals: 200, viewDist: 300, anisotropy: 8, pipRes: 512, lodPx: 40, sky: 'clouds', hudHz: 30, skinRes: 384, fps: [48, 75] },
 };
+const ORDER = ['toaster', 'low', 'medium'];
+
+// 'Auto': a look at the graphics chip (and the processor) before the real picture is made, on a canvas of its own.
+// Never picks Hoch on its own: that one is the player's choice.
+export function detectQuality() {
+  let gpu = '', id = 'medium';
+  try {
+    const c = document.createElement('canvas'), gl = c.getContext('webgl2');
+    if (!gl) return { id: 'toaster', gpu: 'kein WebGL 2' };
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+  } catch (e) { return { id, gpu }; }
+  const g = gpu.replace(/\(R\)|\(TM\)|®|™/gi, ' ');
+  if (/swiftshader|llvmpipe|softpipe|basic render|software|gma|mali-[2-4]\d\d|powervr|intel\b[^,]*\bhd graphics(?!\s*\d)|hd graphics [23]\d{3}\b|hd graphics 4000\b/i.test(g)) id = 'toaster';
+  else if (/intel\b[^,]*\b(u?hd graphics)|radeon\s*(r[2-7]\b|hd\s*[2-8]\d{3})|vega\s*[3-8]\b|geforce\s*(mx\s*1\d\d|[89]\d\dm|gt\s*[67]\d\d)|adreno|mali/i.test(g)) id = 'low';
+  // two cores or a little memory: one step down
+  const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+  if ((cores <= 2 || mem <= 2) && id !== 'toaster') id = ORDER[ORDER.indexOf(id) - 1];
+  return { id, gpu };
+}
 
 export class Engine {
   constructor(container, settings) {
     this.settings = settings;
-    this.q = QUALITY[settings.quality] || QUALITY.medium;
+    this.auto = settings.quality === 'auto' || !QUALITY[settings.quality];
+    if (this.auto) { const d = detectQuality(); this.autoId = settings.autoDown && ORDER.indexOf(settings.autoDown) < ORDER.indexOf(d.id) ? settings.autoDown : d.id; this.gpu = d.gpu; }
+    this.qid = this.auto ? this.autoId : settings.quality;
+    this.q = QUALITY[this.qid];
     this.renderer = new THREE.WebGLRenderer({ antialias: this.q.aa, powerPreference: 'high-performance', stencil: false });
+    if (!this.gpu) { try { const gl = this.renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); this.gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''); } catch (e) { this.gpu = ''; } }
     const r = this.renderer;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NoToneMapping;
@@ -38,13 +68,13 @@ export class Engine {
   get maxAnisotropy() { return Math.min(this.q.anisotropy, this.renderer.capabilities.getMaxAnisotropy()); }
 
   setScale(s) {
-    this.scale = THREE.MathUtils.clamp(s, 0.5, this.q.maxScale);
+    this.scale = THREE.MathUtils.clamp(s, this.q.minScale, this.q.maxScale);
     this.resize();
   }
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, this.q.dpr);
     this.renderer.setPixelRatio(dpr * this.scale);
     this.renderer.setSize(w, h, true);
     this.aspect = w / h;
@@ -68,8 +98,12 @@ export class Engine {
     this.dynTimer = 0;
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
     const p80 = sorted[Math.floor(sorted.length * 0.8)];
-    if (p80 > 1 / 48 && this.scale > 0.5) this.setScale(this.scale - 0.1);
-    else if (p80 < 1 / 75 && this.scale < this.q.maxScale) this.setScale(this.scale + 0.05);
+    const [lo, hi] = this.q.fps;
+    if (p80 > 1 / lo && this.scale > this.q.minScale) this.setScale(this.scale - 0.1);
+    else if (p80 < 1 / hi && this.scale < this.q.maxScale) this.setScale(this.scale + 0.05);
+    // Auto, and still slow with the smallest picture: next time one step lower
+    this.slowT = p80 > 1 / 26 && this.scale <= this.q.minScale + 1e-3 ? (this.slowT || 0) + 1.5 : 0;
+    if (this.auto && this.slowT >= 15 && this.qid !== 'toaster' && this.onTooSlow) { this.slowT = -1e9; this.onTooSlow(ORDER[ORDER.indexOf(this.qid) - 1]); }
   }
 
   render(scene, vmScene, extraBefore) {

@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 
 // =============================================================================
-// Verlet ragdoll: 16 joint particles, stick constraints for every bone, cross
-// braces that keep the torso rigid, minimum-distance limits so knees/elbows
-// can't fold through the body, knee-direction correction and sphere collision
-// against the level. The skeleton's bones are re-oriented from the particles
-// every frame, so the skinned soldier follows the simulation.
+// Active ragdoll.
+// The body: Verlet particles at the joints. Pelvis and ribcage are rigid blocks (shape matching) that turn on
+// each other at the waist; arms, legs and the head hang on sticks. Joint limits (waist, neck, hips, knees,
+// elbows), the body itself and the level keep every part where a body can put it.
+// The muscles: for a moment after the hit the body still fights. It staggers a step or two to stay up, a hand
+// goes to the wound, the knees give, the arms reach for the ground it falls toward, the chin tucks when it goes
+// over backwards, and once it is down a leg draws up one last time. Then the muscles let go one after the
+// other and it lies still. The hit decides how it fights: a head shot drops it where it stands, a shotgun up
+// close throws it, a runner stumbles on and falls onto its hands.
+// The skeleton's bones are re-oriented from the particles every frame.
 // =============================================================================
+
+// The 16 joints the finisher physics shares (motion.js): their order, sticks and sizes stay as they are.
 const P = { pelvis: 0, chest: 1, neck: 2, head: 3, lHip: 4, rHip: 5, lKnee: 6, rKnee: 7, lFoot: 8, rFoot: 9, lSh: 10, rSh: 11, lElb: 12, rElb: 13, lHand: 14, rHand: 15 };
 export const STICKS = [
   [0, 1], [1, 2], [2, 3],
@@ -14,9 +21,105 @@ export const STICKS = [
   [4, 6], [6, 8], [5, 7], [7, 9], [10, 12], [12, 14], [11, 13], [13, 15],
 ];
 export const RADIUS = [0.14, 0.15, 0.08, 0.13, 0.09, 0.09, 0.07, 0.07, 0.07, 0.07, 0.08, 0.08, 0.06, 0.06, 0.06, 0.06];
-const INV_MASS = [0.6, 0.6, 1, 1, 0.9, 0.9, 1, 1, 1.2, 1.2, 1, 1, 1.2, 1.2, 1.4, 1.4];
-const DOWN = new THREE.Vector3(0, -1, 0);
-const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4();
+
+// Four more points of this ragdoll's own: the waist (where the ribcage turns on the pelvis), the sacrum, the pack
+// on the back and the front of the vest. They give both blocks depth, and the torso its real shape on the ground.
+const WAIST = 16, SACRUM = 17, BACK = 18, FRONT = 19, N = 20;
+const RAD = [0.14, 0.15, 0.08, 0.13, 0.09, 0.09, 0.075, 0.075, 0.085, 0.085, 0.085, 0.085, 0.06, 0.06, 0.06, 0.06, 0.1, 0.09, 0.11, 0.1];
+const MASS = [9, 10, 3, 5, 5, 5, 4, 4, 2.5, 2.5, 3.5, 3.5, 1.7, 1.7, 1, 1, 3, 3, 5, 4]; // kg, gear included
+const IW = MASS.map((m) => 1 / m);
+const PELVIS_BLOCK = [0, 4, 5, WAIST, SACRUM], RIB_BLOCK = [WAIST, 1, 2, 10, 11, BACK, FRONT];
+const TORSO = [0, 4, 5, WAIST, SACRUM, 1, 2, 10, 11, BACK, FRONT, 3]; // what the balance holds up
+const BLOCKS = [0, 4, 5, WAIST, SACRUM, 1, 2, 10, 11, BACK, FRONT];
+const CARRY = [1, 1, 1, 1, 1, 1, 0.5, 0.5, 0, 0, 1, 1, 0.6, 0.6, 0.6, 0.6, 1, 1, 1, 1]; // how much of each part's weight the legs carry while it stands
+const LINKS = [[4, 6], [6, 8], [5, 7], [7, 9], [10, 12], [12, 14], [11, 13], [13, 15], [2, 3]];
+// how close parts may come: hands and elbows to the body, knees and feet to each other, the head to the pelvis and the knees
+const NEAR = [
+  [14, 0, 0.17], [15, 0, 0.17], [14, 1, 0.18], [15, 1, 0.18], [14, FRONT, 0.15], [15, FRONT, 0.15], [14, BACK, 0.16], [15, BACK, 0.16],
+  [14, 3, 0.17], [15, 3, 0.17], [14, SACRUM, 0.14], [15, SACRUM, 0.14], [14, 15, 0.1], [14, 6, 0.12], [15, 7, 0.12], [14, 7, 0.12], [15, 6, 0.12],
+  [12, 1, 0.17], [13, 1, 0.17], [12, 0, 0.17], [13, 0, 0.17], [12, FRONT, 0.15], [13, FRONT, 0.15], [12, BACK, 0.16], [13, BACK, 0.16],
+  [6, 7, 0.14], [8, 9, 0.15], [6, 9, 0.13], [7, 8, 0.13], [6, 1, 0.21], [7, 1, 0.21], [6, FRONT, 0.18], [7, FRONT, 0.18],
+  [3, 0, 0.3], [3, 6, 0.19], [3, 7, 0.19],
+];
+// how far the joints go (radians), as [toward +x, toward -x, forward, back] in the joint's own frame
+const HIP_L = [0.35, 0.85, 2.05, 0.45], HIP_R = [0.85, 0.35, 2.05, 0.45]; // a leg goes far out, little across
+const NECK_LIM = [0.6, 0.6, 0.95, 0.7], WAIST_LIM = [0.55, 0.55, 1.0, 0.4], WAIST_TWIST = 0.6;
+const G = 11, DAMP = 0.997, JOINT_DAMP = 0.025, MU_S = 1.0, MU_K = 0.65;
+const UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0), ORIGIN = new THREE.Vector3(), ZERO = new THREE.Vector3();
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _q4 = new THREE.Quaternion(), _q5 = new THREE.Quaternion(), _m = new THREE.Matrix4();
+const _bv = new THREE.Vector3(), _bq = new THREE.Quaternion(), _hit = {};
+const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+
+// Keeps a direction u (unit, in a joint's own frame) inside an elliptic cone around +Y (ay = 1) or -Y (ay = -1).
+// lim: [toward +x, toward -x, forward (-z), back (+z)]. True when u had to be moved.
+function cone(u, ay, lim) {
+  const hl = Math.hypot(u.x, u.z);
+  if (hl < 1e-6) return false;
+  const th = Math.atan2(hl, u.y * ay), cx = u.x / hl, cz = u.z / hl;
+  const lx = cx >= 0 ? lim[0] : lim[1], lz = cz <= 0 ? lim[2] : lim[3];
+  const max = 1 / Math.sqrt((cx / lx) * (cx / lx) + (cz / lz) * (cz / lz));
+  if (th <= max) return false;
+  const s = Math.sin(max);
+  u.set(cx * s, Math.cos(max) * ay, cz * s);
+  return true;
+}
+
+// A group of particles that keeps its shape: each step it is fitted (centroid and turn) to where the particles
+// went, and they are put back in place. q is how the block is turned in the world, which is its bone's world rotation.
+class Block {
+  constructor(ids, bone, p) {
+    this.ids = ids;
+    this.m = ids.map((i) => MASS[i]);
+    this.M = this.m.reduce((s, m) => s + m, 0);
+    const loc = ids.map((i) => bone.worldToLocal(p[i].clone()));
+    this.c0 = new THREE.Vector3();
+    loc.forEach((l, k) => this.c0.addScaledVector(l, this.m[k] / this.M));
+    this.r = loc.map((l) => l.sub(this.c0));
+    this.q = bone.getWorldQuaternion(new THREE.Quaternion());
+    this.c = new THREE.Vector3();
+    this.match(p, 0);
+  }
+
+  // (the turn comes from the covariance of the block, found by Mueller et al.'s iteration from the last turn)
+  match(p, stiff = 1) {
+    const ids = this.ids, m = this.m, r = this.r, n = ids.length;
+    let cx = 0, cy = 0, cz = 0;
+    for (let k = 0; k < n; k++) { const q = p[ids[k]]; cx += q.x * m[k]; cy += q.y * m[k]; cz += q.z * m[k]; }
+    cx /= this.M; cy /= this.M; cz /= this.M;
+    let a0x = 0, a0y = 0, a0z = 0, a1x = 0, a1y = 0, a1z = 0, a2x = 0, a2y = 0, a2z = 0;
+    for (let k = 0; k < n; k++) {
+      const q = p[ids[k]], R = r[k], dx = (q.x - cx) * m[k], dy = (q.y - cy) * m[k], dz = (q.z - cz) * m[k];
+      a0x += dx * R.x; a0y += dy * R.x; a0z += dz * R.x;
+      a1x += dx * R.y; a1y += dy * R.y; a1z += dz * R.y;
+      a2x += dx * R.z; a2y += dy * R.z; a2z += dz * R.z;
+    }
+    const q = this.q;
+    for (let it = 0; it < 4; it++) {
+      const x = q.x, y = q.y, z = q.z, w = q.w;
+      const r0x = 1 - 2 * (y * y + z * z), r0y = 2 * (x * y + w * z), r0z = 2 * (x * z - w * y);
+      const r1x = 2 * (x * y - w * z), r1y = 1 - 2 * (x * x + z * z), r1z = 2 * (y * z + w * x);
+      const r2x = 2 * (x * z + w * y), r2y = 2 * (y * z - w * x), r2z = 1 - 2 * (x * x + y * y);
+      const den = Math.abs(r0x * a0x + r0y * a0y + r0z * a0z + r1x * a1x + r1y * a1y + r1z * a1z + r2x * a2x + r2y * a2y + r2z * a2z) + 1e-9;
+      const ox = (r0y * a0z - r0z * a0y + r1y * a1z - r1z * a1y + r2y * a2z - r2z * a2y) / den;
+      const oy = (r0z * a0x - r0x * a0z + r1z * a1x - r1x * a1z + r2z * a2x - r2x * a2z) / den;
+      const oz = (r0x * a0y - r0y * a0x + r1x * a1y - r1y * a1x + r2x * a2y - r2y * a2x) / den;
+      const ang = Math.sqrt(ox * ox + oy * oy + oz * oz);
+      if (ang < 1e-6) break;
+      _bq.setFromAxisAngle(_bv.set(ox / ang, oy / ang, oz / ang), ang);
+      q.premultiply(_bq).normalize();
+    }
+    this.c.set(cx, cy, cz);
+    if (stiff > 0) for (let k = 0; k < n; k++) {
+      const g = _bv.copy(r[k]).applyQuaternion(q), t = p[ids[k]];
+      t.x += (cx + g.x - t.x) * stiff; t.y += (cy + g.y - t.y) * stiff; t.z += (cz + g.z - t.z) * stiff;
+    }
+  }
+
+  // a point given in the bone's frame, where it is in the world now
+  toWorld(local, out) { return out.copy(local).sub(this.c0).applyQuaternion(this.q).add(this.c); }
+}
 
 export class Ragdoll {
   constructor(sol, col, opts = {}) {
@@ -24,113 +127,503 @@ export class Ragdoll {
     sol.root.updateMatrixWorld(true);
     const wp = (o, x = 0, y = 0, z = 0) => o.localToWorld(new THREE.Vector3(x, y, z));
     const L = sol.legs, A = sol.arms;
-    const pos = [
+    const p = this.p = [
       wp(sol.pelvis), wp(sol.chest), wp(sol.head), wp(sol.head, 0, 0.12, 0),
       wp(L[0].thigh), wp(L[1].thigh), wp(L[0].knee), wp(L[1].knee), wp(L[0].foot), wp(L[1].foot),
       wp(A[0].upper), wp(A[1].upper), wp(A[0].fore), wp(A[1].fore), wp(A[0].hand), wp(A[1].hand),
+      wp(sol.spine), wp(sol.pelvis, 0, 0, 0.1), wp(sol.chest, 0, 0.1, 0.13), wp(sol.chest, 0, 0.1, -0.08),
     ];
-    this.p = pos;
-    const dt = 1 / 60;
-    const v = opts.vel || new THREE.Vector3();
-    this.o = pos.map((p) => p.clone().addScaledVector(v, -dt * 0.8));
-    // bullet impulse on the body part that was hit
-    const imp = (i, s) => { this.o[i].addScaledVector(opts.dir, -s * dt); };
-    if (opts.dir) {
-      const s = opts.strength || 3;
-      const part = opts.part;
-      if (part === 'head') { imp(3, s * 1.4); imp(2, s * 0.8); imp(1, s * 0.3); }
-      else if (part === 'chest') { imp(1, s); imp(10, s * 0.7); imp(11, s * 0.7); imp(2, s * 0.6); }
-      else if (part === 'stomach') { imp(0, s); imp(1, s * 0.6); imp(4, s * 0.5); imp(5, s * 0.5); }
-      else {
-        // limb: nearest particle to the hit point
-        let best = 0, bd = Infinity;
-        if (opts.point) pos.forEach((p, i) => { const d = p.distanceToSquared(opts.point); if (d < bd) { bd = d; best = i; } });
-        imp(best, s * 1.2); imp(0, s * 0.4);
-      }
-      // everyone gets a bit so the whole body reacts
-      for (let i = 0; i < 16; i++) imp(i, s * 0.25);
+    this.h = 1 / 120; // the length of the last step
+    const v = opts.vel || ZERO;
+    this.o = p.map((q) => q.clone().addScaledVector(v, -this.h));
+    this.pb = new Block(PELVIS_BLOCK, sol.pelvis, p);
+    this.tb = new Block(RIB_BLOCK, sol.chest, p);
+    this.qP0 = this.pb.q.clone(); this.qT0 = this.tb.q.clone(); this.wP = new THREE.Vector3(); this.wT = new THREE.Vector3();
+    this.len = LINKS.map(([a, b]) => p[a].distanceTo(p[b]));
+    const leg = [this.len[0] + this.len[1], this.len[2] + this.len[3]], arm = [this.len[4] + this.len[5], this.len[6] + this.len[7]];
+    this.fold = [[4, 8, leg[0] * 0.28], [5, 9, leg[1] * 0.28], [10, 14, arm[0] * 0.26], [11, 15, arm[1] * 0.26]]; // knees and elbows fold only so far
+    this.acc = new Float32Array(N * 3); this.vel = new Float32Array(N * 3);
+    this.back1 = new Float32Array(N * 3); this.back2 = new Float32Array(N * 3); this.moved = 1;
+    this.touch = new Uint8Array(N); this.touched = new Uint8Array(N); this.lying = new Float32Array(N); // lying: contact, remembered for a few steps
+    // parts that start inside the level (boots sunk into the floor, a hand in a wall) grow into their full size instead of being shot out
+    this.rad = Float32Array.from(RAD);
+    for (let i = 0; i < N; i++) {
+      if (!col.pushOutSphere(_a.copy(p[i]), RAD[i])) continue;
+      this.rad[i] = Math.max(0.01, RAD[i] - _a.distanceTo(p[i]) - 0.003);
     }
-    // a little random twist so no two deaths look the same
-    for (const i of [10, 11, 14, 15]) this.o[i].add(new THREE.Vector3((Math.random() - 0.5) * 0.03, 0, (Math.random() - 0.5) * 0.03));
-    this.rest = STICKS.map(([a, b]) => pos[a].distanceTo(pos[b]));
-    const legLen = [pos[4].distanceTo(pos[6]) + pos[6].distanceTo(pos[8]), pos[5].distanceTo(pos[7]) + pos[7].distanceTo(pos[9])];
-    const armLen = [pos[10].distanceTo(pos[12]) + pos[12].distanceTo(pos[14]), pos[11].distanceTo(pos[13]) + pos[13].distanceTo(pos[15])];
-    this.minD = [
-      [4, 8, legLen[0] * 0.62], [5, 9, legLen[1] * 0.62], [10, 14, armLen[0] * 0.42], [11, 15, armLen[1] * 0.42],
-      [3, 0, pos[3].distanceTo(pos[0]) * 0.82], [6, 1, pos[6].distanceTo(pos[1]) * 0.55], [7, 1, pos[7].distanceTo(pos[1]) * 0.55],
-      [14, 0, 0.18], [15, 0, 0.18], [8, 9, 0.12], [6, 7, 0.14],
-    ];
-    this.t = 0; this.still = 0; this.asleep = false;
+    this.handT = [new THREE.Vector3(), new THREE.Vector3()]; this.handOm = [0, 0];
+    this.footT = [new THREE.Vector3(), new THREE.Vector3()]; this.footOm = [0, 0];
+    this.fall = new THREE.Vector3();
+    this.t = 0; this.still = 0; this.asleep = false; this.landT = -1; this.gave = false;
+    this.S = 0; this.tone = 0; this.headT = 0; this.neckOm = 0; this.waistFlex = 0; this.waistOm = 0;
+    this.plan = this.makePlan(sol, opts);
+    this.kick(opts);
     // the skeleton now lives in world space
     sol.root.position.set(0, 0, 0); sol.root.rotation.set(0, 0, 0); sol.root.updateMatrixWorld(true);
   }
 
-  step(h) {
-    const p = this.p, o = this.o, g = -11.5 * h * h;
-    for (let i = 0; i < 16; i++) {
-      const pi = p[i], oi = o[i];
-      const vx = (pi.x - oi.x) * 0.992, vy = (pi.y - oi.y) * 0.992, vz = (pi.z - oi.z) * 0.992;
-      oi.copy(pi);
-      pi.x += vx; pi.y += vy + g; pi.z += vz;
+  // How this body is going to fight, from what hit it and how it stood. (Called while the bones still stand as they died.)
+  makePlan(sol, opts) {
+    const p = this.p, s = opts.strength || 3, part = opts.part || 'chest', d = opts.dir || ZERO, v = opts.vel || ZERO, rnd = Math.random;
+    const fwd = _a.set(0, 0, -1).applyQuaternion(this.pb.q); fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const back = d.x * fwd.x + d.z * fwd.z > 0.45; // the bullet came from behind
+    // what it stands on
+    const g0 = this.groundAt(p[8]), g1 = this.groundAt(p[9]);
+    const gy = Math.max(g0 === null ? -1e9 : g0, g1 === null ? -1e9 : g1);
+    const grounded = gy > -1e8 && Math.min(p[8].y, p[9].y) - gy < 0.25;
+    this.gy = grounded ? gy : Math.min(p[8].y, p[9].y) - 0.1;
+    const standH = p[0].y - this.gy;
+    // a limb hit: which leg or arm is nearest to where the bullet went in (the even joints are the left side)
+    let near = -1;
+    if (part === 'limb' && opts.point) {
+      let bd = Infinity;
+      for (const i of [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) { const dd = p[i].distanceToSquared(opts.point); if (dd < bd) { bd = dd; near = i; } }
     }
-    for (let it = 0; it < 10; it++) {
-      for (let k = 0; k < STICKS.length; k++) {
-        const [a, b] = STICKS[k];
-        const pa = p[a], pb = p[b];
-        const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z;
-        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
-        const wa = INV_MASS[a], wb = INV_MASS[b];
-        const diff = (d - this.rest[k]) / (d * (wa + wb));
-        pa.x += dx * diff * wa; pa.y += dy * diff * wa; pa.z += dz * diff * wa;
-        pb.x -= dx * diff * wb; pb.y -= dy * diff * wb; pb.z -= dz * diff * wb;
-      }
-      for (const [a, b, min] of this.minD) {
-        const pa = p[a], pb = p[b];
-        const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z;
-        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
-        if (d >= min) continue;
-        const diff = (d - min) / (d * 2);
-        pa.x += dx * diff; pa.y += dy * diff; pa.z += dz * diff;
-        pb.x -= dx * diff; pb.y -= dy * diff; pb.z -= dz * diff;
-      }
-      // knees bend forward only (relative to the pelvis frame)
-      const fwd = this.torsoForward(_c);
-      for (const [h, k, f] of [[4, 6, 8], [5, 7, 9]]) {
-        _a.copy(p[h]).add(p[f]).multiplyScalar(0.5);
-        _b.copy(p[k]).sub(_a);
-        const dd = _b.dot(fwd);
-        if (dd < 0.02) p[k].addScaledVector(fwd, (0.02 - dd) * 0.5);
-      }
-      if (it % 3 === 2 || it === 9) for (let i = 0; i < 16; i++) {
-        if (this.col.pushOutSphere(p[i], RADIUS[i])) {
-          // ground friction: bleed tangential velocity
-          o[i].x += (p[i].x - o[i].x) * 0.35; o[i].z += (p[i].z - o[i].z) * 0.35;
-          if (o[i].y < p[i].y - 0.002) o[i].y = p[i].y - 0.002;
-        }
+    const legHit = near >= 4 && near <= 9 ? near % 2 : -1, armHit = near >= 10 ? near % 2 : -1;
+    const run = Math.hypot(v.x, v.z);
+    const kind = part === 'head' ? 'head' : s >= 5.6 ? 'blast' : !grounded || standH < 0.55 ? 'down' : run > 3.6 ? 'run' : legHit >= 0 ? 'leg' : back ? 'back' : 'torso';
+    //                 support  hold  fade  steps tone  relax lean
+    const K = {
+      torso: [1, 0.26, 0.24, 2, 0.95, 1.1, 0.07],
+      back: [0.9, 0.16, 0.22, 2, 0.9, 1.0, 0.2],
+      run: [0.85, 0.22, 0.22, 3, 0.9, 0.9, 0.3],
+      leg: [0.75, 0.1, 0.2, 0, 0.9, 1.0, 0.22],
+      head: [0, 0, 0, 0, 0.35, 0.22, 0],
+      blast: [0, 0, 0, 0, 0.35, 0.4, 0],
+      down: [0, 0, 0, 0, 0.75, 0.9, 0],
+    }[kind];
+    const pl = { kind, sup: K[0], hold: K[1] * (0.8 + rnd() * 0.5), fade: K[2], steps: K[3], tone: K[4], relax: K[5], lean: K[6], standH, legHit, armHit, clutch: -1 };
+    // which way it leans: with the hit; a runner with the run, a shot leg toward its side
+    pl.leanDir = new THREE.Vector3(d.x, 0, d.z);
+    if (kind === 'run') pl.leanDir.set(v.x, 0, v.z);
+    if (kind === 'leg') pl.leanDir.copy(right).multiplyScalar(legHit === 0 ? -1 : 1);
+    if (pl.leanDir.lengthSq() < 1e-6) pl.leanDir.copy(fwd).negate();
+    pl.leanDir.normalize();
+    // a hand goes to a wound in the chest or the belly, when it can reach it (not on the back)
+    if ((kind === 'torso' || kind === 'down' || kind === 'run') && (part === 'chest' || part === 'stomach') && opts.point) {
+      const w = (part === 'chest' ? sol.chest : sol.pelvis).worldToLocal(opts.point.clone());
+      if (w.z < 0.04) {
+        pl.clutch = Math.abs(w.x) < 0.04 ? (rnd() < 0.65 ? 1 : 0) : w.x > 0 ? 1 : 0;
+        pl.clutchBlock = part === 'chest' ? 1 : 0;
+        pl.clutchAt = part === 'chest' ? new THREE.Vector3(clamp(w.x, -0.15, 0.15), clamp(w.y, -0.04, 0.2), -0.25) : new THREE.Vector3(clamp(w.x, -0.13, 0.13), clamp(w.y, 0.02, 0.18), -0.19);
       }
     }
+    pl.writhe = kind !== 'head' && kind !== 'blast' && rnd() < 0.85;
+    pl.writheLeg = legHit >= 0 ? legHit : rnd() < 0.5 ? 0 : 1;
+    // the torso as it stood, seen from the pelvis: the shape the balance holds it in, upright and without the heading
+    const qi = _q.copy(this.pb.q).invert();
+    pl.shape = TORSO.map((i) => _b.subVectors(p[i], p[0]).applyQuaternion(qi).clone());
+    pl.tilt = new THREE.Quaternion().setFromAxisAngle(UP, -Math.atan2(-fwd.x, -fwd.z)).multiply(this.pb.q);
+    // the feet: on the ground they stand, a shot leg doesn't
+    this.feet = [0, 1].map((k) => ({ mode: grounded && pl.sup > 0 && k !== legHit ? 'stance' : 'free', plant: p[8 + k].clone(), from: new THREE.Vector3(), to: new THREE.Vector3(), t0: 0, dur: 0.2 }));
+    this.stepsLeft = pl.steps; this.stepEnd = -1;
+    return pl;
   }
 
-  torsoForward(out) {
-    const p = this.p;
-    _a.copy(p[5]).sub(p[4]);               // right
-    _b.copy(p[1]).sub(p[0]);               // up
-    return out.crossVectors(_b, _a).normalize(); // up x right = forward (-Z of the rig)
+  groundAt(pt, from = 0.3, len = 1.4) { const r = this.col.raycast(pt.x, pt.y + from, pt.z, 0, -1, 0, len, _hit); return r ? r.y : null; }
+
+  // The bullet: a kick to the part it hit, fading with the distance from where it went in, and a little for the whole body.
+  kick(opts) {
+    const d = opts.dir, p = this.p, o = this.o, h = this.h, pl = this.plan;
+    if (d) {
+      const s = opts.strength || 3, at = opts.point || p[opts.part === 'head' ? 3 : opts.part === 'stomach' ? 0 : 1];
+      for (let i = 0; i < N; i++) {
+        const w = Math.exp(-p[i].distanceToSquared(at) / 0.06);
+        o[i].addScaledVector(d, -s * (1.05 * w + 0.12) * (pl.kind === 'head' ? 0.6 : 1) * h);
+      }
+    }
+    // a little twist of the arms, so no two deaths look the same
+    for (const i of [10, 11, 14, 15]) o[i].add(_a.set((Math.random() - 0.5) * 0.9, 0, (Math.random() - 0.5) * 0.9).multiplyScalar(h));
+    const fwd = _a.set(0, 0, -1).applyQuaternion(this.pb.q);
+    if (pl.kind === 'head') this.give(1.25, 0.8); // the lights go out: the knees fold where it stands
+    if (pl.kind === 'blast') { for (let i = 0; i < N; i++) o[i].addScaledVector(d, -(opts.strength || 3) * 0.25 * h); this.give(0.9, 0.2); } // thrown off its feet
+    if (pl.legHit >= 0) o[6 + pl.legHit].addScaledVector(fwd, -1.2 * h); // the shot leg buckles
+  }
+
+  // the knees give: forward, and the hips drop
+  give(knee, hips) {
+    const fwd = _a.set(0, 0, -1).applyQuaternion(this.pb.q), h = this.h, o = this.o;
+    o[6].addScaledVector(fwd, -knee * h); o[7].addScaledVector(fwd, -knee * h);
+    for (const i of PELVIS_BLOCK) o[i].y += hips * h;
   }
 
   update(dt) {
     if (this.asleep) return;
-    this.t += dt;
-    const n = Math.min(4, Math.max(1, Math.ceil(dt / (1 / 90))));
-    for (let i = 0; i < n; i++) this.step(dt / n);
-    // sleep when settled
-    let e = 0;
-    for (let i = 0; i < 16; i++) e += this.p[i].distanceToSquared(this.o[i]);
-    if (e < 1e-6 * n) this.still += dt; else this.still = 0;
-    if (this.still > 0.4 || this.t > 6) this.asleep = true;
+    const n = Math.min(4, Math.max(1, Math.ceil(dt * Ragdoll.hz - 0.01))), h = dt / n;
+    for (let i = 0; i < n; i++) { this.t += h; this.step(h); }
+    if (!(this.p[0].x === this.p[0].x)) { this.asleep = true; return; } // (never happens; if it did, the last good pose stays)
+    // asleep once the muscles are gone and nothing moves any more
+    const calm = this.tone < 0.01 && this.landT >= 0 && this.moved < 0.06;
+    this.still = calm ? this.still + dt : 0;
+    if (this.still > 0.35 || this.t > 9) this.asleep = true;
     this.apply();
   }
 
+  step(h) {
+    const p = this.p, o = this.o, A = this.acc, V = this.vel, ih = 1 / this.h, r = clamp(h * ih, 0.5, 2);
+    for (let i = 0; i < N; i++) { V[i * 3] = (p[i].x - o[i].x) * ih; V[i * 3 + 1] = (p[i].y - o[i].y) * ih; V[i * 3 + 2] = (p[i].z - o[i].z) * ih; }
+    this.spin(this.pb.q, this.qP0, ih, this.wP); this.spin(this.tb.q, this.qT0, ih, this.wT);
+    this.touched.set(this.touch);
+    for (let i = 0; i < N; i++) this.lying[i] = this.touch[i] ? 1 : this.lying[i] * 0.85;
+    this.think();
+    A.fill(0);
+    for (let i = 0; i < N; i++) A[i * 3 + 1] = -G;
+    this.muscles();
+    const h2 = h * h;
+    let E0 = 1e-9;
+    // once it lies there without a will, what still moves slowly comes to rest (clothes, gear and the ground see to that)
+    const settle = this.landT >= 0 && this.tone < 0.05, slow = 0.3 * this.h * 0.3 * this.h;
+    for (let i = 0; i < N; i++) {
+      const pi = p[i], oi = o[i], k = r * (settle && pi.distanceToSquared(oi) < slow ? 0.96 : DAMP);
+      const vx = (pi.x - oi.x) * k + A[i * 3] * h2, vy = (pi.y - oi.y) * k + A[i * 3 + 1] * h2, vz = (pi.z - oi.z) * k + A[i * 3 + 2] * h2;
+      oi.copy(pi);
+      pi.x += vx; pi.y += vy; pi.z += vz;
+      E0 += MASS[i] * (vx * vx + vy * vy + vz * vz);
+    }
+    // the joints have friction: what swings at a joint slows down, the body as a whole doesn't (arms and legs don't swing on like pendulums)
+    for (let k = 0; k < LINKS.length; k++) {
+      const a = LINKS[k][0], b = LINKS[k][1], oa = o[a], ob = o[b], pa = p[a], pb = p[b], wa = IW[a], wb = IW[b], f = JOINT_DAMP / (wa + wb);
+      const dx = (pb.x - ob.x) - (pa.x - oa.x), dy = (pb.y - ob.y) - (pa.y - oa.y), dz = (pb.z - ob.z) - (pa.z - oa.z);
+      ob.x += dx * f * wb; ob.y += dy * f * wb; ob.z += dz * f * wb;
+      oa.x -= dx * f * wa; oa.y -= dy * f * wa; oa.z -= dz * f * wa;
+    }
+    this.h = h;
+    for (let i = 0; i < N; i++) if (this.rad[i] < RAD[i]) this.rad[i] = Math.min(RAD[i], this.rad[i] + 0.12 * h);
+    this.qP0.copy(this.pb.q); this.qT0.copy(this.tb.q);
+    this.touch.fill(0);
+    const n = Ragdoll.iter;
+    for (let k = 0; k < n; k++) {
+      this.links();
+      this.pb.match(p); this.tb.match(p);
+      this.waist(); this.neck(); this.hips(); this.hinges();
+      this.near();
+      if (k & 1 || k === n - 1) this.collide();
+    }
+    // how far anything got in two steps
+    let m = 0;
+    for (let i = 0; i < N; i++) {
+      const k = i * 3, B1 = this.back1, B2 = this.back2;
+      m = Math.max(m, Math.abs(p[i].x - B2[k]) + Math.abs(p[i].y - B2[k + 1]) + Math.abs(p[i].z - B2[k + 2]));
+      B2[k] = B1[k]; B2[k + 1] = B1[k + 1]; B2[k + 2] = B1[k + 2]; B1[k] = p[i].x; B1[k + 1] = p[i].y; B1[k + 2] = p[i].z;
+    }
+    this.moved = m / (2 * h);
+    // The limits only ever hold the body together; they don't give it speed. When parts fight each other (folded up on the
+    // ground, say) they would, a little every step, until the body jumps: whatever they added is taken back.
+    let E1 = 0;
+    for (let i = 0; i < N; i++) { const dx = p[i].x - o[i].x, dy = p[i].y - o[i].y, dz = p[i].z - o[i].z; E1 += MASS[i] * (dx * dx + dy * dy + dz * dz); }
+    if (E1 > E0) {
+      const f = Math.sqrt(E0 / E1);
+      for (let i = 0; i < N; i++) { const pi = p[i], oi = o[i]; oi.x = pi.x - (pi.x - oi.x) * f; oi.y = pi.y - (pi.y - oi.y) * f; oi.z = pi.z - (pi.z - oi.z) * f; }
+    }
+  }
+
+  // how fast a block turns (world, rad/s), from its turn now and one step ago
+  spin(q, q0, ih, out) {
+    const d = _q5.copy(q0).invert().premultiply(q);
+    const s = d.w < 0 ? -2 * ih : 2 * ih;
+    out.set(d.x * s, d.y * s, d.z * s);
+  }
+
+  // ---------------------------------------------------------------- the will: what the muscles want this step
+  think() {
+    const t = this.t, pl = this.plan, p = this.p, V = this.vel, pb = this.pb, tb = this.tb;
+    const end = pl.hold + pl.fade;
+    const S = this.S = t < pl.hold ? pl.sup : t < end ? pl.sup * (1 - smooth((t - pl.hold) / pl.fade)) : 0;
+    let tone = pl.tone * (1 - smooth((t - end) / pl.relax));
+    if (this.landT >= 0) tone *= 1 - smooth((t - this.landT - 0.5) / 0.9);
+    this.tone = tone;
+    // the knees give as the balance goes
+    if (!this.gave && pl.sup > 0 && S < pl.sup * 0.45) { this.gave = true; if (this.touched[8] || this.touched[9]) this.give(0.7, 0.35); }
+    // down on the ground
+    const T = this.touched;
+    if (this.landT < 0 && t > end + 0.05 && (T[0] || T[1] || T[BACK] || T[FRONT] || T[SACRUM] || T[WAIST])) this.landT = t;
+    if (S > 0.3 && this.stepsLeft > 0) this.stepping(t);
+    // falling: where to, and is that forward (or to the side) for the ribcage?
+    const falling = this.landT < 0 && S < 0.35 && t > 0.08;
+    let front = 0, fallOk = false;
+    const ft = _d.set(0, 0, -1).applyQuaternion(tb.q); ft.y = 0; ft.normalize();
+    if (falling) {
+      const fx = p[1].x - (p[8].x + p[9].x) * 0.5 + V[3] * 0.25, fz = p[1].z - (p[8].z + p[9].z) * 0.5 + V[5] * 0.25, fl = Math.hypot(fx, fz);
+      if (fl > 0.08) { this.fall.set(fx / fl, 0, fz / fl); fallOk = true; front = this.fall.dot(ft); }
+    }
+    const chestH = p[1].y - this.gy, ahead = fallOk && chestH > 0.3 && front > -0.35, over = fallOk && chestH > 0.3 && !ahead;
+    // the arms
+    const side = _e.set(1, 0, 0).applyQuaternion(tb.q); side.y = 0; side.normalize();
+    for (let k = 0; k < 2; k++) {
+      const s = k === 0 ? -1 : 1, H = this.handT[k];
+      let om = 0;
+      if (k === pl.armHit || tone < 0.02) om = 0; // a shot arm hangs
+      else if (falling && ahead) {
+        // forward or to the side: both hands go out to the ground ahead
+        // (once the hand is down, the arm holds, it doesn't push the body back up)
+        H.set(p[1].x + this.fall.x * 0.38 + side.x * s * 0.2, this.gy + 0.07, p[1].z + this.fall.z * 0.38 + side.z * s * 0.2); om = T[14 + k] ? 5 : 20;
+      } else if (falling && over && k !== pl.clutch) {
+        // over backwards: the free hand reaches back for the ground
+        H.set(p[1].x - ft.x * 0.3 + side.x * s * 0.32, this.gy + 0.1, p[1].z - ft.z * 0.3 + side.z * s * 0.32); om = 12;
+      } else if (k === pl.clutch && (this.landT < 0 || t < this.landT + 1.4)) {
+        // the hand on the wound
+        (pl.clutchBlock ? tb : pb).toWorld(pl.clutchAt, H); om = 20;
+      } else if (S > 0.2) {
+        // the other arm out, for balance
+        tb.toWorld(_b.set(s * 0.44, -0.28, -0.14), H); om = 10;
+      }
+      this.handOm[k] = om * tone;
+    }
+    // the head: looking at what hit it; then up when it falls forward, chin in when it goes over backwards
+    this.headT = falling && ahead ? 0.3 : falling && over ? -0.6 : -0.15;
+    this.neckOm = pl.kind === 'head' ? 0 : 22 * tone;
+    // the waist: a little curl round the wound (arched from a shot in the back), more of one as it falls; nothing once it is down
+    this.waistFlex = pl.kind === 'back' && S > 0.2 ? 0.15 : falling ? -0.3 : -0.12;
+    this.waistOm = this.landT < 0 ? 14 * tone : 0;
+    // the legs, once the balance is gone and while it falls: knees a little bent and together (not when a knee is already
+    // on the ground: that would stand it back up); then, on the ground, one draws up and goes down again
+    for (let k = 0; k < 2; k++) {
+      const s = k === 0 ? -1 : 1;
+      let om = S > 0.05 || k === pl.legHit || this.landT >= 0 || T[6] || T[7] ? 0 : 6 * tone;
+      _b.set(s * 0.13, -0.8, -0.1);
+      if (pl.writhe && this.landT >= 0 && k === pl.writheLeg) {
+        const u = (t - this.landT - 0.15) / 1.1;
+        if (u > 0 && u < 1) { const w = Math.sin(Math.PI * u); _b.lerp(_c.set(s * 0.12, -0.45, -0.38), w); om = 11 * Math.max(0.35, w) * pl.tone; }
+      }
+      pb.toWorld(_b, this.footT[k]);
+      this.footOm[k] = om;
+    }
+  }
+
+  // Staggering: when the body moves too far to stop over its feet, a foot steps to where it can (the capture point).
+  stepping(t) {
+    const p = this.p, V = this.vel, F = this.feet;
+    if (F[0].mode === 'swing' || F[1].mode === 'swing' || F[0].mode !== 'stance' || F[1].mode !== 'stance' || t < 0.06 || t - this.stepEnd < 0.05) return;
+    const T = Math.sqrt(Math.max(0.3, p[0].y - this.gy) / G) * 1.1;
+    const cx = p[0].x + V[0] * T, cz = p[0].z + V[2] * T;
+    const sx = (F[0].plant.x + F[1].plant.x) * 0.5, sz = (F[0].plant.z + F[1].plant.z) * 0.5;
+    if (Math.hypot(cx - sx, cz - sz) < 0.16) return;
+    // the foot farther from there steps, to its own side of the body, never across the other one, at most 60 cm
+    const k = Math.hypot(cx - F[0].plant.x, cz - F[0].plant.z) > Math.hypot(cx - F[1].plant.x, cz - F[1].plant.z) ? 0 : 1, s = k === 0 ? -1 : 1;
+    const right = _a.set(1, 0, 0).applyQuaternion(this.pb.q); right.y = 0; right.normalize();
+    let tx = cx + right.x * s * 0.11, tz = cz + right.z * s * 0.11;
+    const other = F[1 - k].plant, across = ((tx - other.x) * right.x + (tz - other.z) * right.z) * s;
+    if (across < 0.14) { tx += right.x * s * (0.14 - across); tz += right.z * s * (0.14 - across); }
+    const f = p[8 + k], dx = tx - f.x, dz = tz - f.z, dl = Math.hypot(dx, dz);
+    if (dl > 0.6) { tx = f.x + dx * 0.6 / dl; tz = f.z + dz * 0.6 / dl; }
+    const g = this.col.raycast(tx, p[0].y, tz, 0, -1, 0, 2.5, _hit);
+    const sw = F[k];
+    sw.mode = 'swing'; sw.t0 = t; sw.dur = 0.17 + Math.random() * 0.06;
+    sw.from.copy(f); sw.to.set(tx, (g ? g.y : f.y - 0.3) + RAD[8], tz);
+    this.stepsLeft--;
+  }
+
+  // ---------------------------------------------------------------- forces: weight, balance, muscles
+  muscles() {
+    const p = this.p, A = this.acc, V = this.vel, t = this.t, pl = this.plan, S = this.S, dmax = 0.9 / this.h;
+    if (S > 1e-3) {
+      const k = S * smooth((t - 0.03) / 0.12); // (the muscles answer the hit a moment late)
+      for (let i = 0; i < N; i++) A[i * 3 + 1] += G * k * CARRY[i];
+      if (k > 1e-3) {
+        // the torso held in its standing shape: upright or leaning, heading where it heads now, the pelvis at standing height
+        const f = _a.set(0, 0, -1).applyQuaternion(this.pb.q);
+        // (a runner and a body shot in the back pitch on forward, ever more)
+        const lean = pl.kind === 'run' ? pl.lean + 0.45 * smooth(t / 0.5) : pl.kind === 'back' ? pl.lean + 0.35 * smooth(t / 0.35) : pl.lean;
+        const Q = _q.setFromAxisAngle(UP, Math.atan2(-f.x, -f.z)).multiply(pl.tilt);
+        Q.premultiply(_q2.setFromAxisAngle(_b.crossVectors(UP, pl.leanDir).normalize(), lean));
+        const y = this.gy + pl.standH * (1 - 0.14 * smooth(t / Math.max(0.05, pl.hold + pl.fade)));
+        const om = 16, dm = Math.min(2 * 0.8 * om, dmax), brake = pl.kind === 'run' || pl.kind === 'back' ? 0.95 : 0.85, bx = V[0] * brake, bz = V[2] * brake;
+        for (let n = 0; n < TORSO.length; n++) {
+          const i = TORSO[n], T = _c.copy(pl.shape[n]).applyQuaternion(Q);
+          T.x += p[0].x; T.y += y; T.z += p[0].z;
+          A[i * 3] += k * (om * om * (T.x - p[i].x) - dm * (V[i * 3] - bx));
+          A[i * 3 + 1] += k * (om * om * (T.y - p[i].y) - dm * V[i * 3 + 1]);
+          A[i * 3 + 2] += k * (om * om * (T.z - p[i].z) - dm * (V[i * 3 + 2] - bz));
+        }
+      }
+      // the feet: a planted one stays, a stepping one swings to its spot
+      for (let j = 0; j < 2; j++) {
+        const F = this.feet[j], i = 8 + j;
+        if (F.mode === 'swing') {
+          const u = Math.min(1, (t - F.t0) / F.dur), e = smooth(u), om = 55, dm = Math.min(2 * 0.9 * om, dmax);
+          const tx = F.from.x + (F.to.x - F.from.x) * e, ty = F.from.y + (F.to.y - F.from.y) * e + 0.1 * Math.sin(Math.PI * u), tz = F.from.z + (F.to.z - F.from.z) * e;
+          A[i * 3] += S * (om * om * (tx - p[i].x) - dm * V[i * 3]);
+          A[i * 3 + 1] += S * (om * om * (ty - p[i].y) - dm * V[i * 3 + 1] + G);
+          A[i * 3 + 2] += S * (om * om * (tz - p[i].z) - dm * V[i * 3 + 2]);
+          if (u >= 1) { F.mode = 'stance'; F.plant.copy(F.to); this.stepEnd = t; }
+        } else if (F.mode === 'stance') {
+          const om = 30, dm = Math.min(2 * 0.9 * om, dmax);
+          A[i * 3] += S * (om * om * (F.plant.x - p[i].x) - dm * V[i * 3]);
+          A[i * 3 + 2] += S * (om * om * (F.plant.z - p[i].z) - dm * V[i * 3 + 2]);
+        }
+      }
+    }
+    if (this.tone > 0.005) {
+      if (this.neckOm > 0) {
+        const L = this.len[8];
+        this.pull(3, 2, _c.set(0, Math.cos(this.headT) * L, Math.sin(this.headT) * L).applyQuaternion(this.tb.q).add(p[2]), this.neckOm, 0.85);
+      }
+      if (this.waistOm > 0) this.waistMuscle(this.waistOm, 0.8);
+      for (let k = 0; k < 2; k++) if (this.handOm[k] > 0) this.pull(14 + k, 10 + k, this.handT[k], this.handOm[k], 0.9);
+    }
+    for (let k = 0; k < 2; k++) if (this.footOm[k] > 0) this.pull(8 + k, 4 + k, this.footT[k], this.footOm[k], 0.9);
+  }
+
+  // a muscle: i is pulled toward T (spring and damper, against j's motion), j takes the other end
+  pull(i, j, T, om, z) {
+    const A = this.acc, V = this.vel, p = this.p, dm = Math.min(2 * z * om, 0.9 / this.h);
+    let ax = om * om * (T.x - p[i].x) - dm * (V[i * 3] - V[j * 3]);
+    let ay = om * om * (T.y - p[i].y) - dm * (V[i * 3 + 1] - V[j * 3 + 1]);
+    let az = om * om * (T.z - p[i].z) - dm * (V[i * 3 + 2] - V[j * 3 + 2]);
+    const a = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (a > 160) { const f = 160 / a; ax *= f; ay *= f; az *= f; }
+    const wi = IW[i], wj = IW[j], f = 1 / (wi + wj);
+    A[i * 3] += ax * wi * f; A[i * 3 + 1] += ay * wi * f; A[i * 3 + 2] += az * wi * f;
+    A[j * 3] -= ax * wj * f; A[j * 3 + 1] -= ay * wj * f; A[j * 3 + 2] -= az * wj * f;
+  }
+
+  // the waist muscles: turn the ribcage on the pelvis toward a bend forward (waistFlex < 0) or back
+  waistMuscle(om, z) {
+    const p = this.p, A = this.acc, qP = this.pb.q;
+    const rel = _q.copy(qP).invert().multiply(this.tb.q).invert(); // (the other way round, see e)
+    const e = _q2.setFromAxisAngle(_a.set(1, 0, 0), this.waistFlex).multiply(rel); // want x rel^-1: what is left to turn, in the pelvis frame
+    if (e.w < 0) { e.x = -e.x; e.y = -e.y; e.z = -e.z; e.w = -e.w; }
+    const sn = Math.sqrt(Math.max(0, 1 - e.w * e.w)), ang = 2 * Math.acos(Math.min(1, e.w));
+    const phi = sn < 1e-6 ? _a.set(0, 0, 0) : _a.set(e.x / sn * ang, e.y / sn * ang, e.z / sn * ang).applyQuaternion(qP);
+    const dm = Math.min(2 * z * om, 0.9 / this.h);
+    const al = _b.set(om * om * phi.x - dm * (this.wT.x - this.wP.x), om * om * phi.y - dm * (this.wT.y - this.wP.y), om * om * phi.z - dm * (this.wT.z - this.wP.z));
+    const L = al.length();
+    if (L > 80) al.multiplyScalar(80 / L);
+    const W = p[WAIST];
+    for (const i of RIB_BLOCK) {
+      if (i === WAIST) continue;
+      _c.subVectors(p[i], W); _d.crossVectors(al, _c);
+      A[i * 3] += _d.x * 0.5; A[i * 3 + 1] += _d.y * 0.5; A[i * 3 + 2] += _d.z * 0.5;
+    }
+    for (const i of PELVIS_BLOCK) {
+      if (i === WAIST) continue;
+      _c.subVectors(p[i], W); _d.crossVectors(al, _c);
+      A[i * 3] -= _d.x * 0.5; A[i * 3 + 1] -= _d.y * 0.5; A[i * 3 + 2] -= _d.z * 0.5;
+    }
+  }
+
+  // ---------------------------------------------------------------- limits
+  links() {
+    const p = this.p;
+    for (let k = 0; k < LINKS.length; k++) {
+      const a = LINKS[k][0], b = LINKS[k][1], pa = p[a], pb = p[b];
+      const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+      const wa = IW[a], wb = IW[b], f = (d - this.len[k]) / (d * (wa + wb));
+      pa.x += dx * f * wa; pa.y += dy * f * wa; pa.z += dz * f * wa;
+      pb.x -= dx * f * wb; pb.y -= dy * f * wb; pb.z -= dz * f * wb;
+    }
+  }
+
+  // the waist bends forward far, back and to the sides a little, and twists a little; each block takes half of the correction
+  waist() {
+    const qP = this.pb.q, qT = this.tb.q;
+    const rel = _q.copy(qP).invert().multiply(qT);
+    const u = _a.copy(UP).applyQuaternion(rel);
+    let changed = cone(u, 1, WAIST_LIM);
+    const tw = Math.hypot(rel.y, rel.w);
+    let ang = tw > 1e-6 ? 2 * Math.atan2(rel.y / tw, rel.w / tw) : 0;
+    if (ang > Math.PI) ang -= 2 * Math.PI; else if (ang < -Math.PI) ang += 2 * Math.PI;
+    if (Math.abs(ang) > WAIST_TWIST) { ang = Math.sign(ang) * WAIST_TWIST; changed = true; }
+    if (!changed) return;
+    const want = _q2.setFromUnitVectors(UP, u).multiply(_q3.setFromAxisAngle(UP, ang));
+    const fix = _q4.copy(qP).multiply(want).multiply(_q3.copy(qT).invert()); // world: from the ribcage's turn to the allowed one
+    // what lies on the ground stays there and the other block turns (else the two would ratchet each other up off the floor)
+    const onP = this.lies(this.pb), onT = this.lies(this.tb), sT = onP === onT ? 0.5 : onP ? 1 : 0;
+    if (sT > 0) this.turn(this.tb, _q5.identity().slerp(fix, sT * 0.6));
+    if (sT < 1) this.turn(this.pb, _q5.identity().slerp(fix, (1 - sT) * 0.6).invert());
+  }
+
+  // (decided from the contacts of the last steps, not this one's: a block that lies on the ground lies there for the whole step)
+  lies(B) { for (const i of B.ids) if (i !== WAIST && this.lying[i] > 0.2) return true; return false; }
+
+  turn(B, R) {
+    const p = this.p, W = p[WAIST];
+    for (const i of B.ids) { if (i === WAIST) continue; _e.subVectors(p[i], W).applyQuaternion(R); p[i].addVectors(W, _e); }
+    B.q.premultiply(R);
+  }
+
+  neck() {
+    const p = this.p, q = this.tb.q;
+    const u = _a.subVectors(p[3], p[2]).applyQuaternion(_q.copy(q).invert()).normalize();
+    if (!cone(u, 1, NECK_LIM)) return;
+    u.applyQuaternion(q).multiplyScalar(this.len[8]).add(p[2]).sub(p[3]);
+    // (a head on the ground stays put and the neck gives, unless the ribcage lies there too)
+    const onH = this.lying[3] > 0.2, sH = onH === this.lies(this.tb) ? 0.85 : onH ? 0 : 1;
+    p[3].addScaledVector(u, sH * 0.6); p[2].addScaledVector(u, (sH - 1) * 0.6);
+  }
+
+  hips() {
+    const p = this.p, q = this.pb.q, qi = _q.copy(q).invert();
+    for (let j = 0; j < 2; j++) {
+      const h = 4 + j, k = 6 + j;
+      const u = _a.subVectors(p[k], p[h]).applyQuaternion(qi).normalize();
+      if (!cone(u, -1, j === 0 ? HIP_L : HIP_R)) continue;
+      u.applyQuaternion(q).multiplyScalar(this.len[j * 2]).add(p[h]).sub(p[k]);
+      const onK = this.lying[k] > 0.2, onP = this.lies(this.pb), sK = onK === onP ? IW[k] / (IW[k] + IW[h]) : onK ? 0 : 1;
+      p[k].addScaledVector(u, sK); p[h].addScaledVector(u, sK - 1);
+    }
+  }
+
+  // Knees and elbows are hinges, each in the frame of the bone above it (the pelvis' or the ribcage's frame, swung along with the
+  // thigh or the upper arm). The shin only swings back, and never quite in line, so the knee knows which way it bends; the forearm
+  // only swings forward (a little back is the upper arm's own turn).
+  hinges() {
+    this.hinge(this.pb.q, 4, 6, 8, -1, 0.06); this.hinge(this.pb.q, 5, 7, 9, -1, 0.06);
+    this.hinge(this.tb.q, 10, 12, 14, 1, -0.3); this.hinge(this.tb.q, 11, 13, 15, 1, -0.3);
+  }
+
+  // a: the upper joint, b: the hinge, c: the end. How far the lower bone goes along the upper one's forward (times sign, per length) is at least min.
+  hinge(q, a, b, c, sign, min) {
+    const p = this.p;
+    const u = _a.subVectors(p[b], p[a]).normalize();
+    const F = _b.set(0, 0, -1).applyQuaternion(_q.setFromUnitVectors(_c.copy(DOWN).applyQuaternion(q), u).multiply(q));
+    const l = _c.subVectors(p[c], p[b]), L = l.length() || 1e-6, x = sign * l.dot(F) / L;
+    if (x >= min) return;
+    const e = (min - x) * L * sign;
+    p[c].addScaledVector(F, e * 0.6); p[b].addScaledVector(F, -e * 0.4);
+  }
+
+  near() {
+    const p = this.p;
+    for (let l = 0; l < 2; l++) {
+      const L = l === 0 ? NEAR : this.fold;
+      for (let k = 0; k < L.length; k++) {
+        const a = L[k][0], b = L[k][1], min = L[k][2], pa = p[a], pb = p[b];
+        const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z, d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= min * min) continue;
+        const d = Math.sqrt(d2) || 1e-6, wa = IW[a], wb = IW[b], f = (d - min) / (d * (wa + wb));
+        pa.x += dx * f * wa; pa.y += dy * f * wa; pa.z += dz * f * wa;
+        pb.x -= dx * f * wb; pb.y -= dy * f * wb; pb.z -= dz * f * wb;
+      }
+    }
+  }
+
+  // the level: out of every wall and floor, and friction - what slides along a surface is held by as much as it was pressed into it
+  collide() {
+    const p = this.p, o = this.o, col = this.col;
+    for (let i = 0; i < N; i++) {
+      const q = p[i], x = q.x, y = q.y, z = q.z;
+      if (!col.pushOutSphere(q, this.rad[i])) continue;
+      this.touch[i] = 1;
+      let nx = q.x - x, ny = q.y - y, nz = q.z - z;
+      const dep = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (dep < 1e-7) continue;
+      nx /= dep; ny /= dep; nz /= dep;
+      const oi = o[i], vx = q.x - oi.x, vy = q.y - oi.y, vz = q.z - oi.z, vn = vx * nx + vy * ny + vz * nz;
+      // no bounce: whatever the push out gave it along the normal (a foot a little in the floor as it died), it doesn't keep
+      const vmax = 0.25 * this.h;
+      if (vn > vmax) { oi.x += nx * (vn - vmax); oi.y += ny * (vn - vmax); oi.z += nz * (vn - vmax); }
+      const tx = vx - vn * nx, ty = vy - vn * ny, tz = vz - vn * nz, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tl < 1e-9) continue;
+      const f = tl <= MU_S * dep ? 1 : MU_K * dep / tl;
+      oi.x += tx * f; oi.y += ty * f; oi.z += tz * f;
+    }
+  }
+
+  // ---------------------------------------------------------------- the skeleton from the particles
   // frame (rotation) from a right vector and an up vector: rig space is +X right, +Y up, +Z back
   frame(right, up, out) {
     const y = _a.copy(up).normalize();
@@ -140,50 +633,54 @@ export class Ragdoll {
     return out.setFromRotationMatrix(_m);
   }
 
-  limb(bone, parentWorld, dir) {
-    const restDir = new THREE.Vector3().copy(DOWN).applyQuaternion(parentWorld);
-    const qWorld = new THREE.Quaternion().setFromUnitVectors(restDir, dir.clone().normalize()).multiply(parentWorld);
-    bone.quaternion.copy(parentWorld).invert().multiply(qWorld);
-    return qWorld;
+  // dir gets normalized in place; the bone's world rotation goes into out
+  limb(bone, parentWorld, dir, out) {
+    const restDir = _a.copy(DOWN).applyQuaternion(parentWorld);
+    out.setFromUnitVectors(restDir, dir.normalize()).multiply(parentWorld);
+    bone.quaternion.copy(parentWorld).invert().multiply(out);
+    return out;
   }
 
+  // (every frame for every body on the ground: scratch of its own, nothing new for the garbage collector)
   apply() {
-    const s = this.sol, p = this.p;
-    const right = new THREE.Vector3().subVectors(p[5], p[4]);
-    const up = new THREE.Vector3().subVectors(p[1], p[0]);
-    const qPelvis = this.frame(right, up, new THREE.Quaternion());
-    // pelvis is the root bone: world == local (root is identity while ragdolling)
-    s.pelvis.position.copy(p[0]);
-    s.pelvis.quaternion.copy(qPelvis);
-    // spine bends toward the chest particle, chest frames from the shoulders
-    s.spine.quaternion.identity();
-    const qSpine = qPelvis.clone();
-    const shR = new THREE.Vector3().subVectors(p[11], p[10]);
-    const chestUp = new THREE.Vector3().subVectors(p[2], p[1]);
-    const qChestW = this.frame(shR, chestUp, new THREE.Quaternion());
-    s.chest.quaternion.copy(qSpine).invert().multiply(qChestW);
-    const headUp = new THREE.Vector3().subVectors(p[3], p[2]);
-    const qHeadW = this.frame(shR, headUp, new THREE.Quaternion());
-    s.head.quaternion.copy(qChestW).invert().multiply(qHeadW);
-    // legs
+    const s = this.sol, p = this.p, qP = this.pb.q, qT = this.tb.q;
+    const V = this.sv || (this.sv = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
+    const Q = this.sq || (this.sq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()]);
+    // pelvis: the root bone, world == local while ragdolling
+    this.pb.toWorld(ORIGIN, s.pelvis.position);
+    s.pelvis.quaternion.copy(qP);
+    // the spine runs from the waist to the ribcage and takes the bend; the ribcage keeps the twist
+    const chestAt = this.tb.toWorld(ORIGIN, V[0]);
+    const spineW = Q[0].setFromUnitVectors(V[1].copy(UP).applyQuaternion(qP), V[2].subVectors(chestAt, p[WAIST]).normalize()).multiply(qP);
+    s.spine.quaternion.copy(qP).invert().multiply(spineW);
+    s.chest.quaternion.copy(spineW).invert().multiply(qT);
+    // the head: up along the neck, its right the ribcage's right
+    const qH = this.frame(V[1].set(1, 0, 0).applyQuaternion(qT), V[2].subVectors(p[3], p[2]), Q[1]);
+    s.head.quaternion.copy(qT).invert().multiply(qH);
+    // legs; the ankles go slack with the muscles (toes point, feet fall outward)
+    const slack = 1 - Math.min(1, this.tone * 1.2 + this.S);
     for (let i = 0; i < 2; i++) {
-      const L = s.legs[i], h = 4 + i, k = 6 + i, f = 8 + i;
-      const qT = this.limb(L.thigh, qPelvis, new THREE.Vector3().subVectors(p[k], p[h]));
-      const qK = this.limb(L.knee, qT, new THREE.Vector3().subVectors(p[f], p[k]));
-      L.foot.quaternion.identity();
-      void qK;
+      const L = s.legs[i];
+      const qTh = this.limb(L.thigh, qP, V[3].subVectors(p[6 + i], p[4 + i]), Q[2]);
+      this.limb(L.knee, qTh, V[3].subVectors(p[8 + i], p[6 + i]), Q[3]);
+      L.foot.rotation.set(-0.55 * slack, -L.s * 0.3 * slack, 0);
     }
-    // arms (shoulder group has identity local rotation in the chest frame)
+    // arms (the shoulder group sits unturned in the chest frame)
     for (let i = 0; i < 2; i++) {
-      const a = s.arms[i], sh = 10 + i, el = 12 + i, ha = 14 + i;
+      const a = s.arms[i];
       a.shoulder.quaternion.identity();
-      const qU = this.limb(a.upper, qChestW, new THREE.Vector3().subVectors(p[el], p[sh]));
+      const qU = this.limb(a.upper, qT, V[3].subVectors(p[12 + i], p[10 + i]), Q[2]);
       a.elbow.quaternion.identity();
-      this.limb(a.fore, qU, new THREE.Vector3().subVectors(p[ha], p[el]));
+      this.limb(a.fore, qU, V[3].subVectors(p[14 + i], p[12 + i]), Q[3]);
     }
   }
 
   get center() { return this.p[0]; }
 }
+
+// steps per second and solver rounds; a toaster gets fewer (see ragdollDetail)
+Ragdoll.hz = 90;
+Ragdoll.iter = 8;
+export function ragdollDetail(lite) { Ragdoll.hz = lite ? 60 : 90; Ragdoll.iter = lite ? 5 : 8; }
 
 export { P as RAGDOLL_POINTS };

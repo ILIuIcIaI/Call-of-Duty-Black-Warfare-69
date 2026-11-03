@@ -8,12 +8,13 @@ const HEIGHT = 1.8;   // standing clearance
 const STEP = 0.46;
 
 export class NavGraph {
-  constructor(col, bounds, climb = 1.3, topY = 25) {
+  constructor(col, bounds, climb = 1.3, topY = 25, hub = null) {
     this.col = col;
     this.b = bounds;
     this.cs = 1.0;
-    this.climb = climb; // how high a ledge bots still climb
+    this.climb = climb; // how high a ledge bots still climb (from either side)
     this.topY = topY;   // nothing above this is ground
+    this.hub = hub;     // a point on the main floor (a spawn): what isn't connected to it gets pruned
   }
 
   build() {
@@ -34,13 +35,15 @@ export class NavGraph {
           if (B[i] <= x && B[i + 3] >= x && B[i + 2] <= z && B[i + 5] >= z) tops.push(B[i + 4]);
         }
         tops.sort((p, q) => p - q);
-        let last = -99;
         const list = [];
-        for (const top of tops) {
-          if (top - last < 0.2) continue;
-          last = top;
+        for (let q = 0; q < tops.length; q++) {
+          const top = tops[q];
+          if (q + 1 < tops.length && tops[q + 1] - top < 0.2) continue; // of surfaces this close only the upper one counts
           if (top > this.topY) continue;
-          if (col.overlaps(x - R, top + 0.02, z - R, x + R, top + HEIGHT, z + R)) continue;
+          // the hull only has to be free from a step up, so it can stand on a stair whose next step rises inside it
+          // (else a flight of stairs has no nodes); the point itself must be free, or a bench as low as a step has one
+          if (col.overlaps(x - R, top + STEP, z - R, x + R, top + HEIGHT, z + R)) continue;
+          if (col.overlaps(x - 0.002, top + 0.02, z - 0.002, x + 0.002, top + HEIGHT, z + 0.002)) continue;
           list.push(X.length);
           X.push(x); Y.push(top); Z.push(z);
         }
@@ -61,27 +64,65 @@ export class NavGraph {
         for (const a of list) for (const c of other) this.tryLink(a, c, dx !== 0 && dz !== 0, gx, gz, dx, dz);
       }
     }
-    // spatial structures for nearest-node queries
+    if (this.hub) this.prune();
     return this;
+  }
+
+  // a closed room or a roof nobody can walk to or get down from doesn't exist for bots: nobody spawns,
+  // takes cover or roams there (as on the island)
+  prune() {
+    const N = this.n, links = this.links, back = Array.from({ length: N }, () => []);
+    for (let i = 0; i < N; i++) for (const l of links[i]) back[l.to].push(i);
+    const start = this.nearest(this.hub[0], this.hub[1], this.hub[2], 3), keep = new Uint8Array(N);
+    if (start < 0) return;
+    for (const [bit, next] of [[1, (i) => links[i].map((l) => l.to)], [2, (i) => back[i]]]) {
+      const st = [start]; keep[start] |= bit;
+      while (st.length) for (const to of next(st.pop())) if (!(keep[to] & bit)) { keep[to] |= bit; st.push(to); }
+    }
+    for (const [key, list] of this.cells) {
+      const left = list.filter((i) => keep[i]);
+      if (left.length) this.cells.set(key, left); else this.cells.delete(key);
+    }
+    for (let i = 0; i < N; i++) if (!keep[i]) links[i] = [];
+    for (let i = 0; i < N; i++) if (keep[i]) links[i] = links[i].filter((l) => keep[l.to]);
+    this.pruned = keep;
   }
 
   tryLink(a, c, diag, gx, gz, dx, dz) {
     const dy = this.Y[c] - this.Y[a];
     if (diag) {
-      // no corner cutting: both orthogonal cells must have a node at a similar height
+      // no corner cutting: both orthogonal cells must have a node at a similar height (see cornerClear for the exception)
       const o1 = this.nodeNearHeight(gx + dx, gz, this.Y[a], 0.6), o2 = this.nodeNearHeight(gx, gz + dz, this.Y[a], 0.6);
-      if (o1 < 0 || o2 < 0) return;
+      if ((o1 < 0 || o2 < 0) && !(Math.abs(dy) <= 0.95 && this.cornerClear(a, c, gx, gz, dx, dz))) return;
     }
     const d = Math.hypot(this.X[c] - this.X[a], dy, this.Z[c] - this.Z[a]);
     if (Math.abs(dy) <= 0.95) {
       if (this.walkable(a, c)) { this.link(a, c, d, 0); this.link(c, a, d, 0); }
-      else if (dy > 0.5 && dy <= 1.3 && this.clearAbove(a, c)) { this.link(a, c, d + 2, 2); this.link(c, a, d + 0.5, 1); }
+      else if (Math.abs(dy) > 0.5) {
+        const lo = dy > 0 ? a : c, hi = dy > 0 ? c : a;
+        if (this.clearAbove(lo, hi)) { this.link(lo, hi, d + 2, 2); this.link(hi, lo, d + 0.5, 1); }
+      }
       return;
     }
     // drops (one-way) and jump-ups onto crates (mantle)
-    if (dy < -0.95 && dy >= -4.2 && this.clearAbove(c, a)) this.link(a, c, d + 1, 1);
-    else if (dy > 0.95 && dy <= this.climb && this.clearAbove(a, c)) { this.link(a, c, d + 2.5, 2); this.link(c, a, d + 0.5, 1); }
-    else if (dy < -0.95 && dy >= -1.3) { /* handled from the other side */ }
+    if (dy < -0.95 && dy >= -4.2 && this.dropClear(a, c)) {
+      this.link(a, c, d + 1, 1);
+      // (the loop meets every pair once, from either cell: when it starts on the upper one, the way up is offered here)
+      if (dy >= -this.climb) this.link(c, a, d + 2.5, 2);
+    }
+    else if (dy > 0.95 && dy <= this.climb && this.dropClear(c, a)) { this.link(a, c, d + 2.5, 2); this.link(c, a, d + 0.5, 1); }
+  }
+
+  // a diagonal past a corner cell without a node is fine where an obstacle only took that node (a door half a cell
+  // off the grid, a crate in front of it): floor in both corner cells (no hole, no ledge), and the hull clears the
+  // corner all the way
+  cornerClear(a, c, gx, gz, dx, dz) {
+    const y = this.Y[a];
+    for (const [cx, cz] of [[gx + dx, gz], [gx, gz + dz]]) {
+      const f = this.col.floorBelow(this.ox + cx + 0.5, this.oz + cz + 0.5, 0.1, y + STEP, y - STEP);
+      if (!isFinite(f) || Math.abs(f - y) > STEP) return false;
+    }
+    return this.walkableXYZ(this.X[a], y, this.Z[a], this.X[c], this.Y[c], this.Z[c], 0.1);
   }
 
   link(a, c, cost, type) {
@@ -98,17 +139,17 @@ export class NavGraph {
   }
 
   // ground-continuous straight walk between two points (step-height tolerant)
-  walkableXYZ(ax, ay, az, bx, by, bz) {
+  walkableXYZ(ax, ay, az, bx, by, bz, step = 0.3) {
     const col = this.col;
     const dist = Math.hypot(bx - ax, bz - az);
-    const n = Math.max(2, Math.ceil(dist / 0.3));
+    const n = Math.max(2, Math.ceil(dist / step));
     let prevY = ay;
     for (let i = 1; i <= n; i++) {
       const t = i / n;
       const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
       const f = col.floorBelow(x, z, 0.1, prevY + STEP + 0.02, prevY - STEP - 0.05);
       if (!isFinite(f) || Math.abs(f - prevY) > STEP + 0.02) return false;
-      if (col.overlaps(x - R + 0.04, f + 0.05, z - R + 0.04, x + R - 0.04, f + HEIGHT, z + R - 0.04)) return false;
+      if (col.overlaps(x - R + 0.04, f + STEP, z - R + 0.04, x + R - 0.04, f + HEIGHT, z + R - 0.04)) return false;
       prevY = f;
     }
     return Math.abs(prevY - by) < STEP + 0.05;
@@ -121,6 +162,12 @@ export class NavGraph {
     const x = (this.X[lo] + this.X[hi]) / 2, z = (this.Z[lo] + this.Z[hi]) / 2;
     const top = Math.max(this.Y[lo], this.Y[hi]);
     return !col.overlaps(x - 0.2, top + 0.05, z - 0.2, x + 0.2, top + HEIGHT, z + 0.2);
+  }
+
+  // ...and a drop has to land on the lower node: nothing over it (a balcony slab, a roof) up to head height up top
+  dropClear(hi, lo) {
+    const X = this.X, Z = this.Z;
+    return this.clearAbove(lo, hi) && !this.col.overlaps(X[lo] - 0.2, this.Y[lo] + 0.05, Z[lo] - 0.2, X[lo] + 0.2, this.Y[hi] + HEIGHT, Z[lo] + 0.2);
   }
 
   nearest(x, y, z, maxDy = 2.5) {
@@ -214,6 +261,13 @@ export class NavGraph {
   linkType(a, b) {
     for (const l of this.links[a]) if (l.to === b) return l.type;
     return 0;
+  }
+
+  // which waypoint a bot heads for first: straight on to the second, unless from where it really stands (up to
+  // half a cell off its start node) a corner is in the way, then via the first
+  firstWaypoint(pos, way) {
+    const w = way[1];
+    return w && this.walkableXYZ(pos.x, pos.y, pos.z, w.x, w.y, w.z) ? 1 : 0;
   }
 
   // path of node ids -> smoothed waypoints [{x,y,z,type}]

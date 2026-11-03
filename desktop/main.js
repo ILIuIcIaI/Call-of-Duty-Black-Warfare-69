@@ -9,7 +9,11 @@ const path = require('path');
 
 // laptops with two graphics chips: the strong one, and no browser brakes on a game
 app.commandLine.appendSwitch('force_high_performance_gpu');
+// old graphics chips that Chromium would rather not use for 3D: used anyway (that is what makes a weak PC playable)
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// and with no usable graphics chip at all, the processor draws the picture instead of the game not starting
+// (slow, so Auto picks Toaster then; the window only ever shows the game's own page, see will-navigate below)
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');

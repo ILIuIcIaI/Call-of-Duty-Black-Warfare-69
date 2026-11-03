@@ -24,7 +24,7 @@ export const randomSkin = () => SKIN_IDS[(Math.random() * SKIN_IDS.length) | 0];
 const BODY = ['metal', 'poly', 'tan', 'od', 'grey', 'wood', 'rubber'];
 
 // ---------------------------------------------------------------- seamless noise
-const S = 384;
+let S = 384; // texture size; smaller on the weak presets, see setSkinDetail
 const mix = (a, b, t) => a + (b - a) * t;
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rngOf = (seed) => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
@@ -215,16 +215,34 @@ function build(id) {
   return set;
 }
 
+// The same skin for another set of plain materials (the gun in your hands has its own, see weaponMaterials):
+// materials of its own on the same pictures, and whatever glows on the first glows on these too.
+const owner = new Map(), forBase = new WeakMap();
+function twin(set) {
+  const copy = new Map(), out = {};
+  for (const k of Object.keys(set)) { const m = set[k]; if (!copy.has(m)) copy.set(m, m.clone()); out[k] = copy.get(m); }
+  for (const a of [...animated]) if (a.mat && copy.has(a.mat)) animated.push({ ...a, mat: copy.get(a.mat) });
+  return out;
+}
+
 // Everything a gun is made of, with the skin's parts in place of the plain ones
 export function skinMaterials(base, id) {
   if (!id || id === 'standard' || !SKINS[id]) return base;
   let set = built.get(id);
-  if (!set) { set = build(id); built.set(id, set); }
+  if (!set) { set = build(id); built.set(id, set); owner.set(id, base); }
+  if (owner.get(id) !== base) {
+    let mine = forBase.get(base);
+    if (!mine) forBase.set(base, (mine = new Map()));
+    if (!mine.has(id)) mine.set(id, twin(set));
+    set = mine.get(id);
+  }
   return { ...base, ...set };
 }
 
-// a moment at the start instead of a hitch in the middle of a fight
+// a moment while the match loads instead of a hitch in the middle of a fight
 export function prewarmSkins(base) { for (const id of SKIN_IDS) skinMaterials(base, id); }
+// how fine the skins are painted (pixels per side): before the first one is painted
+export function setSkinDetail(size) { S = size; }
 
 // The shaders of the skins, made while the match is still loading, not at the first shot with one of them
 export function warmSkinPrograms(renderer, camera, targets, base) {
@@ -243,10 +261,10 @@ export function tickSkins(t) {
 
 // ---------------------------------------------------------------- a gun in its skin
 // A skin changes what a gun is painted with and nothing else: the model stays, so changing it costs nothing.
-const firstMat = new WeakMap(), roleOf = new Map();
+const firstMat = new WeakMap(), roleOf = new Map(), known = new WeakSet();
 export function applySkin(w, id, base, { cracks = false } = {}) {
   const skin = id && SKINS[id] ? id : 'standard', mats = skinMaterials(base, skin), mag = w.parts && w.parts.mag;
-  if (!roleOf.size) for (const k of Object.keys(base)) roleOf.set(base[k], k);
+  if (!known.has(base)) { known.add(base); for (const k of Object.keys(base)) roleOf.set(base[k], k); }
   const paint = (root, inMag) => root.traverse((o) => {
     if (!o.isMesh) return;
     if (!firstMat.has(o)) firstMat.set(o, o.material);

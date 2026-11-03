@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Engine } from './core/engine.js';
+import { Engine, QUALITY } from './core/engine.js';
 import { Input } from './core/input.js';
 import { Events } from './core/events.js';
 import { Audio } from './core/audio.js';
@@ -15,8 +15,9 @@ import { HUD } from './ui/hud.js';
 import { PlayerWeapons } from './weapons/playerWeapons.js';
 import { damageAt, GUN_TIERS, WEAPONS } from './weapons/defs.js';
 import { weaponMaterials } from './weapons/models.js';
-import { prewarmSkins, tickSkins, warmSkinPrograms } from './weapons/skins.js';
+import { prewarmSkins, setSkinDetail, skinMaterials, tickSkins, warmSkinPrograms } from './weapons/skins.js';
 import { Soldier, OUTFITS } from './characters/soldier.js';
+import { ragdollDetail } from './characters/ragdoll.js';
 import { Menu } from './ui/menu.js';
 import { NavGraph } from './bots/nav.js';
 import { IslandNav } from './bots/islandNav.js';
@@ -153,10 +154,14 @@ export class Game {
     const msg = document.getElementById('load-msg'), fill = document.getElementById('load-fill');
     this.tex = new TextureLib(this.engine);
     await this.tex.generateAll((p, name) => { fill.style.width = (p * 100).toFixed(0) + '%'; msg.textContent = 'Generiere Texturen: ' + name; });
-    msg.textContent = 'Generiere Texturen: Waffen-Skins';
-    await new Promise((r) => setTimeout(r, 0));
-    prewarmSkins(weaponMaterials(this.tex));
+    setSkinDetail(this.engine.q.skinRes); // (the skins themselves are painted when a match needs them, see startMatch)
+    ragdollDetail(this.engine.qid === 'toaster');
     this.hud = new HUD(this);
+    // Auto, and too slow even with the smallest picture: one step lower from the next start on
+    this.engine.onTooSlow = (id) => {
+      this.settings.autoDown = id; this.saveSettings();
+      this.hud.message(`<span style="font-size:19px">Das Spiel läuft hier langsam: ab dem nächsten Start mit Grafikstufe ${QUALITY[id].label}</span>`, 5);
+    };
     this.weapons = new PlayerWeapons(this);
     this.menu = new Menu(this);
     this.net = new Net(this);
@@ -265,7 +270,7 @@ export class Game {
 
   isFriendly(a, b) {
     if (a === b) return true;
-    if (!this.match || this.match.mode !== 'tdm') return false;
+    if (!this.match || !this.match.teams) return false;
     return a.team === b.team;
   }
 
@@ -274,6 +279,7 @@ export class Game {
     if (this.mapDef && this.mapDef.unload) this.mapDef.unload(this);
     this.scene.clear();
     this.playerCorpse = null; // its meshes went away with the old scene
+    Soldier.live.clear();
     this.mapDef = def;
     const b = new MapBuilder(this.engine, this.tex);
     def.build(b);
@@ -302,7 +308,7 @@ export class Game {
     };
     const t0 = performance.now();
     if (def.onBuilt) def.onBuilt(this);
-    this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds, def.navClimb, def.navTop).build();
+    this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds, def.navClimb, def.navTop, def.spawns()[0][0]).build();
     if (def.onNavBuilt) def.onNavBuilt(this);
     console.log('nav graph: ' + this.nav.n + ' nodes in ' + (performance.now() - t0).toFixed(0) + 'ms');
     this.hud.buildMinimap();
@@ -339,11 +345,24 @@ export class Game {
     this.weapons.startOver();
     if (cfg.mode === 'br') this.match.startPlayer();
     else { if (!this.match.gun) this.weapons.setLoadout(this.settings.loadout); this.spawnPlayer(); }
-    if (cfg.mode === 'gun') for (const id of GUN_TIERS) { const d = WEAPONS[id]; this.weapons.vm.prebuild(d, d.optics.includes('reflex') ? 'reflex' : d.optics[0]); }
-    if (cfg.mode === 'gun' || cfg.mode === 'br') warmSkinPrograms(this.engine.renderer, this.engine.camera, [this.scene, this.vmScene], weaponMaterials(this.tex));
+    if (cfg.mode === 'gun') for (const id of GUN_TIERS) { const d = WEAPONS[id], o = d.optics.includes('reflex') ? 'reflex' : d.optics[0]; this.weapons.vm.prebuild(d, o); Soldier.prebuild(this, d, o); }
+    // your own body for when you fall, with the guns you carry, made now instead of at the first death
+    if (cfg.mode !== 'br') {
+      if (!this.playerCorpse) { this.playerCorpse = new Soldier(this, OUTFITS.vanguard); this.playerCorpse.setVisible(false); }
+      if (!this.match.gun) for (const s of this.weapons.slots || []) if (s) Soldier.prebuild(this, s.def, s.optic);
+    }
+    // the skins this match can show, painted now while it loads: all of them where anybody may carry any,
+    // otherwise just your own two
+    const WM = weaponMaterials(this.tex), VM = weaponMaterials(this.tex, true);
+    if (cfg.mode === 'gun' || cfg.mode === 'br' || cfg.net) { prewarmSkins(WM); prewarmSkins(VM); }
+    else for (const s of this.weapons.slots || []) if (s && s.skin) { skinMaterials(WM, s.skin); skinMaterials(VM, s.skin); }
+    if (cfg.mode === 'gun' || cfg.mode === 'br') {
+      warmSkinPrograms(this.engine.renderer, this.engine.camera, [this.scene], WM);
+      warmSkinPrograms(this.engine.renderer, this.engine.vmCamera, [this.vmScene], VM);
+    }
     this.state = 'playing';
     document.getElementById('hud').classList.remove('hidden');
-    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : 'TEAM DEATHMATCH';
+    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : cfg.mode === 'wing' ? 'WINGMAN' : 'TEAM DEATHMATCH';
     document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' ? 'none' : '';
     if (this.onMatchStart) this.onMatchStart(cfg);
   }
@@ -393,7 +412,7 @@ export class Game {
       for (const c of this.combatants) {
         if (visual) break;
         if (c === shooter || !c.alive) continue;
-        if (this.match && this.match.mode === 'tdm' && c.team === shooter.team) continue;
+        if (this.match && this.match.teams && c.team === shooter.team) continue;
         // broad phase: distance from ray to body center
         _t.set(c.pos.x - ox, c.pos.y + 0.9 - oy, c.pos.z - oz);
         const along = _t.dot(dir);
@@ -624,6 +643,7 @@ export class Game {
     const col = won ? 'var(--accent)' : won === false ? 'var(--enemy)' : '#fff';
     el.innerHTML = '<div class="menu-bg"></div><div class="menu-inner" style="align-items:center;justify-content:center">' +
       '<div class="logo" style="text-align:center;color:' + col + '">' + res + '</div>' +
+      (this.match && this.match.endNote ? '<div class="hint" style="text-align:center;font-size:16px;letter-spacing:2px">' + this.match.endNote + '</div>' : '') +
       '<div id="end-board" style="margin:20px 0;min-width:640px;background:rgba(8,10,10,.86);padding:18px 22px">' + board + '</div>' +
       '<button class="btn" id="end-btn">WEITER</button></div>';
     el.querySelector('#end-btn').addEventListener('click', () => { this.audio.play('uiClick', { vol: 0.4 }); this.quitToMenu(); });
@@ -823,6 +843,8 @@ export class Game {
     this.hud.update(dt);
     this.hud.showScoreboard(inp.down('scoreboard'));
 
+    this.updateLod(cam, optic && optic.lens && W.adsAmount > 0.02 && p.alive ? 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG : 0);
+
     // ---- render (PIP scope first)
     if (optic && optic.lens) {
       // the lens only shows a live picture while aiming, otherwise it's dark glass
@@ -850,6 +872,17 @@ export class Game {
     else this.engine.render(this.scene, this.vmScene);
     if (br) br.hud.renderPreview(dt);
     this.updateDebug(dt);
+  }
+
+  // A body smaller on screen than the preset's lodPx is drawn simple: one draw call and a tenth of the triangles.
+  // pipFov: the magnified picture in a scope sees further, so it counts too. A little give both ways, so nobody flickers.
+  updateLod(cam, pipFov) {
+    const q = this.engine.q, H = this.engine.renderer.domElement.height;
+    let ppm = H / (2 * Math.tan(cam.fov * DEG / 2));
+    if (pipFov) ppm = Math.max(ppm, q.pipRes / (2 * Math.tan(pipFov * DEG / 2)));
+    const d = 1.8 * ppm / q.lodPx, nearD2 = d * d * 0.81, farD2 = d * d * 1.21, c = cam.position;
+    for (const s of Soldier.live) { const d2 = s.lodPos().distanceToSquared(c); s.setFar(s.isFar ? d2 > nearD2 : d2 > farD2); }
+    if (this.blobs) this.blobs.update();
   }
 
   // Thermal picture into the current render target: a cold, flat world, then the bodies on top of it

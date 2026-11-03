@@ -3,6 +3,7 @@ import { Bot } from '../bots/bot.js';
 import { OUTFITS } from '../characters/soldier.js';
 import { PRIMARIES, GUN_TIERS, WEAPONS } from '../weapons/defs.js';
 import { randomSkin } from '../weapons/skins.js';
+import { Points, pointsOf } from './points.js';
 
 // =============================================================================
 // Match rules: team setup, spawn selection (safe spawns away from enemy sight
@@ -25,11 +26,27 @@ export class Match {
     this.cfg = cfg;
     this.score = [0, 0];
     this.gun = cfg.mode === 'gun';
-    this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : 50 + cfg.bots * 5;
-    this.timeLeft = cfg.net ? cfg.leftMs / 1000 : 600;
+    // Wingman: 2 against 2 for the points A and B (points.js), respawns without end, 7 minutes
+    this.wing = cfg.mode === 'wing';
+    this.teams = cfg.mode === 'tdm' || this.wing;
+    this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : this.wing ? Infinity : 50 + cfg.bots * 5;
+    this.timeLeft = cfg.net ? cfg.leftMs / 1000 : this.wing ? 420 : 600;
     this.ended = false;
     this.lastUsed = new Map();
     this.spawnPoints = this.collectSpawns();
+    if (this.wing) this.points = new Points(game, pointsOf(game.mapDef) || this.fallbackPoints());
+  }
+
+  // a map without its own two points: halfway between the middle and each end of the line between the bases
+  fallbackPoints() {
+    const g = this.game, b = g.mapDef.bounds, sp = g.mapDef.spawns(), nav = g.nav;
+    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+    const ew = Math.abs(sp[0][0][0] - sp[1][0][0]) > Math.abs(sp[0][0][2] - sp[1][0][2]); // bases west and east: points north and south
+    return [-1, 1].map((s) => {
+      const x = ew ? cx : cx + s * (b.maxX - b.minX) / 4, z = ew ? cz + s * (b.maxZ - b.minZ) / 4 : cz;
+      const n = nav.nearest(x, 0, z, 8);
+      return n < 0 ? [x, 0, z] : [nav.X[n], nav.Y[n], nav.Z[n]];
+    });
   }
 
   collectSpawns() {
@@ -63,6 +80,10 @@ export class Match {
     const n = cfg.bots;
     const bots = [];
     const outfitsFFA = ['raven', 'jungle', 'urban', 'desert', 'raven', 'jungle', 'urban', 'desert'];
+    if (this.wing) {
+      // one bot at your side, two against you
+      return [0, 1, 1].map((team, i) => new Bot(g, { name: names[i], team, difficulty: cfg.difficulty, outfit: OUTFITS[team === 0 ? 'vanguard' : 'raven'], weapon: pickWeapon() }));
+    }
     for (let i = 0; i < n; i++) {
       let team, outfit;
       if (this.mode === 'tdm') {
@@ -84,6 +105,7 @@ export class Match {
     const friends = g.combatants.filter((c) => c !== ent && c.alive && g.isFriendly(c, ent));
     let best = null, bestS = -Infinity;
     for (const p of this.spawnPoints) {
+      if (this.wing && p.team !== ent.team) continue; // (Wingman: always at your own base, never next to a point)
       let s = 0;
       let minD = 60;
       for (const e of enemies) {
@@ -93,7 +115,7 @@ export class Match {
       }
       s += Math.min(minD, 40) * 1.5;
       if (minD < 10) s -= 80;
-      if (this.mode === 'tdm') {
+      if (this.teams) {
         if (p.team === ent.team) s += 25; else if (p.team >= 0) s -= 25;
         for (const f of friends) { const d = Math.hypot(f.pos.x - p.x, f.pos.z - p.z); if (d < 18) { s += 8; break; } }
       }
@@ -158,7 +180,7 @@ export class Match {
   onKill(killer, victim, info) {
     if (this.ended || this.cfg.net) return;
     if (this.gun) { this.gunKill(killer, victim, info); return; }
-    if (this.mode === 'tdm' && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
+    if (this.teams && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
   }
 
   update(dt) {
@@ -167,10 +189,20 @@ export class Match {
     this.timeLeft -= dt;
     // bot respawns
     for (const b of g.bots) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) this.spawn(b);
+    // Wingman: the points are decided alone, or by the PC that runs the bots (the others are told, see Net)
+    if (this.wing) {
+      const net = this.cfg.net && g.net;
+      if (!net || g.net.isAuth) {
+        const both = this.points.update(dt);
+        if (net) g.net.sendPoints(this.points, both);
+        else if (both >= 0) { this.end(both); return; }
+      }
+      this.points.show();
+    }
     if (this.cfg.net) return; // the room keeps the score
     // win conditions
     let winner = null;
-    if (this.mode === 'tdm') {
+    if (this.teams) {
       if (this.score[0] >= this.limit) winner = 0; else if (this.score[1] >= this.limit) winner = 1;
     } else if (!this.gun) {
       const top = [...g.combatants].sort((a, b) => b.kills - a.kills)[0];
@@ -179,9 +211,33 @@ export class Match {
     if (winner !== null || this.timeLeft <= 0) this.end(winner);
   }
 
+  // ---- Wingman: where a bot goes. A point of ours that the others are taking: whoever of us is closer goes back.
+  // Otherwise the points we don't hold: with both still open the two of a team split up, the last one they take together.
+  // (thought over every two seconds, so nobody turns on the spot when the two ways are about as long)
+  objectiveFor(b) {
+    if (!this.wing || this.ended) return null;
+    const g = this.game;
+    if (b._obj && g.time - b._objT < 2 && b._obj.owner !== b.team) return b._obj;
+    const T = b.team, pts = this.points.list;
+    const mate = g.combatants.find((c) => c !== b && c.team === T);
+    const d = (c, P) => Math.hypot(c.pos.x - P.x, c.pos.z - P.z);
+    let pick = null;
+    const threatened = pts.find((P) => P.owner === T && P.cap >= 0 && P.cap !== T);
+    const open = pts.filter((P) => P.owner !== T);
+    if (threatened && (!mate || !mate.alive || d(b, threatened) <= d(mate, threatened))) pick = threatened;
+    else if (open.length === 1) pick = open[0];
+    else if (open.length === 2) {
+      const [P, Q] = open;
+      if (!mate || !mate.alive) pick = d(b, P) <= d(b, Q) ? P : Q;
+      else pick = d(b, P) + d(mate, Q) <= d(b, Q) + d(mate, P) ? P : Q;
+    }
+    b._obj = pick; b._objT = g.time;
+    return pick;
+  }
+
   scores() {
     const g = this.game;
-    if (this.mode === 'tdm') return { f: this.score[g.player.team], e: this.score[1 - g.player.team] };
+    if (this.teams) return { f: this.score[g.player.team], e: this.score[1 - g.player.team] };
     if (this.gun) return { f: (g.player.tier || 0) + 1, e: Math.max(0, ...g.combatants.filter((c) => c !== g.player).map((c) => (c.tier || 0) + 1)) };
     const others = g.combatants.filter((c) => c !== g.player).map((c) => c.kills);
     return { f: g.player.kills, e: others.length ? Math.max(...others) : 0 };
@@ -191,9 +247,11 @@ export class Match {
     this.ended = true;
     const g = this.game;
     let won;
-    if (this.mode === 'tdm') {
+    if (this.teams) {
+      // (Wingman out of time: whoever has more kills)
       if (winner === null) won = this.score[g.player.team] > this.score[1 - g.player.team] ? true : this.score[g.player.team] === this.score[1 - g.player.team] ? null : false;
       else won = winner === g.player.team;
+      if (this.wing) this.endNote = winner === null ? 'ZEIT ABGELAUFEN · KILLS ' + this.score[g.player.team] + ' : ' + this.score[1 - g.player.team] : (winner === g.player.team ? 'DEIN TEAM HÄLT' : 'DIE GEGNER HALTEN') + ' BEIDE PUNKTE';
     } else if (this.gun) {
       won = (winner || this.gunLeader()) === g.player;
     } else {

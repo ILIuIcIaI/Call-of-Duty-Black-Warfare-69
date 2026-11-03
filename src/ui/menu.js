@@ -4,6 +4,8 @@ import { MAP_LIST } from '../world/maps/index.js';
 import { QUALITY } from '../core/engine.js';
 import { weaponMaterials } from '../weapons/models.js';
 import { SKINS, SKIN_IDS, skinOf, buildSkinned } from '../weapons/skins.js';
+import { esc } from '../net/net.js';
+import { pointsOf } from '../game/points.js';
 
 // =============================================================================
 // Main menu, loadout editor (with live 3D weapon preview), settings, pause menu
@@ -56,15 +58,18 @@ export class Menu {
 
   // ------------------------------------------------------------------ tabs
   playTab() {
-    const m = this.game.settings.match;
-    const maps = MAP_LIST.map((d) => `<div class="card map-card ${m.map === d.id ? 'sel' : ''}" data-map="${d.id}">
+    const m = this.game.settings.match, wing = m.mode === 'wing';
+    // Wingman only where the map has its two points
+    const list = wing ? MAP_LIST.filter((d) => pointsOf(d)) : MAP_LIST;
+    if (!list.some((d) => d.id === m.map)) { m.map = list[0].id; this.game.loadMenuMap(m.map); }
+    const maps = list.map((d) => `<div class="card map-card ${m.map === d.id ? 'sel' : ''}" data-map="${d.id}">
       <canvas data-mapprev="${d.id}" width="260" height="130"></canvas><h4>${d.name}</h4><span class="tag">${d.size}</span><p>${d.desc}</p></div>`).join('');
     return `<div class="section-title">KARTE</div><div class="row">${maps}</div>
       <div class="section-title">MODUS</div>
-      <div class="seg" data-seg="mode"><button data-v="tdm" class="${m.mode === 'tdm' ? 'on' : ''}">TEAM DEATHMATCH</button><button data-v="ffa" class="${m.mode === 'ffa' ? 'on' : ''}">FREE FOR ALL</button><button data-v="gun" class="${m.mode === 'gun' ? 'on' : ''}">GUN GAME</button></div>
-      <div class="hint">${m.mode === 'tdm' ? 'Bots werden auf dein Team und das Gegnerteam verteilt (Gegner bekommen bei ungerader Zahl einen mehr).' : m.mode === 'gun' ? 'Wettrüsten: Jeder gegen jeden, jeder Kill bringt die nächste Waffe. 14 Waffen, zuletzt das Messer: Wer damit einen Kill macht, gewinnt. Wer im Nahkampf stirbt, fällt eine Stufe zurück. Jede Waffe kommt mit einem zufälligen Skin.' : 'Jeder gegen jeden — alle Bots sind deine Gegner.'}</div>
+      <div class="seg" data-seg="mode"><button data-v="tdm" class="${m.mode === 'tdm' ? 'on' : ''}">TEAM DEATHMATCH</button><button data-v="ffa" class="${m.mode === 'ffa' ? 'on' : ''}">FREE FOR ALL</button><button data-v="gun" class="${m.mode === 'gun' ? 'on' : ''}">GUN GAME</button><button data-v="wing" class="${wing ? 'on' : ''}">WINGMAN</button></div>
+      <div class="hint">${m.mode === 'tdm' ? 'Bots werden auf dein Team und das Gegnerteam verteilt (Gegner bekommen bei ungerader Zahl einen mehr).' : m.mode === 'gun' ? 'Wettrüsten: Jeder gegen jeden, jeder Kill bringt die nächste Waffe. 14 Waffen, zuletzt das Messer: Wer damit einen Kill macht, gewinnt. Wer im Nahkampf stirbt, fällt eine Stufe zurück. Jede Waffe kommt mit einem zufälligen Skin.' : wing ? '2 gegen 2: ein Bot an deiner Seite, zwei Gegner. Auf der Karte stehen die Punkte A und B: Stell dich in den Kreis, um ihn einzunehmen. Wer beide Punkte hält, gewinnt sofort. Nach 7 Minuten gewinnt das Team mit mehr Kills. Respawns ohne Ende.' : 'Jeder gegen jeden — alle Bots sind deine Gegner.'}</div>
       <div class="section-title">BOTS</div>
-      <div class="opt"><label>Anzahl Bots</label><input type="range" min="1" max="8" step="1" value="${m.bots}" data-range="bots"><span class="val" id="v-bots">${m.bots}</span></div>
+      ${wing ? '' : `<div class="opt"><label>Anzahl Bots</label><input type="range" min="1" max="8" step="1" value="${m.bots}" data-range="bots"><span class="val" id="v-bots">${m.bots}</span></div>`}
       <div class="opt"><label>Schwierigkeit</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
       <div style="margin-top:22px"><button class="btn" id="start-btn">MATCH STARTEN</button></div>`;
   }
@@ -121,8 +126,17 @@ export class Menu {
   }
 
   settingsTab() {
-    const S = this.game.settings;
-    const q = Object.entries(QUALITY).map(([k, v]) => `<button data-v="${k}" class="${S.quality === k ? 'on' : ''}">${v.label}</button>`).join('');
+    const S = this.game.settings, E = this.game.engine;
+    const q = [['auto', 'Auto'], ...Object.entries(QUALITY).map(([k, v]) => [k, v.label])].map(([k, n]) => `<button data-v="${k}" class="${(S.quality || 'auto') === k ? 'on' : ''}">${n}</button>`).join('');
+    // what the picture is made with right now, and whether a change waits for a restart
+    const now = (S.quality || 'auto') === 'auto' ? (E.auto ? E.qid : null) : S.quality;
+    const pending = now !== E.qid || ((S.quality || 'auto') === 'auto') !== E.auto;
+    // "ANGLE (NVIDIA, NVIDIA GeForce ... (0x2C05) Direct3D11 vs_5_0 ps_5_0, D3D11)" -> the chip's name
+    const chip = (s) => (!/^ANGLE \(/.test(s) ? s : s.replace(/^ANGLE \([^,]+, /, '').replace(/ \(0x[0-9a-f]+\).*$/i, '').replace(/ (Direct3D|OpenGL|Vulkan|vs_\d).*$/i, '').replace(/(, [^,]*)?\)$/, ''));
+    const gpu = !E.gpu ? '' : /swiftshader|llvmpipe|basic render/i.test(E.gpu) ? 'kein Grafikchip, der Prozessor zeichnet' : esc(chip(E.gpu));
+    const autoHint = E.auto && (S.quality || 'auto') === 'auto' ? `Automatisch gewählt: <b>${QUALITY[E.qid].label}</b>${gpu ? ' · ' + gpu : ''}.` : '';
+    const canReload = this.mode !== 'pause' && (!this.game.net || this.game.net.status === 'off');
+    const restart = pending ? `<div class="hint">Die neue Grafikstufe gilt ab dem nächsten Start.${canReload ? ' <button class="btn small" id="gfx-reload">JETZT ÜBERNEHMEN</button>' : ''}</div>` : '';
     const tog = (key, label) => `<div class="opt"><label>${label}</label><div class="seg" data-toggle="${key}"><button data-v="1" class="${S[key] ? 'on' : ''}">AN</button><button data-v="0" class="${!S[key] ? 'on' : ''}">AUS</button></div></div>`;
     return `<div class="section-title">MAUS</div>
       <div class="opt"><label>Empfindlichkeit</label><input type="range" min="0.5" max="12" step="0.1" value="${S.sensitivity}" data-range="sensitivity"><span class="val" id="v-sensitivity">${S.sensitivity}</span></div>
@@ -131,9 +145,10 @@ export class Menu {
       <div class="section-title">BILD</div>
       <div class="opt"><label>Sichtfeld (FOV)</label><input type="range" min="80" max="120" step="1" value="${S.fov}" data-range="fov"><span class="val" id="v-fov">${S.fov}</span></div>
       <div class="opt"><label>Grafikqualität</label><div class="seg" data-seg="quality">${q}</div></div>
+      ${autoHint ? `<div class="hint">${autoHint}</div>` : ''}${restart}
       ${tog('dynamicRes', 'Dynamische Auflösung')}
       ${tog('showFps', 'FPS anzeigen')}
-      <div class="hint">Grafikqualität wird nach einem Neuladen der Seite übernommen. Dynamische Auflösung senkt automatisch die Renderauflösung, wenn die FPS einbrechen.</div>
+      <div class="hint">Toaster ist für sehr schwache PCs: kleinere Auflösung, einfache Figuren auf Distanz, keine Schatten. Dynamische Auflösung senkt automatisch die Renderauflösung, wenn die FPS einbrechen.</div>
       <div class="section-title">SPIEL</div>
       ${tog('autoSprint', 'Auto-Sprint')}
       <div class="opt"><label>Lautstärke</label><input type="range" min="0" max="1" step="0.05" value="${S.volume}" data-range="volume"><span class="val" id="v-volume">${S.volume}</span></div>`;
@@ -166,7 +181,7 @@ export class Menu {
       else if (k === 'optic2') { S.loadout.secondaryOptic = v; this.focus = 'secondary'; }
       else if (k === 'skin') { S.skins[S.loadout.primary] = v; this.focus = 'primary'; }
       else if (k === 'skin2') { S.skins[S.loadout.secondary] = v; this.focus = 'secondary'; }
-      else if (k === 'quality') S.quality = v;
+      else if (k === 'quality') { S.quality = v; S.qualityPicked = true; S.autoDown = null; }
       g.saveSettings();
       this.show(this.tab, this.mode);
     })));
@@ -196,6 +211,8 @@ export class Menu {
     el.querySelectorAll('.card, .btn, .seg button, .tab').forEach((c) => c.addEventListener('mouseenter', () => this.sfx('uiHover')));
     const res = el.querySelector('#resume-btn');
     if (res) res.addEventListener('click', () => { this.sfx(); g.resume(); });
+    const gfx = el.querySelector('#gfx-reload');
+    if (gfx) gfx.addEventListener('click', () => { g.saveSettings(); location.reload(); });
     const start = el.querySelector('#start-btn');
     if (start) start.addEventListener('click', () => { this.sfx(); g.beginMatch(); });
     const wz = el.querySelector('#wz-start');

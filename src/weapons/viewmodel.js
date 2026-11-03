@@ -76,7 +76,7 @@ export class Viewmodel {
   constructor(game) {
     this.game = game;
     this.scene = game.vmScene;
-    this.mats = weaponMaterials(game.tex);
+    this.mats = weaponMaterials(game.tex, true);
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.pivot = new THREE.Group();
@@ -154,7 +154,7 @@ export class Viewmodel {
     // ---- muzzle flash
     this.flashTex = flashTexture(); this.flashSide = flashSideTexture();
     const fm = new THREE.MeshBasicMaterial({ map: this.flashTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const sm = new THREE.MeshBasicMaterial({ map: this.flashSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const sm = new THREE.MeshBasicMaterial({ map: this.flashSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false });
     this.flash = new THREE.Group();
     const front = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), fm); this.flash.add(front);
     for (let i = 0; i < 3; i++) {

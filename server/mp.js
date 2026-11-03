@@ -11,17 +11,20 @@ const os = require('os');
 const net = require('net');
 const firewall = require('./firewall.js');
 
-const VERSION = 3;
+const VERSION = 4;
 const UDP_PORT = 48069, GROUP = '239.69.0.69';
 const LOOK_MS = 900, BEACON_MS = 1000;
 const REACH_MS = 1500, RETRY_MS = 3000, SWEEP_TICKS = 6, FIREWALL_TICKS = 15;
 // network cards that aren't the way to the others: virtual machines, VPNs, Bluetooth and the like
 const VIRTUAL = /v-?ethernet|virtual|vmware|vmnet|vbox|hyper-?v|wsl|docker|virbr|^br-|bridge|loopback|bluetooth|tailscale|zerotier|hamachi|radmin|wireguard|nordlynx|vpn|^tap|^tun|^utun|^wg\d|awdl|llw|lan-verbindung\s*\*|local area connection\s*\*/i;
 const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40, FULL_LINE = 262144;
-const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10 };
+const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10, wing: 4 };
 const GUN_LEVELS = 15; // Gun Game: 14 guns, then the knife
-const MATCH_MS = 600000;
-const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms'];
+const MATCH_MS = 600000, WING_MS = 420000; // (Wingman: 7 minutes)
+const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms', 'sirocco', 'atrium', 'dynamo', 'millrace', 'cornice'];
+// the maps that have the two points of Wingman (src/game/points.js, or the map's own wingman list)
+const WING_MAPS = ['millrace', 'cornice', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock'];
+const TEAMS = (mode) => mode === 'tdm' || mode === 'wing';
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
 const FFA_OUTFITS = ['raven', 'jungle', 'urban', 'desert', 'vanguard'];
@@ -196,7 +199,7 @@ class Room {
 
   vote(p, stage, value) {
     if (this.state !== 'lobby' || stage !== this.stage) return;
-    const valid = stage === 'mode' ? ['tdm', 'ffa', 'br', 'gun'].includes(value) : stage === 'map' ? MAPS.includes(value) : stage === 'bots' ? ['yes', 'no'].includes(value) : false;
+    const valid = stage === 'mode' ? ['tdm', 'ffa', 'br', 'gun', 'wing'].includes(value) : stage === 'map' ? (this.choice.mode === 'wing' ? WING_MAPS : MAPS).includes(value) : stage === 'bots' ? ['yes', 'no'].includes(value) : false;
     if (!valid) return;
     this.votes[stage].set(p.id, value);
     this.after();
@@ -219,7 +222,7 @@ class Room {
     for (const v of V.values()) count[v] = (count[v] || 0) + 1;
     const top = Math.max(...Object.values(count)), best = Object.keys(count).filter((k) => count[k] === top);
     this.choice[stage] = pick(best); // a tie is decided by chance
-    this.say(null, stage === 'mode' ? 'Modus: ' + { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game' }[this.choice.mode] : stage === 'map' ? 'Karte: ' + this.choice.map : 'Bots: ' + (this.choice.bots === 'yes' ? 'ja' : 'nein'));
+    this.say(null, stage === 'mode' ? 'Modus: ' + { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game', wing: 'Wingman' }[this.choice.mode] : stage === 'map' ? 'Karte: ' + this.choice.map : 'Bots: ' + (this.choice.bots === 'yes' ? 'ja' : 'nein'));
     if (stage === 'mode') this.stage = this.choice.mode === 'br' ? 'bots' : 'map';
     else if (stage === 'map') this.stage = 'bots';
     else this.stage = 'done';
@@ -246,15 +249,15 @@ class Room {
     let tA = 0, tB = 0;
     const teamFor = () => (tA <= tB ? (tA++, 0) : (tB++, 1));
     players.forEach((p, i) => {
-      const team = mode === 'tdm' ? teamFor() : 2 + i;
+      const team = TEAMS(mode) ? teamFor() : 2 + i;
       p.team = team; p.inMatch = true; p.loaded = false;
-      roster.push({ id: p.id, name: p.name, team, bot: false, outfit: mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[i % FFA_OUTFITS.length] });
+      roster.push({ id: p.id, name: p.name, team, bot: false, outfit: TEAMS(mode) ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[i % FFA_OUTFITS.length] });
     });
     for (let i = 0; i < bots; i++) {
-      const team = mode === 'tdm' ? teamFor() : 2 + players.length + i;
-      roster.push({ id: 'b' + (i + 1), name: names[i % names.length], team, bot: true, outfit: mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[(players.length + i) % FFA_OUTFITS.length], weapon: mode === 'gun' ? 'pistol' : pickWeapon() });
+      const team = TEAMS(mode) ? teamFor() : 2 + players.length + i;
+      roster.push({ id: 'b' + (i + 1), name: names[i % names.length], team, bot: true, outfit: TEAMS(mode) ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[(players.length + i) % FFA_OUTFITS.length], weapon: mode === 'gun' ? 'pistol' : pickWeapon() });
     }
-    const limit = mode === 'ffa' ? 25 : mode === 'gun' ? GUN_LEVELS : mode === 'tdm' ? 50 + (roster.length - 1) * 5 : 0;
+    const limit = mode === 'ffa' ? 25 : mode === 'gun' ? GUN_LEVELS : mode === 'tdm' ? 50 + (roster.length - 1) * 5 : 0; // (Wingman: no kill limit, the points decide)
     // (the bots run in somebody's browser: a PC that already has enough to do with itself is spared that)
     const carrier = players.find((p) => !(p.fps < SMOOTH_FPS)) || players.reduce((a, b) => (b.fps > a.fps ? b : a));
     this.match = {
@@ -270,7 +273,7 @@ class Room {
 
   startCfg() {
     const m = this.match;
-    return { mode: m.mode, map: m.map, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : MATCH_MS, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points, tier: s.tier })), team: m.team };
+    return { mode: m.mode, map: m.map, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : m.mode === 'wing' ? WING_MS : MATCH_MS, obj: m.obj || null, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points, tier: s.tier })), team: m.team };
   }
 
   // Everybody is there, or the time is up and somebody is: whoever is late comes in when he can.
@@ -288,17 +291,18 @@ class Room {
     if (here.length && !here.some((p) => p.id === m.auth)) m.auth = here[0].id;
     this.state = 'match';
     m.startedAt = Date.now();
-    m.endsAt = m.mode === 'br' ? 0 : m.startedAt + MATCH_MS;
+    const len = m.mode === 'wing' ? WING_MS : MATCH_MS;
+    m.endsAt = m.mode === 'br' ? 0 : m.startedAt + len;
     this.everyone({ t: 'go', auth: m.auth });
     this.broadcastLobby();
-    if (m.endsAt) this.matchTimer = setTimeout(() => this.endMatch(this.leader()), MATCH_MS);
+    if (m.endsAt) this.matchTimer = setTimeout(() => this.endMatch(this.leader()), len);
     this.clock = setInterval(() => this.others(null, { t: 'clock', ms: Date.now() - m.startedAt, left: m.endsAt ? m.endsAt - Date.now() : 0, pings: this.pings() }), 3000);
   }
 
   // time is up: whoever is ahead, if anybody is
   leader() {
     const M = this.match;
-    if (M.mode === 'tdm') return M.team[0] === M.team[1] ? null : M.team[0] > M.team[1] ? 0 : 1;
+    if (TEAMS(M.mode)) return M.team[0] === M.team[1] ? null : M.team[0] > M.team[1] ? 0 : 1; // (Wingman out of time: more kills)
     if (M.mode === 'gun') {
       const R = [...M.score].sort((a, b) => b[1].tier - a[1].tier || b[1].kills - a[1].kills);
       return R.length && (R.length < 2 || R[0][1].tier > R[1][1].tier || R[0][1].kills > R[1][1].kills) ? R[0][0] : null;
@@ -313,8 +317,8 @@ class Room {
     let entry = m.roster.find((r) => r.id === p.id); // (he has been here before and went to the lobby for a moment)
     if (!entry) {
       const n = m.roster.filter((r) => !r.bot).length + 1;
-      const team = m.mode === 'tdm' ? (this.teamSize(0) <= this.teamSize(1) ? 0 : 1) : 2 + 100 + n;
-      entry = { id: p.id, name: p.name, team, bot: false, outfit: m.mode === 'tdm' ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[n % FFA_OUTFITS.length] };
+      const team = TEAMS(m.mode) ? (this.teamSize(0) <= this.teamSize(1) ? 0 : 1) : 2 + 100 + n;
+      entry = { id: p.id, name: p.name, team, bot: false, outfit: TEAMS(m.mode) ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[n % FFA_OUTFITS.length] };
       m.roster.push(entry);
       m.score.set(p.id, { kills: 0, deaths: 0, points: 0, team, tier: 0 });
     }
@@ -336,7 +340,7 @@ class Room {
     if (k && m.by !== m.id) {
       k.kills++;
       k.points += 100 + (m.part === 'head' ? 25 : 0);
-      if (M.mode === 'tdm' && (k.team === 0 || k.team === 1)) M.team[k.team]++;
+      if (TEAMS(M.mode) && (k.team === 0 || k.team === 1)) M.team[k.team]++;
     }
     // Gun Game: a kill with a gun is the next weapon. Stabbed: the victim falls back and the knife gains nothing, except on the last level, where it wins.
     let gunWon = false;
@@ -355,7 +359,7 @@ class Room {
       if (M.team[0] >= M.limit || M.team[1] >= M.limit) this.endMatch(M.team[0] >= M.limit ? 0 : 1);
     } else if (M.mode === 'gun') {
       if (gunWon) this.endMatch(m.by);
-    } else if (k && k.kills >= M.limit) this.endMatch(m.by);
+    } else if (M.mode !== 'wing' && k && k.kills >= M.limit) this.endMatch(m.by); // (Wingman: the points decide, or the clock)
   }
 
   checkLast(rest = 0) {
@@ -411,6 +415,13 @@ class Room {
         this.others(p, { ...m, from: p.id });
         break;
       }
+      case 'obj':
+        // Wingman: the points as the PC with the bots sees them (it decides them); a team holding both has won
+        if (!this.match || this.state !== 'match' || p.id !== this.match.auth || this.match.mode !== 'wing') break;
+        this.match.obj = m.s;
+        this.others(p, { t: 'obj', s: m.s });
+        if (m.win === 0 || m.win === 1) this.endMatch(m.win);
+        break;
       case 'st': case 'bots':
         if (this.match && p.inMatch) this.others(p, { ...m, from: p.id }, true);
         break;

@@ -10,6 +10,10 @@ const _p = new THREE.Vector3(), _f = new THREE.Vector3();
 // direction indicators, popups and the scoreboard.
 // =============================================================================
 const $ = (id) => document.getElementById(id);
+// Writes to the page only when the value changed: every write makes the browser work out styles and layout
+// again, and on a weak PC that costs more per frame than a few bots.
+const css = (el, k, v) => { const c = el._css || (el._css = {}); if (c[k] !== v) { c[k] = v; el.style[k] = v; } };
+const txt = (el, v) => { if (el._txt !== v) { el._txt = v; el.textContent = v; } };
 
 export class HUD {
   constructor(game) {
@@ -63,39 +67,50 @@ export class HUD {
 
   // friendly names over heads (CoD style, faded behind walls) + enemy name under the crosshair
   updateNameTags() {
-    const g = this.game, cam = g.engine.camera, p = g.player;
+    const g = this.game, cam = g.engine.camera, p = g.player, C = cam.position;
     const W = window.innerWidth, H = window.innerHeight;
     cam.getWorldDirection(_f);
     let aimed = null, aimedD = Infinity;
-    const seen = new Set();
+    const seen = this._seen || (this._seen = new Set());
+    seen.clear();
+    // who can be seen from here: a few rays per body, so only every few hundredths of a second (nobody notices that)
+    const sight = (c) => {
+      const s = c._sight || (c._sight = { t: -1, e: false, f: false });
+      if (Math.abs(g.time - s.t) > 0.08) {
+        s.t = g.time;
+        s.e = g.col.lineClear(C.x, C.y, C.z, c.pos.x, c.pos.y + (c.eyeH || 1.6), c.pos.z) || g.col.lineClear(C.x, C.y, C.z, c.pos.x, c.pos.y + 1.0, c.pos.z);
+        s.f = g.col.lineClear(C.x, C.y, C.z, c.pos.x, c.pos.y + 1.5, c.pos.z);
+      }
+      return s;
+    };
+    const place = (el, op) => {
+      css(el, 'transform', `translate(${Math.round((_p.x * 0.5 + 0.5) * W)}px, ${Math.round((-_p.y * 0.5 + 0.5) * H)}px) translate(-50%, -100%)`);
+      css(el, 'opacity', op.toFixed(2));
+      css(el, 'display', '');
+    };
     for (const c of g.combatants) {
       if (c === p || !c.alive || !p.alive) continue;
       const friendly = g.isFriendly(c, p);
       _p.set(c.pos.x, c.pos.y + (c.eyeH || 1.6) + 0.55, c.pos.z);
-      const dx = _p.x - cam.position.x, dy = _p.y - cam.position.y, dz = _p.z - cam.position.z;
+      const dx = _p.x - C.x, dy = _p.y - C.y, dz = _p.z - C.z;
       const dist = Math.hypot(dx, dy, dz);
       if (!friendly) {
         // red marker over visible enemies (never through walls)
-        if (dist < 90) {
-          const losE = g.col.lineClear(cam.position.x, cam.position.y, cam.position.z, c.pos.x, c.pos.y + (c.eyeH || 1.6), c.pos.z) || g.col.lineClear(cam.position.x, cam.position.y, cam.position.z, c.pos.x, c.pos.y + 1.0, c.pos.z);
-          if (losE) {
-            _p.project(cam);
-            if (_p.z < 1 && Math.abs(_p.x) < 1.1 && Math.abs(_p.y) < 1.1) {
-              let el = this.tags.get(c);
-              if (!el || el.dataset.kind !== 'e') { if (el) el.remove(); el = document.createElement('div'); el.className = 'etag'; el.dataset.kind = 'e'; el.innerHTML = '<i></i>'; this.tagRoot.appendChild(el); this.tags.set(c, el); }
-              seen.add(c);
-              el.style.transform = `translate(${(_p.x * 0.5 + 0.5) * W}px, ${(-_p.y * 0.5 + 0.5) * H}px) translate(-50%, -100%)`;
-              el.style.opacity = clamp(1.3 - dist / 90, 0.45, 1);
-              el.style.display = '';
-            }
+        if (dist < 90 && sight(c).e) {
+          _p.project(cam);
+          if (_p.z < 1 && Math.abs(_p.x) < 1.1 && Math.abs(_p.y) < 1.1) {
+            let el = this.tags.get(c);
+            if (!el || el.dataset.kind !== 'e') { if (el) el.remove(); el = document.createElement('div'); el.className = 'etag'; el.dataset.kind = 'e'; el.innerHTML = '<i></i>'; this.tagRoot.appendChild(el); this.tags.set(c, el); }
+            seen.add(c);
+            place(el, clamp(1.3 - dist / 90, 0.45, 1));
           }
         }
         _p.set(c.pos.x, c.pos.y + (c.eyeH || 1.6) + 0.55, c.pos.z);
         // enemy under the crosshair?
-        const cx = c.pos.x - cam.position.x, cy = c.pos.y + (c.eyeH || 1.6) * 0.7 - cam.position.y, cz = c.pos.z - cam.position.z;
+        const cx = c.pos.x - C.x, cy = c.pos.y + (c.eyeH || 1.6) * 0.7 - C.y, cz = c.pos.z - C.z;
         const cd = Math.hypot(cx, cy, cz);
         const dot = (cx * _f.x + cy * _f.y + cz * _f.z) / cd;
-        if (dot > Math.cos(Math.atan2(0.5, cd)) && cd < aimedD && cd < 90 && g.col.lineClear(cam.position.x, cam.position.y, cam.position.z, c.pos.x, c.pos.y + 1.3, c.pos.z)) { aimed = c; aimedD = cd; }
+        if (dot > Math.cos(Math.atan2(0.5, cd)) && cd < aimedD && cd < 90 && g.col.lineClear(C.x, C.y, C.z, c.pos.x, c.pos.y + 1.3, c.pos.z)) { aimed = c; aimedD = cd; }
         continue;
       }
       if (dist > 70) continue;
@@ -104,16 +119,13 @@ export class HUD {
       let el = this.tags.get(c);
       if (!el || el.dataset.kind !== 'f') { if (el) el.remove(); el = document.createElement('div'); el.className = 'ntag'; el.dataset.kind = 'f'; el.innerHTML = '<span></span><i></i>'; el.firstChild.textContent = c.name; this.tagRoot.appendChild(el); this.tags.set(c, el); }
       seen.add(c);
-      const vis = g.col.lineClear(cam.position.x, cam.position.y, cam.position.z, c.pos.x, c.pos.y + 1.5, c.pos.z);
-      el.style.transform = `translate(${(_p.x * 0.5 + 0.5) * W}px, ${(-_p.y * 0.5 + 0.5) * H}px) translate(-50%, -100%)`;
-      el.style.opacity = (vis ? 1 : 0.4) * clamp(1.2 - dist / 70, 0.3, 1);
-      el.style.display = '';
+      place(el, (sight(c).f ? 1 : 0.4) * clamp(1.2 - dist / 70, 0.3, 1));
     }
-    for (const [c, el] of this.tags) if (!seen.has(c)) el.style.display = 'none';
+    for (const [c, el] of this.tags) if (!seen.has(c)) css(el, 'display', 'none');
     this.aimed = aimed; this.aimedD = aimedD;
     const en = this.el.ename;
-    if (aimed) { en.textContent = aimed.name; en.className = ''; en.style.opacity = 1; }
-    else en.style.opacity = 0;
+    if (aimed) { txt(en, aimed.name); if (en.className) en.className = ''; css(en, 'opacity', '1'); }
+    else css(en, 'opacity', '0');
   }
 
   buildMinimap() {
@@ -269,6 +281,17 @@ export class HUD {
       x.beginPath(); x.arc(px, pz, 3.6 / zoom, 0, Math.PI * 2); x.fill();
       x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 1 / zoom; x.stroke();
     }
+    // Wingman: the two circles in the colour of whoever holds them, the letter upright
+    const pts = g.match && g.match.points;
+    if (pts) for (const P of pts.list) {
+      const px = (P.x - this.mmOx) * this.mmS, pz = (P.z - this.mmOz) * this.mmS, own = P.owner === p.team;
+      x.fillStyle = P.owner < 0 ? 'rgba(255,255,255,0.22)' : own ? 'rgba(72,184,255,0.42)' : 'rgba(255,74,58,0.42)';
+      x.strokeStyle = P.owner < 0 ? '#ffffff' : own ? '#48b8ff' : '#ff4a3a'; x.lineWidth = 1.5 / zoom;
+      x.beginPath(); x.arc(px, pz, P.r * this.mmS, 0, Math.PI * 2); x.fill(); x.stroke();
+      x.save(); x.translate(px, pz); x.rotate(-p.yaw); x.scale(1 / zoom, 1 / zoom);
+      x.fillStyle = '#fff'; x.font = 'bold 14px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(P.id, 0, 1);
+      x.restore();
+    }
     x.restore();
     // player arrow
     x.fillStyle = '#ffd04a';
@@ -330,12 +353,15 @@ export class HUD {
     const spread = wpn ? wpn.currentSpread(p) : 2;
     const vfov = g.engine.camera.fov * Math.PI / 180;
     const px = Math.tan(spread * Math.PI / 180 * 0.5) * (window.innerHeight / 2) / Math.tan(vfov / 2);
-    const gap = 4 + px;
-    const [t, b, l, r] = this.chParts;
-    t.style.transform = `translateY(${-gap - 9}px)`; b.style.transform = `translateY(${gap}px)`;
-    l.style.transform = `translateX(${-gap - 9}px)`; r.style.transform = `translateX(${gap}px)`;
+    const gap = Math.round((4 + px) * 2) / 2;
+    if (gap !== this.lastGap) {
+      this.lastGap = gap;
+      const [t, b, l, r] = this.chParts;
+      t.style.transform = `translateY(${-gap - 9}px)`; b.style.transform = `translateY(${gap}px)`;
+      l.style.transform = `translateX(${-gap - 9}px)`; r.style.transform = `translateX(${gap}px)`;
+    }
     const hideCh = ads > 0.35 || p.sprinting || !p.alive || (wpn && (wpn.state === 'inspect' || wpn.state === 'melee' || wpn.stowed)) || (g.br && (g.br.hideViewmodel || g.br.playerState === 'downed'));
-    this.el.cross.style.opacity = hideCh ? 0 : 1;
+    css(this.el.cross, 'opacity', hideCh ? '0' : '1');
     // ---- docked to cover
     const mk = p.alive && p.mount ? p.mount.kind : '';
     if (mk !== this.lastMount) { this.lastMount = mk; document.getElementById('mount-mark').className = mk; }
@@ -343,11 +369,11 @@ export class HUD {
     if (this.hitT > 0) {
       this.hitT -= dt;
       this.hitScale = Math.max(1, this.hitScale - dt * 4);
-      this.el.hit.style.opacity = clamp(this.hitT * 6, 0, 1);
-      this.el.hit.style.transform = `scale(${this.hitScale})`;
-    } else this.el.hit.style.opacity = 0;
+      css(this.el.hit, 'opacity', clamp(this.hitT * 6, 0, 1).toFixed(2));
+      css(this.el.hit, 'transform', `scale(${this.hitScale.toFixed(3)})`);
+    } else css(this.el.hit, 'opacity', '0');
     // ---- ammo (hidden while dead)
-    document.getElementById('ammo').style.opacity = p.alive && !(g.br && g.br.playerState === 'downed') ? 1 : 0;
+    css(this.el.ammo || (this.el.ammo = $('ammo')), 'opacity', p.alive && !(g.br && g.br.playerState === 'downed') ? '1' : '0');
     this.updateGunPanel();
     if (wpn && wpn.w && wpn.w.def.melee) {
       if (this.lastAmmo !== 'knife') { this.lastAmmo = 'knife'; this.el.ammoMag.textContent = '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = 'scaleX(1)'; this.el.ammoHint.textContent = ''; }
@@ -364,37 +390,85 @@ export class HUD {
       if (w.mag === 0 && w.reserve === 0) hint = 'KEINE MUNITION';
       else if (wpn.state === 'reload') hint = 'NACHLADEN...';
       else if (w.mag <= Math.ceil(w.def.mag * 0.25)) hint = '[R] NACHLADEN';
-      this.el.ammoHint.textContent = hint;
+      txt(this.el.ammoHint, hint);
     }
     // ---- health vignettes
     const hp = p.health / p.maxHealth;
     this.dmgFlash = Math.max(0, this.dmgFlash - dt * 1.4);
-    this.el.vigD.style.opacity = this.dmgFlash;
-    this.el.vigL.style.opacity = p.alive ? clamp((0.6 - hp) / 0.45, 0, 1) * (0.75 + Math.sin(g.time * 6) * 0.25 * (hp < 0.3 ? 1 : 0)) : 0;
+    css(this.el.vigD, 'opacity', this.dmgFlash.toFixed(2));
+    css(this.el.vigL, 'opacity', (p.alive ? clamp((0.6 - hp) / 0.45, 0, 1) * (0.75 + Math.sin(g.time * 6) * 0.25 * (hp < 0.3 ? 1 : 0)) : 0).toFixed(2));
     // ---- damage direction indicators
     for (const ind of this.indicators) {
       ind.t -= dt;
       const rel = ind.worldAngle - p.yaw;
-      ind.el.style.transform = `rotate(${-rel}rad)`;
-      ind.el.style.opacity = clamp(ind.t, 0, 1);
+      css(ind.el, 'transform', `rotate(${(-rel).toFixed(3)}rad)`);
+      css(ind.el, 'opacity', clamp(ind.t, 0, 1).toFixed(2));
       if (ind.t <= 0) ind.el.remove();
     }
-    this.indicators = this.indicators.filter((i) => i.t > 0);
+    if (this.indicators.length) this.indicators = this.indicators.filter((i) => i.t > 0);
     // ---- tac sprint bar / movement state
     const showTac = p.tac || p.tacCharge < 3.59;
-    this.el.tac.classList.toggle('show', showTac);
-    this.el.tacFill.style.width = (p.tacCharge / 3.6 * 100) + '%';
+    if (showTac !== this.lastTac) { this.lastTac = showTac; this.el.tac.classList.toggle('show', showTac); }
+    if (showTac) css(this.el.tacFill, 'transform', `scaleX(${(p.tacCharge / 3.6).toFixed(3)})`);
     let ms = '';
     if (p.mode === 'slide') ms = 'SLIDE'; else if (p.mode === 'dive') ms = 'DIVE'; else if (p.mode === 'mantle') ms = 'MANTLE';
     else if (p.tac) ms = 'TAKTIK-SPRINT'; else if (p.supine) ms = 'RÜCKENLAGE'; else if (p.stance === 'prone') ms = 'LIEGEND';
-    this.el.moveSt.textContent = ms;
+    txt(this.el.moveSt, ms);
     // ---- center message
     if (this.centerT > 0) { this.centerT -= dt; if (this.centerT <= 0) this.el.center.innerHTML = ''; }
+    this.updatePoints();
     this.updateNameTags();
     this.updateScopeRead(dt);
-    // ---- minimap (throttled)
+    // ---- minimap (throttled, more so on the weak presets)
     this._mmT = (this._mmT || 0) - dt;
-    if (this._mmT <= 0) { this._mmT = 1 / 30; this.drawMinimap(); }
+    if (this._mmT <= 0) { this._mmT = 1 / (g.engine.q.hudHz || 30); this.drawMinimap(); }
+  }
+
+  // Wingman: the two points under the score, a marker over each in the world, and what the circle you stand in is doing
+  updatePoints() {
+    const g = this.game, pts = g.match && g.match.points;
+    if (!pts) {
+      if (this.ptEl) { this.ptEl.remove(); this.capEl.remove(); for (const m of this.ptMarks) m.remove(); this.ptEl = this.capEl = this.ptMarks = null; }
+      return;
+    }
+    if (!this.ptEl) {
+      this.ptEl = document.createElement('div'); this.ptEl.id = 'sb-points';
+      this.ptEl.innerHTML = pts.list.map((P) => `<div class="pt"><span>${P.id}</span><i></i></div>`).join('');
+      this.el.hud.appendChild(this.ptEl);
+      this.ptBadges = [...this.ptEl.children];
+      this.ptMarks = pts.list.map((P) => { const m = document.createElement('div'); m.className = 'ptmark'; m.innerHTML = `<b>${P.id}</b><span></span>`; this.tagRoot.appendChild(m); return m; });
+      this.capEl = document.createElement('div'); this.capEl.id = 'cap-status'; this.capEl.innerHTML = '<span></span><i><b></b></i>';
+      this.el.hud.appendChild(this.capEl);
+    }
+    const p = g.player, cam = g.engine.camera, W = window.innerWidth, H = window.innerHeight, side = (t) => (t < 0 ? '' : t === p.team ? 'own' : 'enemy');
+    const here = pts.playerIn(); // (the circle you stand in: its line under the crosshair says it all, no marker)
+    const o = this._ps || (this._ps = {});
+    pts.list.forEach((P, i) => {
+      const taking = P.cap >= 0 && P.k > 0, cls = 'pt ' + side(P.owner) + (P.contested ? ' contest' : '') + (taking ? ' taking-' + side(P.cap) : '');
+      const B = this.ptBadges[i];
+      if (B.className !== cls) B.className = cls;
+      css(B.lastChild, 'transform', `scaleX(${taking ? P.k.toFixed(3) : 0})`);
+      // the marker over it, held at the edge of the screen when it is off to the side or behind you
+      const M = this.ptMarks[i];
+      pts.screenOf(P, cam, o);
+      let sx = o.behind ? -o.x : o.x, sy = o.behind ? -o.y : o.y;
+      const edge = Math.max(Math.abs(sx) / 0.9, Math.abs(sy) / 0.8);
+      if (o.behind || edge > 1) { const k = 1 / Math.max(edge, 1e-3); sx *= k; sy *= k; }
+      css(M, 'transform', `translate(${Math.round((sx * 0.5 + 0.5) * W)}px, ${Math.round((-sy * 0.5 + 0.5) * H)}px) translate(-50%, -50%)`);
+      const mc = 'ptmark ' + side(P.owner) + (P.contested ? ' contest' : '') + (here === P ? ' here' : '');
+      if (M.className !== mc) M.className = mc;
+      txt(M.lastChild, p.alive ? Math.round(Math.hypot(P.x - p.pos.x, P.z - p.pos.z)) + ' m' : '');
+    });
+    // the circle you are standing in
+    const C = this.capEl;
+    if (!here) { css(C, 'display', 'none'); return; }
+    css(C, 'display', '');
+    const mine = here.owner === p.team, taking = here.cap >= 0 && here.k > 0;
+    const text = here.contested ? 'PUNKT ' + here.id + ' · UMKÄMPFT' : taking && here.cap === p.team ? 'PUNKT ' + here.id + ' WIRD EINGENOMMEN' : mine ? 'PUNKT ' + here.id + ' GEHÖRT EUREM TEAM' : taking ? 'GEGNER NEHMEN PUNKT ' + here.id + ' EIN' : 'PUNKT ' + here.id;
+    txt(C.firstChild, text);
+    const cl = here.contested ? 'contest' : taking ? side(here.cap) : side(here.owner);
+    if (C.className !== cl) C.className = cl;
+    css(C.lastChild.firstChild, 'transform', `scaleX(${(taking ? here.k : mine ? 1 : 0).toFixed(3)})`);
   }
 
   // Gun Game: your level, what comes next, and who is ahead
@@ -410,12 +484,12 @@ export class HUD {
   }
 
   setScores(friendly, enemy, mode, ffaMine, ffaBest) {
-    if (mode === 'ffa') { this.el.sbF.textContent = ffaMine; this.el.sbE.textContent = ffaBest; }
-    else { this.el.sbF.textContent = friendly; this.el.sbE.textContent = enemy; }
+    if (mode === 'ffa') { txt(this.el.sbF, String(ffaMine)); txt(this.el.sbE, String(ffaBest)); }
+    else { txt(this.el.sbF, String(friendly)); txt(this.el.sbE, String(enemy)); }
   }
   setTimer(sec) {
     const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-    this.el.timer.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    txt(this.el.timer, `${m}:${s.toString().padStart(2, '0')}`);
   }
 
   showScoreboard(show) {
@@ -433,9 +507,9 @@ export class HUD {
     if (m.mode === 'br') {
       const alive = rows.filter((c) => (c.isPlayer ? c.alive : !c.out));
       b.innerHTML = `<h3>${g.mapDef.name} — WARZONE · ${alive.length} LEBEN NOCH</h3><table>${head}${rows.slice(0, 12).map(row).join('')}</table>`;
-    } else if (m.mode === 'tdm') {
+    } else if (m.teams) {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
-      b.innerHTML = `<h3>${g.mapDef.name} — TEAM DEATHMATCH</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — ${m.wing ? 'WINGMAN · ' + m.points.list.map((P) => P.id + ': ' + (P.owner < 0 ? 'frei' : P.owner === g.player.team ? 'ihr' : 'Gegner')).join(' · ') : 'TEAM DEATHMATCH'}</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
     } else if (m.gun) {
       const by = [...g.combatants].sort((a, c) => (c.tier || 0) - (a.tier || 0) || c.kills - a.kills);
       const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td>${ping(c)}</tr>`;

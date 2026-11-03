@@ -11,8 +11,14 @@ import { projectUV } from '../world/textures.js';
 // sub-groups (mag, bolt, slide, ...) and anchors are hand/sight/muzzle points.
 // =============================================================================
 
-let MATS = null;
-export function weaponMaterials(texLib) {
+let MATS = null, VM = null;
+// vm: the set for the gun in your hands. That one is drawn in a scene of its own (own lights, no fog), and a
+// material that changes scene within a frame makes three.js work out its shader all over again, every time.
+export function weaponMaterials(texLib, vm = false) {
+  if (vm) {
+    if (!VM) { const w = weaponMaterials(texLib); VM = {}; for (const k of Object.keys(w)) VM[k] = w[k].clone(); }
+    return VM;
+  }
   if (MATS) return MATS;
   const gm = texLib.generate('gunmetal').map, fab = texLib.generate('fabric').map;
   const camo = texLib.generate('camo').map, wood = texLib.generate('wood').map;
@@ -57,18 +63,22 @@ export function evenUV(root, tile = 0.3) {
   });
 }
 function M(geo, mat) { const m = new THREE.Mesh(geo, mat); m.castShadow = false; m.receiveShadow = false; return m; }
+// set while a gun for third person is built (in someone else's hands, a few meters away at least):
+// plain boxes, tubes with half the sides, no bevels. A third of the triangles, and nobody can tell from there.
+let LITE = false;
 export function box(parent, mat, w, h, d, x, y, z, rx = 0, ry = 0, rz = 0, r = 0) {
-  const g = r > 0 ? new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)) : new THREE.BoxGeometry(w, h, d);
+  const g = r > 0 && !LITE ? new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)) : new THREE.BoxGeometry(w, h, d);
   const m = place(M(g, mat), x, y, z, rx, ry, rz); parent.add(m); return m;
 }
 // cylinder along Z by default
 export function cyl(parent, mat, r1, r2, len, x, y, z, axis = 'z', seg = 14, open = false) {
-  const g = new THREE.CylinderGeometry(r1, r2, len, seg, 1, open);
+  const g = new THREE.CylinderGeometry(r1, r2, len, LITE ? Math.max(6, seg >> 1) : seg, 1, open);
   if (axis === 'z') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateZ(Math.PI / 2);
   const m = place(M(g, mat), x, y, z); parent.add(m); return m;
 }
 // Side-profile extrusion: pts are [z, y] pairs in weapon space, extruded along X with thickness t.
 export function prof(parent, mat, pts, t, x = 0, bevel = 0.002) {
+  if (LITE) bevel = 0;
   const s = new THREE.Shape();
   s.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) s.lineTo(pts[i][0], pts[i][1]);
@@ -79,13 +89,14 @@ export function prof(parent, mat, pts, t, x = 0, bevel = 0.002) {
 }
 // smooth curved profile via quadratic curves: segs = [[z,y], ['q', cz, cy, z, y], ...]
 export function profCurve(parent, mat, segs, t, x = 0, bevel = 0.002) {
+  if (LITE) bevel = 0;
   const s = new THREE.Shape();
   s.moveTo(segs[0][0], segs[0][1]);
   for (let i = 1; i < segs.length; i++) {
     const p = segs[i];
     if (p[0] === 'q') s.quadraticCurveTo(p[1], p[2], p[3], p[4]); else s.lineTo(p[0], p[1]);
   }
-  const g = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, t - bevel * 2), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 8 });
+  const g = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, t - bevel * 2), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: LITE ? 4 : 8 });
   g.translate(0, 0, -(t - bevel * 2) / 2);
   g.rotateY(-Math.PI / 2);
   const m = place(M(g, mat), x, 0, 0); parent.add(m); return m;
@@ -1313,7 +1324,12 @@ const BUILDERS = {
 };
 
 // Build a complete weapon model with optic. Returns model description.
-export function buildWeapon(modelId, optic, mats, { merge = true } = {}) {
+// lite: for third person (see LITE)
+export function buildWeapon(modelId, optic, mats, { merge = true, lite = false } = {}) {
+  LITE = lite;
+  try { return buildWeaponNow(modelId, optic, mats, merge); } finally { LITE = false; }
+}
+function buildWeaponNow(modelId, optic, mats, merge) {
   const w = BUILDERS[modelId](mats, optic || 'iron');
   const opt = optic;
   w.sightY = w.ironY;

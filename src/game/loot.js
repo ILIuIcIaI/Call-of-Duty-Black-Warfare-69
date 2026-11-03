@@ -69,7 +69,7 @@ function beamTexture() {
 const beamGeo = new THREE.PlaneGeometry(0.9, 3.2).translate(0, 1.6, 0);
 const beamMats = new Map();
 function beamMat(hex) {
-  if (!beamMats.has(hex)) beamMats.set(hex, new THREE.MeshBasicMaterial({ color: hex, map: beamTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+  if (!beamMats.has(hex)) beamMats.set(hex, new THREE.MeshBasicMaterial({ color: hex, map: beamTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, fog: false }));
   return beamMats.get(hex);
 }
 

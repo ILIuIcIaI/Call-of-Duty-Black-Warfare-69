@@ -116,7 +116,7 @@ export class Effects {
 
     // tracers (instanced, additive)
     const tg = new THREE.PlaneGeometry(1, 1); tg.translate(0, 0.5, 0);
-    const tm = new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const tm = new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false }); // (additive: no back-then-front pass needed, three.js would re-derive the shader twice a frame for that)
     this.tracerMesh = new THREE.InstancedMesh(tg, tm, 64);
     this.tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.tracerMesh.count = 0; // (without any tracer, nothing: in the menu no update ever sets this)

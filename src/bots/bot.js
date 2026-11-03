@@ -166,17 +166,43 @@ export class Bot {
     const g = this.game, t = g.time;
     this.perceive();
     const hurt = this.health < this.maxHealth * 0.45;
+    // Wingman: a point to take or to hold (see Match.objectiveFor). On it, a bot holds it instead of running after
+    // whoever it lost sight of, and with one to go to it doesn't wander off after every shot it hears.
+    const obj = g.match && g.match.objectiveFor ? g.match.objectiveFor(this) : null;
+    const onObj = obj && Math.hypot(obj.x - this.pos.x, obj.z - this.pos.z) < obj.r - 0.5 && Math.abs(obj.y - this.pos.y) < 2.4;
+    const nearObj = (p) => !obj || Math.hypot(obj.x - p.x, obj.z - p.z) < 16;
     if (this.target && this.targetVisible) {
       if (hurt && this.state !== 'cover' && Math.random() < 0.5 && this.findCover()) this.state = 'cover';
       else if (this.state !== 'cover') this.state = 'engage';
     } else if (this.state === 'cover') {
       if (this.health > this.maxHealth * 0.85 || t - this.coverT > 7) this.state = 'roam';
-    } else if (this.target && this.lastSeen) {
+    } else if (this.target && this.lastSeen && !onObj && nearObj(this.lastSeen)) {
       if (this.state !== 'chase') { this.state = 'chase'; this.pathTo(this.lastSeen); }
-    } else if (this.heard && t - this.heardT < 8) {
+    } else if (this.heard && t - this.heardT < 8 && !obj) {
       if (this.state !== 'investigate' || this.repathT <= 0) { this.state = 'investigate'; this.pathTo(this.heard); this.repathT = 3; }
+    } else if (obj) {
+      if (this.state !== 'objective' || this.objective !== obj) { this.state = 'objective'; this.objective = obj; this.path = null; }
     } else if (this.state !== 'roam') { this.state = 'roam'; this.path = null; }
 
+    if (this.state === 'objective') {
+      if (onObj) {
+        // there: stand somewhere in the circle and watch the ways in. With the others in the circle too and
+        // nobody in sight (something between), go round and look for them instead of waiting it out.
+        if (obj.contested && !this.targetVisible && t > (this.patrolT || 0)) { this.holdAt = null; this.patrolT = t + 1.6; }
+        if (!this.holdAt || this.holdObj !== obj) {
+          const a = Math.random() * Math.PI * 2, r = Math.random() * (obj.r - 1.2);
+          this.holdAt = new THREE.Vector3(obj.x + Math.cos(a) * r, obj.y, obj.z + Math.sin(a) * r); this.holdObj = obj;
+          if (this.holdAt.distanceTo(this.pos) > 0.8) this.pathTo(this.holdAt); else this.path = null;
+        }
+        if (!this.lookT || t > this.lookT) { this.lookYaw = this.aimYaw + rand(-2.2, 2.2); this.lookT = t + rand(1.2, 2.6); }
+        if (Math.random() < 0.08) this.crouchT = rand(0.8, 2);
+      } else {
+        this.holdAt = null;
+        // into the circle from this side (whatever stands in its middle stays between, and the way is no longer than it has to be)
+        const dx = this.pos.x - obj.x, dz = this.pos.z - obj.z, d = Math.hypot(dx, dz) || 1, k = Math.min(d, obj.r * 0.55) / d;
+        if (!this.path || this.wp >= this.path.length || this.repathT <= 0) this.pathTo(_v.set(obj.x + dx * k + rand(-0.6, 0.6), obj.y, obj.z + dz * k + rand(-0.6, 0.6)));
+      }
+    }
     if (this.state === 'roam' && (!this.path || this.wp >= this.path.length)) this.pickRoamGoal();
     if (this.state === 'engage') {
       // reposition when the enemy is out of our weapon's comfort zone
@@ -209,7 +235,7 @@ export class Bot {
     const e = nav.nearest(p.x, p.y, p.z, 6);
     const path = nav.findPath(s, e);
     this.path = path ? nav.toWaypoints(path) : null;
-    this.wp = this.path && this.path.length > 1 ? 1 : 0;
+    this.wp = this.path ? nav.firstWaypoint(this.pos, this.path) : 0;
     this.repathT = 3 + Math.random() * 2;
   }
 
@@ -286,6 +312,9 @@ export class Bot {
       if (this.state === 'investigate' || this.state === 'chase') speed = SPEED.sprint;
     } else if (this.state === 'cover') {
       this.crouchT = 0.3; speed = 0;
+    } else if (this.state === 'objective') {
+      if (this.crouchT > 0) this.crouchT -= dt; // (holding the point: down now and then, up again)
+      speed = 0;
     }
     if (this.prone) { wish.set(0, 0, 0); speed = 0; this.sprinting = false; this.tac = false; }
     if (wish.lengthSq() > 1e-4) {
@@ -422,6 +451,8 @@ export class Bot {
       ty = this.alertYaw;
     } else if (this.target && this.lastSeen && this.game.time - this.lastSeenT < 3) {
       ty = Math.atan2(-(this.lastSeen.x - this.pos.x), -(this.lastSeen.z - this.pos.z));
+    } else if (this.state === 'objective' && this.lookYaw !== undefined && Math.hypot(this.vel.x, this.vel.z) < 1) {
+      ty = this.lookYaw; // (holding a point: looking around)
     } else if (this.moveYaw !== undefined && Math.hypot(this.vel.x, this.vel.z) > 1) {
       ty = this.moveYaw;
     }
@@ -519,15 +550,17 @@ export class Bot {
     g.onBotShot(this);
   }
 
+  // (one object per bot, filled in again every frame: read right away, never kept)
   animState() {
-    const sp = Math.hypot(this.vel.x, this.vel.z);
+    const sp = Math.hypot(this.vel.x, this.vel.z), st = this._as || (this._as = {});
     let moveAngle = 0;
     if (sp > 0.3) moveAngle = angleDiff(this.aimYaw, Math.atan2(-this.vel.x, -this.vel.z));
-    return {
-      yaw: this.aimYaw, pitch: this.aimPitch, speed: sp, moveAngle: -moveAngle,
-      crouch: this.crouching && this.sliding <= 0, slide: this.sliding > 0, dive: false, prone: !!this.prone, supine: false,
-      air: !this.onGround && !this.mantling, tac: this.tac && sp > 6, sprint: this.sprinting && sp > 5, melee: this.meleeT > 0 ? 1 - this.meleeT / 0.5 : 0, reloadK: this.reloadT > 0 ? 1 - this.reloadT / (this.reloadTotal || 1) : 0, reload: this.reloadT > 0, mantle: !!this.mantling, floorY: this.pos.y,
-    };
+    st.yaw = this.aimYaw; st.pitch = this.aimPitch; st.speed = sp; st.moveAngle = -moveAngle;
+    st.crouch = this.crouching && this.sliding <= 0; st.slide = this.sliding > 0; st.dive = false; st.prone = !!this.prone; st.supine = false;
+    st.air = !this.onGround && !this.mantling; st.tac = this.tac && sp > 6; st.sprint = this.sprinting && sp > 5;
+    st.melee = this.meleeT > 0 ? 1 - this.meleeT / 0.5 : 0; st.reloadK = this.reloadT > 0 ? 1 - this.reloadT / (this.reloadTotal || 1) : 0;
+    st.reload = this.reloadT > 0; st.mantle = !!this.mantling; st.floorY = this.pos.y;
+    return st;
   }
 
   dispose() { this.soldier.dispose(); }

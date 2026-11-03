@@ -98,7 +98,7 @@ const solidMat = new Map(), flash = { pos: { value: new THREE.Vector3() }, i: { 
 function litMat(name) {
   let m = solidMat.get(name);
   if (!m) {
-    m = new THREE.MeshBasicMaterial({ map: textures.get(name), lightMap: atlas.tex, lightMapIntensity: Math.PI, fog: false });
+    m = new THREE.MeshBasicMaterial({ map: textures.get(name) || null, lightMap: atlas.tex, lightMapIntensity: Math.PI, fog: false });
     // the light is baked, only the flash of your own gun still falls on the walls
     m.onBeforeCompile = (s) => {
       s.uniforms.uFlashPos = flash.pos; s.uniforms.uFlashI = flash.i;
@@ -285,10 +285,10 @@ export default {
     for (const m of SIGNS) for (const mesh of meshesOf(faceIdsOf(m), litMat)) B.root.add(mesh);
     // the window band: see-through, as in the file
     const see = new Map();
-    const glassMat = (name) => { let k = see.get(name); if (!k) see.set(name, k = new THREE.MeshBasicMaterial({ map: textures.get(name), transparent: true, opacity: 130 / 255, depthWrite: false, fog: false, side: THREE.DoubleSide })); return k; };
+    const glassMat = (name) => { let k = see.get(name); if (!k) see.set(name, k = new THREE.MeshBasicMaterial({ map: textures.get(name) || null, transparent: true, opacity: 130 / 255, depthWrite: false, fog: false, side: THREE.DoubleSide, forceSinglePass: true })); return k; };
     for (const m of SOLID_GLASS) for (const mesh of meshesOf(faceIdsOf(m), glassMat)) { mesh.renderOrder = 2; B.root.add(mesh); }
     // the water: the whirlpool, and the big pool only if it is switched on
-    const water = new THREE.MeshBasicMaterial({ map: textures.get('bluewater'), transparent: true, opacity: 190 / 255, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const water = new THREE.MeshBasicMaterial({ map: textures.get('bluewater'), transparent: true, opacity: 190 / 255, depthWrite: false, fog: false, side: THREE.DoubleSide, forceSinglePass: true });
     this.waterMat = water;
     POOLS.forEach((m, i) => { if (i === 0 && !POOL_WATER) return; for (const mesh of meshesOf(faceIdsOf(m), () => water)) { mesh.renderOrder = 1; B.root.add(mesh); } });
     // ---- the doors

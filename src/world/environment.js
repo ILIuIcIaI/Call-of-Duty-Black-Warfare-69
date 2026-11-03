@@ -8,6 +8,7 @@ export function createEnvironment(engine, scene, env, bounds) {
   // ---- sky dome (cheap analytic gradient + sun + soft fbm clouds)
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+    defines: q.sky === 'flat' ? { NO_CLOUDS: '' } : {}, // (Toaster: the clouds are noise on every sky pixel)
     uniforms: {
       top: { value: new THREE.Color(env.skyTop) },
       horizon: { value: new THREE.Color(env.skyHorizon) },
@@ -30,12 +31,14 @@ export function createEnvironment(engine, scene, env, bounds) {
         vec3 col = y > 0.0 ? mix(horizon, top, pow(clamp(y,0.0,1.0), 0.55)) : mix(horizon, bottom, clamp(-y*4.0,0.0,1.0));
         float sd = max(dot(d, sunDir), 0.0);
         col += sunColor * (smoothstep(0.9975, 0.9988, sd) * 0.9 + pow(sd, 40.0) * 0.28 + pow(sd, 6.0) * 0.1);
+        #ifndef NO_CLOUDS
         if (y > 0.0) {
           vec2 uv = d.xz / (y + 0.12) * 1.6;
           float c = smoothstep(0.5 - clouds*0.25, 0.74, fbm(uv));
           float lit = 0.75 + 0.25 * pow(sd, 3.0);
           col = mix(col, cloudColor * lit, c * smoothstep(0.0, 0.18, y) * 0.85);
         }
+        #endif
         col = floor(col * 48.0 + 0.5) / 48.0; // limited color depth, like a painted sky texture
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>

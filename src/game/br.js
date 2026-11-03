@@ -196,7 +196,7 @@ export class BRMatch {
     this.downs = 0; this.bleedRate = 0; this.reviveK = 0; this.reviveTime = 0; this.crawlT = 0; this.reviveLock = 0;
     this.finisher = null;
     this.finishing = new Map(); // who is lying there: the bot on its way to end it
-    bakeFinishers();
+    bakeFinishers(true); // (one scene at a time while the plane flies, not on the loading screen)
     this.audioL = {};
   }
 

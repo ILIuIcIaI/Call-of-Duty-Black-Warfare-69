@@ -46,13 +46,138 @@ function getMats(game, outfit) {
   return m;
 }
 
+const twins = new WeakMap();
+function rigidTwin(m) { if (!twins.has(m)) twins.set(m, m.clone()); return twins.get(m); }
+
 let woundGeo = null, woundMat = null;
-function rbox(w, h, d, r = 0.02) { return new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)); }
+// Every soldier is built from the same shapes: one geometry per shape for all of them
+// (making the rounded boxes again for each bot was most of what a bot cost to load). Never changed in place.
+const shapes = new Map();
+function shape(key, make) { let g = shapes.get(key); if (!g) shapes.set(key, (g = make())); return g; }
+const cylG = (...a) => shape('c' + a.join('|'), () => new THREE.CylinderGeometry(...a));
+const sphG = (...a) => shape('s' + a.join('|'), () => new THREE.SphereGeometry(...a));
+const torG = (...a) => shape('t' + a.join('|'), () => new THREE.TorusGeometry(...a));
+// (laces, webbing, rails: on parts this small a rounded box looks just like a plain one, at 12 triangles instead of 300)
+function rbox(w, h, d, r = 0.02) {
+  return shape(`b${w}|${h}|${d}|${r}`, () => {
+    const g = r <= 0.004 || Math.min(w, h, d) < 0.012 ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+    g.userData.box = [w, h, d];
+    return g;
+  });
+}
+
+// ---- the simple body for distances where the detail can't be seen any more (and for Toaster):
+// plain boxes and few-sided tubes, every part in its material's average colour, one draw call per soldier
+const avgOf = new WeakMap();
+function texAverage(t) {
+  let c = avgOf.get(t);
+  if (c) return c;
+  c = new THREE.Color(1, 1, 1);
+  try {
+    const img = t.image, w = img.width, h = img.height, cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, w, h).data, lin = (v) => (v /= 255) <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { r += lin(d[i]); g += lin(d[i + 1]); b += lin(d[i + 2]); }
+    const n = d.length / 4; c.setRGB(r / n, g / n, b / n);
+  } catch (e) { /* a picture that can't be read: plain colour */ }
+  avgOf.set(t, c);
+  return c;
+}
+function flatOf(m) {
+  const c = m.color ? m.color.clone() : new THREE.Color(1, 1, 1);
+  if (m.map) c.multiply(texAverage(m.map));
+  return { c, unlit: m.isMeshBasicMaterial ? 1 : 0 };
+}
+// Lambert with the colour in the vertices; 'unlit' vertices (the team band) keep their colour like a MeshBasicMaterial
+const farMats = {};
+export function farMaterial(skinned) {
+  const k = skinned ? 'skinned' : 'rigid';
+  if (farMats[k]) return farMats[k];
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  m.onBeforeCompile = (s) => {
+    s.vertexShader = 'attribute float unlit;\nvarying float vUnlit;\n' + s.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvUnlit = unlit;');
+    s.fragmentShader = 'varying float vUnlit;\n' + s.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb, vUnlit);\n\t#include <opaque_fragment>');
+  };
+  m.customProgramCacheKey = () => 'far-body';
+  return (farMats[k] = m);
+}
+// the simple stand-in for one part, in the part's own space; null = too small to be seen from afar
+function farPart(o) {
+  const g = o.geometry, b = g.userData.box, P = g.parameters;
+  let s;
+  if (b) {
+    const d = [...b].sort((x, y) => x - y);
+    if (d[1] < 0.02 || d[2] < 0.05) return null; // laces, webbing, straps, rails
+    s = new THREE.BoxGeometry(b[0], b[1], b[2]);
+  } else if (g.type === 'SphereGeometry') s = new THREE.SphereGeometry(P.radius, 6, 4, P.phiStart, P.phiLength, P.thetaStart, P.thetaLength);
+  else if (g.type === 'CylinderGeometry') {
+    if (Math.max(P.radiusTop, P.radiusBottom) < 0.02) return null;
+    s = new THREE.CylinderGeometry(P.radiusTop, P.radiusBottom, P.height, 5, 1, P.openEnded);
+  } else if (g.type === 'TorusGeometry') return null;
+  else s = g.clone();
+  // same place as the detailed part (a limb is shifted to hang from its joint)
+  if (!g.boundingBox) g.computeBoundingBox();
+  s.computeBoundingBox();
+  const c0 = g.boundingBox.getCenter(new THREE.Vector3()), c1 = s.boundingBox.getCenter(new THREE.Vector3());
+  s.translate(c0.x - c1.x, c0.y - c1.y, c0.z - c1.z);
+  return s.index ? s.toNonIndexed() : s;
+}
+// parts: [{ g (non-indexed, already placed), c, unlit, bone }] -> one geometry (bone < 0: not skinned)
+function mergeFar(parts) {
+  let n = 0;
+  for (const p of parts) n += p.g.attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), unl = new Float32Array(n);
+  const skinned = parts.length && parts[0].bone >= 0, si = skinned ? new Uint16Array(n * 4) : null, sw = skinned ? new Float32Array(n * 4) : null;
+  let o = 0;
+  for (const p of parts) {
+    const a = p.g.attributes, k = a.position.count;
+    pos.set(a.position.array, o * 3); nor.set(a.normal.array, o * 3);
+    for (let i = o; i < o + k; i++) {
+      col[i * 3] = p.c.r; col[i * 3 + 1] = p.c.g; col[i * 3 + 2] = p.c.b; unl[i] = p.unlit;
+      if (si) { si[i * 4] = p.bone; sw[i * 4] = 1; }
+    }
+    o += k;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('unlit', new THREE.BufferAttribute(unl, 1));
+  if (si) { g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4)); }
+  return g;
+}
+// a gun from afar: every part as its box, all in one mesh (built once per gun and sight)
+const farGuns = new Map();
+function farWeapon(model, optic, tex) {
+  const key = model + '|' + optic;
+  if (farGuns.has(key)) return farGuns.get(key);
+  const w = buildWeapon(model, optic, weaponMaterials(tex), { merge: false, lite: true }), parts = [];
+  w.root.updateMatrixWorld(true);
+  const inv = w.root.matrixWorld.clone().invert(), m4 = new THREE.Matrix4();
+  w.root.traverse((o) => {
+    if (!o.isMesh || !o.visible || o.material.transparent || o.material.isMeshBasicMaterial) return;
+    const g = o.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const bb = g.boundingBox, sz = bb.getSize(new THREE.Vector3()), d = [sz.x, sz.y, sz.z].sort((x, y) => x - y);
+    if (d[2] < 0.02 || d[1] < 0.006) return; // screws, rail slots, pins
+    const s = new THREE.BoxGeometry(Math.max(sz.x, 0.002), Math.max(sz.y, 0.002), Math.max(sz.z, 0.002)).toNonIndexed();
+    const c = bb.getCenter(new THREE.Vector3());
+    s.translate(c.x, c.y, c.z);
+    s.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+    parts.push({ g: s, ...flatOf(o.material), bone: -1 });
+  });
+  const geo = parts.length ? mergeFar(parts) : null;
+  if (geo) geo.computeBoundingSphere();
+  farGuns.set(key, geo);
+  return geo;
+}
 function mesh(g, m, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
   const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); return o;
 }
 function limb(r1, r2, len, m, seg = 8) {
-  const g = new THREE.CylinderGeometry(r1, r2, len, seg); g.translate(0, -len / 2, 0);
+  const g = shape(`l${r1}|${r2}|${len}|${seg}`, () => new THREE.CylinderGeometry(r1, r2, len, seg).translate(0, -len / 2, 0));
   return new THREE.Mesh(g, m);
 }
 // merge the direct mesh children of a bone group by material (fewer draw calls)
@@ -74,6 +199,8 @@ function isInside(o, anc) { for (let p = o.parent; p; p = p.parent) if (p === an
 
 // Turns the Group-based rig into Bones + SkinnedMeshes (rigid skinning, weight 1 per part).
 // Animation code keeps working because the bones get the same hierarchy and local transforms.
+// The merged geometries are the same for every soldier in one outfit: made once, shared (bodies).
+const bodies = new Map();
 function skinify(sol, root, skipUpper) {
   root.updateMatrixWorld(true);
   const rootInv = root.matrixWorld.clone().invert();
@@ -87,38 +214,54 @@ function skinify(sol, root, skipUpper) {
     return bone;
   };
   const rootBone = make(sol.pelvis, null);
-  const byMat = new Map();
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    if (o.parent === sol.weaponMount || isInside(o, sol.weaponMount)) return;
-    if (skipUpper && (o.parent === sol.spine || isInside(o, sol.spine))) return;
-    const bi = bones.indexOf(boneOf.get(o.parent));
-    if (bi < 0) return;
-    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(rootInv, o.matrixWorld));
-    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
-    const n = g.attributes.position.count;
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
-    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
-    for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
-    g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
-    if (!byMat.has(o.material)) byMat.set(o.material, []);
-    byMat.get(o.material).push(g);
-  });
+  const key = JSON.stringify(sol.outfit) + (skipUpper ? '|fp' : '');
+  let body = bodies.get(key);
+  if (!body) {
+    const byMat = new Map(), far = skipUpper ? null : [];
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.parent === sol.weaponMount || isInside(o, sol.weaponMount)) return;
+      if (skipUpper && (o.parent === sol.spine || isInside(o, sol.spine))) return;
+      const bi = bones.indexOf(boneOf.get(o.parent));
+      if (bi < 0) return;
+      const M = new THREE.Matrix4().multiplyMatrices(rootInv, o.matrixWorld);
+      if (far) { const s = farPart(o); if (s) far.push({ g: s.applyMatrix4(M), ...flatOf(o.material), bone: bi }); }
+      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      g.applyMatrix4(M);
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      const n = g.attributes.position.count;
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+      const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
+      g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+      g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+      if (!byMat.has(o.material)) byMat.set(o.material, []);
+      byMat.get(o.material).push(g);
+    });
+    body = { parts: [], far: far && far.length ? mergeFar(far) : null };
+    for (const [mat, list] of byMat) { const merged = mergeGeometries(list, false); projectUV(merged, 0.62); body.parts.push([mat, merged]); }
+    bodies.set(key, body);
+  }
   root.remove(sol.pelvis);
   root.add(rootBone);
   boneOf.get(sol.chest).add(sol.weaponMount);
   root.updateMatrixWorld(true);
   const skeleton = new THREE.Skeleton(bones);
-  for (const [mat, list] of byMat) {
-    const merged = mergeGeometries(list, false);
-    projectUV(merged, 0.62);
+  for (const [mat, merged] of body.parts) {
     const mesh = new THREE.SkinnedMesh(merged, mat);
     root.add(mesh);
     mesh.bind(skeleton);
     mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 2.4);
     (sol.skinned || (sol.skinned = [])).push(mesh);
+  }
+  sol.near = [...sol.skinned];
+  if (body.far) {
+    const mesh = sol.far = new THREE.SkinnedMesh(body.far, farMaterial(true));
+    root.add(mesh);
+    mesh.bind(skeleton);
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 2.4);
+    mesh.visible = false;
+    sol.skinned.push(mesh);
   }
   // remap rig references to bones
   sol.pelvis = boneOf.get(sol.pelvis); sol.spine = boneOf.get(sol.spine); sol.chest = boneOf.get(sol.chest); sol.head = boneOf.get(sol.head);
@@ -154,6 +297,8 @@ function curve(keys, p) {
 }
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4();
+// (the hands and the reload target: every frame for every bot, so kept rather than made new)
+const _rt = new THREE.Vector3(), _lt = new THREE.Vector3(), _tg = new THREE.Vector3(), _fd = new THREE.Vector3(), _qi = new THREE.Quaternion();
 
 export class Soldier {
   constructor(game, outfit, opts = {}) {
@@ -203,25 +348,25 @@ export class Soldier {
     for (const sx of [-1, 1]) chest.add(mesh(rbox(0.07, 0.03, 0.3, 0.01), m.vest, sx * 0.12, 0.23, 0.0));
     chest.add(mesh(rbox(0.12, 0.09, 0.03, 0.01), m.gear, -0.06, 0.15, -0.165));
     chest.add(mesh(rbox(0.06, 0.06, 0.05, 0.012), m.band, 0.13, -0.12, -0.13));
-    chest.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.2, 10), m.gear, 0.0, 0.03, 0.24, Math.PI / 2, 0, Math.PI / 2)); // bedroll
-    chest.add(mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.3, 6), m.black, -0.09, 0.12, 0.05, 0.4, 0, 0.3)); // hydration tube
+    chest.add(mesh(cylG(0.035, 0.035, 0.2, 10), m.gear, 0.0, 0.03, 0.24, Math.PI / 2, 0, Math.PI / 2)); // bedroll
+    chest.add(mesh(cylG(0.006, 0.006, 0.3, 6), m.black, -0.09, 0.12, 0.05, 0.4, 0, 0.3)); // hydration tube
     // team band on both shoulders
-    for (const s of [-1, 1]) chest.add(mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.035, 10), m.band, s * 0.22, 0.12, 0, 0, 0, Math.PI / 2 * 0));
+    for (const s of [-1, 1]) chest.add(mesh(cylG(0.062, 0.062, 0.035, 10), m.band, s * 0.22, 0.12, 0, 0, 0, Math.PI / 2 * 0));
     // neck + head
     const head = this.head = grp(chest, 0, 0.29, 0);
-    head.add(mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 8), m.uniform, 0, -0.03, 0));
-    const skull = mesh(new THREE.SphereGeometry(0.105, 14, 10), outfit.face === 'mask' ? m.mask : m.skin, 0, 0.09, 0);
+    head.add(mesh(cylG(0.055, 0.06, 0.1, 8), m.uniform, 0, -0.03, 0));
+    const skull = mesh(sphG(0.105, 14, 10), outfit.face === 'mask' ? m.mask : m.skin, 0, 0.09, 0);
     skull.scale.set(0.95, 1.08, 1.0); head.add(skull);
-    head.add(mesh(new THREE.SphereGeometry(0.128, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), m.helmet, 0, 0.12, 0.01));
+    head.add(mesh(sphG(0.128, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), m.helmet, 0, 0.12, 0.01));
     head.add(mesh(rbox(0.21, 0.025, 0.07, 0.01), m.helmet, 0, 0.11, -0.1)); // brim
     head.add(mesh(rbox(0.06, 0.05, 0.04, 0.01), m.black, 0, 0.17, -0.12)); // NVG mount
-    for (const s of [-1, 1]) head.add(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.04, 10), m.black, s * 0.11, 0.08, 0.0, 0, 0, Math.PI / 2));
+    for (const s of [-1, 1]) head.add(mesh(cylG(0.045, 0.045, 0.04, 10), m.black, s * 0.11, 0.08, 0.0, 0, 0, Math.PI / 2));
     head.add(mesh(rbox(0.17, 0.045, 0.05, 0.02), m.lens, 0, 0.1, -0.09)); // goggles / glasses
     if (outfit.face !== 'mask') head.add(mesh(rbox(0.12, 0.05, 0.05, 0.02), m.mask, 0, 0.02, -0.08)); // shemagh
     // helmet rails, back velcro patch, chin strap
     for (const s of [-1, 1]) head.add(mesh(rbox(0.012, 0.03, 0.12, 0.004), m.black, s * 0.127, 0.15, 0.0));
     head.add(mesh(rbox(0.06, 0.04, 0.012, 0.004), m.band, 0, 0.17, 0.125));
-    head.add(mesh(new THREE.TorusGeometry(0.095, 0.006, 4, 16, Math.PI), m.black, 0, 0.07, 0.01, 0, Math.PI / 2, Math.PI));
+    head.add(mesh(torG(0.095, 0.006, 4, 16, Math.PI), m.black, 0, 0.07, 0.01, 0, Math.PI / 2, Math.PI));
     // belt gear: holster with pistol on the right thigh, dump pouch left
     pelvis.add(mesh(rbox(0.05, 0.16, 0.08, 0.012), m.gear, 0.2, -0.12, -0.0));
     pelvis.add(mesh(rbox(0.035, 0.06, 0.03, 0.006), m.black, 0.2, -0.02, -0.03, 0.25));
@@ -231,7 +376,7 @@ export class Soldier {
     for (const s of [-1, 1]) {
       const shoulder = grp(chest, s * 0.2, 0.16, s < 0 ? -0.07 : 0.03);
       const upper = grp(shoulder);
-      upper.add(mesh(new THREE.SphereGeometry(0.07, 10, 8), m.uniform));
+      upper.add(mesh(sphG(0.07, 10, 8), m.uniform));
       upper.add(limb(0.058, 0.048, 0.3, m.uniform));
       const elbow = grp(upper, 0, -0.3, 0);
       const fore = grp(elbow);
@@ -240,17 +385,16 @@ export class Soldier {
       hand.add(mesh(rbox(0.07, 0.1, 0.06, 0.02), m.glove, 0, -0.02, 0));
       hand.add(mesh(rbox(0.06, 0.03, 0.03, 0.008), m.black, 0, -0.04, -0.025)); // knuckle pad
       fore.add(mesh(rbox(0.07, 0.08, 0.07, 0.015), m.gear, 0, -0.02, 0.0)); // elbow pad
-      this.arms.push({ shoulder, upper, elbow, fore, hand, s, L1: 0.3, L2: 0.29 });
+      this.arms.push({ shoulder, upper, elbow, fore, hand, s, L1: 0.3, L2: 0.29, home: shoulder.position.clone() });
     }
     // weapon mount (chest space)
     this.weaponMount = grp(chest, 0.08, 0.22, -0.3);
     this.weapon = null;
 
-    // blob shadow
-    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, map: blobTexture() });
-    this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), sm);
-    this.blob.rotation.x = -Math.PI / 2; this.blob.renderOrder = 2;
-    game.scene.add(this.blob);
+    // blob shadow: where it lies, how big, which way. All of them are drawn together, see Blobs.
+    this.blob = new THREE.Object3D();
+    this.blob.rotation.x = -Math.PI / 2;
+    blobsOf(game).list.add(this.blob);
 
     // convert the group rig into one skinned mesh per material (a handful of draw calls per soldier)
     skinify(this, root, this.fp);
@@ -265,8 +409,9 @@ export class Soldier {
       fc.add(mesh(rbox(0.12, 0.09, 0.03, 0.01), m.gear, -0.06, 0.15, -0.165));
       fc.traverse((o) => {
         if (!o.isMesh) return;
+        o.material = rigidTwin(o.material); // (the bots wear these as skinned meshes: one material for both makes three.js re-derive the shader each time)
         o.frustumCulled = false; o.castShadow = false; o.receiveShadow = false;
-        if (o.geometry.index) o.geometry = o.geometry.toNonIndexed();
+        o.geometry = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); // (the shapes are shared, see shape())
         projectUV(o.geometry, 0.62);
       });
       fc.visible = false;
@@ -274,9 +419,10 @@ export class Soldier {
     }
     root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     game.scene.add(root);
+    this.isFar = false;
+    if (!this.fp) Soldier.live.add(this);
     // thermal optics: bodies glow on layer 1, the fake shadow blob stays out of that picture
     if (!this.fp) root.traverse((o) => { if (o.isMesh) o.layers.enable(1); });
-    this.blob.layers.set(2);
 
     // animation state
     this.phase = 0;
@@ -287,19 +433,32 @@ export class Soldier {
     this.weaponDrop = null;
   }
 
+  // a gun's third-person models built ahead, on the loading screen, not at the first death in a fight
+  static prebuild(game, def, optic) {
+    const key = def.model + '|' + optic;
+    Soldier.wcache = Soldier.wcache || {};
+    if (!Soldier.wcache[key]) Soldier.wcache[key] = buildWeapon(def.model, optic, weaponMaterials(game.tex), { lite: true });
+    farWeapon(def.model, optic, game.tex);
+  }
+
   // (no skin given: the one this soldier has had so far)
   setWeapon(def, optic, skin) {
     if (this.weapon) this.weaponMount.remove(this.weapon.root);
     if (skin !== undefined) this.skin = skin;
     const key = def.model + '|' + optic;
     Soldier.wcache = Soldier.wcache || {};
-    if (!Soldier.wcache[key]) Soldier.wcache[key] = buildWeapon(def.model, optic, weaponMaterials(this.game.tex));
+    if (!Soldier.wcache[key]) Soldier.wcache[key] = buildWeapon(def.model, optic, weaponMaterials(this.game.tex), { lite: true });
     const proto = Soldier.wcache[key];
-    const root = proto.root.clone(true);
-    applySkin({ root, parts: { mag: root.getObjectByName('mag') } }, this.skin, weaponMaterials(this.game.tex));
-    this.weapon = { root, proto, def };
-    // hide PIP lens (not rendered for third person)
-    root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
+    const near = proto.root.clone(true);
+    applySkin({ root: near, parts: { mag: near.getObjectByName('mag') } }, this.skin, weaponMaterials(this.game.tex));
+    // no PIP lens and no glowing reticle in third person (they'd share their material with the gun in your hands)
+    near.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial) o.visible = false; });
+    // the detailed gun and its simple stand-in for afar, side by side in one holder
+    const root = new THREE.Group(), fg = this.fp ? null : farWeapon(def.model, optic, this.game.tex);
+    root.add(near);
+    const far = fg ? new THREE.Mesh(fg, farMaterial(false)) : null;
+    if (far) { root.add(far); far.visible = this.isFar; near.visible = !this.isFar; }
+    this.weapon = { root, proto, def, near, far };
     this.weaponMount.add(root);
     // pistols are held further forward/lower with both hands
     if (proto.pistol) this.weaponMount.position.set(0.04, 0.14, -0.42); else this.weaponMount.position.set(0.075, 0.2, -0.27);
@@ -317,11 +476,14 @@ export class Soldier {
 
   // 2-bone IK for an arm toward a target given in chest space
   solveArm(arm, target, poleX) {
-    const sh = arm.shoulder.position;
+    // The target is where the hand closes round the grip (the first-person fist sits there), so the middle of the
+    // hand goes there: 2 cm past the wrist. A handguard just out of reach brings the shoulder forward a little.
+    const sh = arm.shoulder.position.copy(arm.home);
     _a.copy(target).sub(sh);
     let d = _a.length();
-    const L1 = arm.L1, L2 = arm.L2 + 0.04;
-    d = clamp(d, 0.05, L1 + L2 - 0.001);
+    const L1 = arm.L1, L2 = arm.L2 + 0.02, reach = L1 + L2 - 0.001;
+    if (d > reach) { sh.addScaledVector(_a, Math.min(0.05, d - reach) / d); _a.copy(target).sub(sh); d = _a.length(); }
+    d = clamp(d, 0.05, reach);
     _a.setLength(d);
     // elbow angle via law of cosines
     const cosE = clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1);
@@ -338,8 +500,8 @@ export class Soldier {
     arm.upper.quaternion.setFromUnitVectors(DOWN, upDir.normalize());
     // forearm bends at the elbow (in the upper arm's local frame)
     const elbowWorldBend = _q.setFromAxisAngle(n, -elbowBend);
-    const foreDirChest = upDir.clone().applyQuaternion(elbowWorldBend);
-    const inv = arm.upper.quaternion.clone().invert();
+    const foreDirChest = _fd.copy(upDir).applyQuaternion(elbowWorldBend);
+    const inv = _qi.copy(arm.upper.quaternion).invert();
     arm.fore.quaternion.setFromUnitVectors(DOWN, foreDirChest.applyQuaternion(inv).normalize());
   }
 
@@ -468,8 +630,8 @@ export class Soldier {
     if (this.weapon && !this.fp) {
       this.weaponMount.updateMatrix();
       const wmM = this.weaponMount.matrix;
-      const rt = _d.copy(this.weapon.rh).applyMatrix4(wmM).clone();
-      let lt = new THREE.Vector3().copy(this.weapon.lh).applyMatrix4(wmM);
+      const rt = _rt.copy(this.weapon.rh).applyMatrix4(wmM);
+      const lt = _lt.copy(this.weapon.lh).applyMatrix4(wmM);
       if (A.reload > 0.05) {
         // left hand: grab the mag, drop it to the pouch, bring a fresh one, slap it in
         const k = st.reloadK || 0;
@@ -477,7 +639,7 @@ export class Soldier {
         const pouch = _a.set(-0.16, -0.32, -0.05);
         const u = k < 0.2 ? 0 : k < 0.45 ? (k - 0.2) / 0.25 : k < 0.6 ? 1 : k < 0.8 ? 1 - (k - 0.6) / 0.2 : 0;
         const e = u * u * (3 - 2 * u);
-        const tgt = new THREE.Vector3().lerpVectors(well, pouch, e);
+        const tgt = _tg.lerpVectors(well, pouch, e);
         if (k > 0.78 && k < 0.84) tgt.y += 0.03; // slap
         lt.lerp(tgt, A.reload);
       }
@@ -605,16 +767,30 @@ export class Soldier {
     this.root.position.set(0, 0, 0); this.root.rotation.set(0, 0, 0);
     this.pelvis.position.set(0, this.hipH, 0);
     this.root.traverse((o) => { if (o.isBone) o.quaternion.identity(); });
-    for (const a of this.arms) a.shoulder.position.set(a.s * 0.2, 0.16, a.s < 0 ? -0.07 : 0.03);
+    for (const a of this.arms) a.shoulder.position.copy(a.home);
     for (const m of this.skinned || []) m.boundingSphere.center.set(0, 0.9, 0);
     for (const k of Object.keys(this.anim)) this.anim[k] = 0;
   }
 
   setVisible(v) { this.root.visible = v; this.blob.visible = v; }
 
+  // detailed or simple: see Game.updateLod
+  setFar(far) {
+    if (far === this.isFar || !this.far) return;
+    this.isFar = far;
+    for (const m of this.near) m.visible = !far;
+    this.far.visible = far;
+    const w = this.weapon;
+    if (w && w.far) { w.near.visible = !far; w.far.visible = far; }
+  }
+  // where the body is for that choice (a ragdoll moves the bones, not the root)
+  lodPos() { return this.ragdoll ? this.ragdoll.center : this.root.position; }
+
   dispose() {
-    this.game.scene.remove(this.root); this.game.scene.remove(this.blob);
+    this.game.scene.remove(this.root);
+    if (this.game.blobs) this.game.blobs.list.delete(this.blob);
     if (this.weaponDrop) this.game.scene.remove(this.weaponDrop.obj);
+    Soldier.live.delete(this);
   }
 
   // ---- hitboxes in world space (computed on demand)
@@ -644,6 +820,37 @@ export class Soldier {
     }
     return out;
   }
+}
+
+Soldier.live = new Set(); // every body in the world that can be drawn simple (not your own first-person one)
+
+// Every soldier's blob shadow in one instanced mesh: one draw call instead of one each.
+// The soldiers keep moving their own Object3D, update() writes them all in once a frame.
+class Blobs {
+  constructor(scene) {
+    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, map: blobTexture() });
+    const m = this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.1, 1.1), sm, 64);
+    m.count = 0; m.renderOrder = 2; m.frustumCulled = false;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.layers.set(2); // (not in the thermal picture)
+    this.list = new Set(); this.scene = scene;
+    scene.add(m);
+  }
+  update() {
+    const m = this.mesh, cap = m.instanceMatrix.count;
+    let n = 0;
+    for (const b of this.list) {
+      if (!b.visible || n >= cap) continue;
+      b.updateMatrix(); m.setMatrixAt(n++, b.matrix);
+    }
+    m.count = n;
+    if (n) m.instanceMatrix.needsUpdate = true;
+  }
+}
+// (a new map clears the scene, and the blobs start over with it)
+function blobsOf(game) {
+  if (!game.blobs || game.blobs.mesh.parent !== game.scene) game.blobs = new Blobs(game.scene);
+  return game.blobs;
 }
 
 let BLOB = null;

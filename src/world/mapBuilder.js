@@ -100,6 +100,56 @@ export const MATERIALS = {
   chalk: { tex: 'paint', color: 0x2e4c3e, scale: 2, surface: 'concrete' },
   shutterRed: { tex: 'wood', color: 0x9a4a3c, scale: 0.8, surface: 'wood', pen: 0.8 },
   signs: { tex: 'signs', color: 0xffffff, scale: 1, surface: 'metal' },
+  // the desert town
+  sand: { tex: 'sand', color: 0xffffff, scale: 6, surface: 'dirt' },
+  adobe: { tex: 'adobe', color: 0xe8cca0, scale: 3.2, surface: 'concrete' },
+  adobeLight: { tex: 'adobe', color: 0xf4e4c4, scale: 3.2, surface: 'concrete' },
+  adobeRose: { tex: 'adobe', color: 0xe8b496, scale: 3.2, surface: 'concrete' },
+  adobeOchre: { tex: 'adobe', color: 0xdcae70, scale: 3.2, surface: 'concrete' },
+  clay: { tex: 'plaster', color: 0xc47c52, scale: 1, surface: 'concrete' },
+  sandstone: { tex: 'ashlar', color: 0xe8cf9e, scale: 2.4, surface: 'concrete' },
+  rug: { tex: 'rug', color: 0xffffff, scale: 1.6, surface: 'wood', pen: 1 },
+  awningRed: { tex: 'awning', color: 0xc85040, scale: 1.4, surface: 'wood', pen: 1 },
+  awningBlue: { tex: 'awning', color: 0x4a78a8, scale: 1.4, surface: 'wood', pen: 1 },
+  awningGreen: { tex: 'awning', color: 0x5a8a50, scale: 1.4, surface: 'wood', pen: 1 },
+  awningOchre: { tex: 'awning', color: 0xe0a848, scale: 1.4, surface: 'wood', pen: 1 },
+  // the office building
+  facade: { tex: 'concrete', color: 0xd6d2c8, scale: 3.6, surface: 'concrete' },
+  marbleFloor: { tex: 'tiles', color: 0xe2dcd2, scale: 2.4, surface: 'concrete' },
+  carpetOffice: { tex: 'carpettile', color: 0x8a929c, scale: 2, surface: 'wood', pen: 0.7 },
+  ceiling: { tex: 'ceiltile', color: 0xf2f0ea, scale: 1.2, surface: 'concrete' },
+  cubicle: { tex: 'fabric', color: 0x7c8898, scale: 0.8, surface: 'wood', pen: 0.9 },
+  cardboard: { tex: 'paint', color: 0xb48c5c, scale: 1, surface: 'wood', pen: 0.8 },
+  hedge: { tex: 'grass', color: 0x6a8c50, scale: 1.4, surface: 'wood', pen: 1 },
+  grate: { tex: 'grate', color: 0xa8aeb2, scale: 1, surface: 'metal', pen: 0.6 },
+  // the power station
+  coal: { tex: 'coal', color: 0xffffff, scale: 2.5, surface: 'dirt' },
+  machineGreen: { tex: 'paint', color: 0x5e8070, scale: 2, surface: 'metal', pen: 0.3 },
+  machineBlue: { tex: 'paint', color: 0x4c6c8e, scale: 2, surface: 'metal', pen: 0.3 },
+  // the sawmill
+  logpile: { tex: 'logpile', color: 0xffffff, scale: 1.44, surface: 'wood', pen: 0.3 },
+  logside: { tex: 'logside', color: 0xffffff, scale: 1.44, surface: 'wood', pen: 0.3 },
+  barkLog: { tex: 'barkrough', color: 0xffffff, scale: 1, surface: 'wood', pen: 0.4 },
+  lumber: { tex: 'lumber', color: 0xffffff, scale: 1.6, surface: 'wood', pen: 0.5 },
+  shingle: { tex: 'shingle', color: 0xffffff, scale: 2, surface: 'wood' },
+  fieldstone: { tex: 'fieldstone', color: 0xffffff, scale: 2.2, surface: 'concrete' },
+  needles: { tex: 'needles', color: 0xffffff, scale: 5, surface: 'dirt' },
+  gravel: { tex: 'gravel', color: 0xffffff, scale: 3, surface: 'dirt' },
+  riverbed: { tex: 'gravel', color: 0x7c8c84, scale: 2.5, surface: 'water' },
+  sawdust: { tex: 'sand', color: 0xf4dca8, scale: 3, surface: 'dirt', pen: 1 },
+  pine: { tex: 'grass', color: 0x3e5c3e, scale: 1.2, surface: 'wood', pen: 1 },
+  barnRed: { tex: 'wood', color: 0x9c4434, scale: 1.2, surface: 'wood', pen: 0.7 },
+  barnGrey: { tex: 'wood', color: 0x9a9088, scale: 1.2, surface: 'wood', pen: 0.7 },
+  trimWhite: { tex: 'wood', color: 0xeae4d8, scale: 1.2, surface: 'wood', pen: 0.8 },
+  // the mountain station
+  snow: { tex: 'snow', color: 0xffffff, scale: 4, surface: 'dirt' },
+  snowBank: { tex: 'snow', color: 0xdce6f2, scale: 2.5, surface: 'dirt', pen: 0.6 },
+  rock: { tex: 'rock', color: 0xffffff, scale: 3, surface: 'concrete' },
+  rockDark: { tex: 'rock', color: 0x9a9ca4, scale: 4, surface: 'concrete' },
+  concreteWhite: { tex: 'concrete', color: 0xe4e2dc, scale: 3, surface: 'concrete' },
+  gondolaRed: { tex: 'paint', color: 0xb83a32, scale: 2, surface: 'metal', pen: 0.6 },
+  stoveTiles: { tex: 'tiles', color: 0x6a9a7c, scale: 0.9, surface: 'concrete' },
+  pinewood: { tex: 'wood', color: 0xfff0d4, scale: 1.1, surface: 'wood', pen: 0.7 },
 };
 
 export class MapBuilder {
@@ -256,7 +306,7 @@ export class MapBuilder {
       this.root.add(mesh);
     }
     if (skirtGeo) {
-      const m = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, vertexColors: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const m = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, vertexColors: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       m.onBeforeCompile = (s) => { // use vertex color .r as alpha
         s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', 'diffuseColor.a *= vColor.r; diffuseColor.rgb = vec3(0.0);');
       };

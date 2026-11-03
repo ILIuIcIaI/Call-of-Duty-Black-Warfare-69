@@ -373,6 +373,298 @@ const GENERATORS = {
     });
     return P;
   },
+  // wind-blown sand: soft ripples across, darker patches, a few pebbles with a lit top
+  sand() {
+    const S = 128, P = new Painter(S, 221), big = makeFbm(221, 4, 4), warp = makeFbm(223, 8, 2);
+    P.each((x, y, u, v) => {
+      const rip = Math.sin((v * 10 + warp(u, v) * 2.2) * Math.PI * 2) * 0.5 + 0.5;
+      const c = 0.84 + (big(u, v) - 0.5) * 0.22 + (rip - 0.5) * 0.07;
+      P.set(x, y, 0.86 * c, 0.71 * c, 0.5 * c);
+    });
+    for (let k = 0; k < 60; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0, g = 0.5 + P.rng() * 0.2;
+      P.set(x, y, g, g * 0.9, g * 0.78); P.mul(x, y - 1, 1.12); P.mul(x, y + 1, 0.78);
+    }
+    P.speckle(0.05);
+    return P;
+  },
+  // mud plaster over mud brick (light, tinted by the material): soft blotches and straw, and rounded patches where
+  // the plaster has come off and the bricks show
+  adobe() {
+    const S = 128, P = new Painter(S, 231), big = makeFbm(231, 4, 4), fall = makeFbm(237, 8, 3), fine = makeFbm(239, 16, 2);
+    P.each((x, y, u, v) => {
+      const c = 0.9 + (big(u, v) - 0.5) * 0.12 + (fine(u, v) - 0.5) * 0.06;
+      P.set(x, y, c, c * 0.97, c * 0.93);
+      const f = fall(u, v);
+      if (f > 0.72) {
+        const row = y >> 3, bx = (x + (row % 2) * 8) & 15, k = bx === 0 || (y & 7) === 0 ? 0.74 : 0.88 + hash2((x + (row % 2) * 8) >> 4, row, 3) * 0.08;
+        P.set(x, y, c * k * 0.97, c * k * 0.9, c * k * 0.8);
+      } else if (f > 0.7) P.mul(x, y, 0.88);
+    });
+    for (let k = 0; k < 220; k++) P.scratch(P.rng() * S, P.rng() * S, 2 + P.rng() * 3, P.rng() - 0.5, P.rng() - 0.5, P.rng() < 0.5 ? 0.86 : 1.1);
+    P.speckle(0.025);
+    return P;
+  },
+  // woven rug: a border of small diamonds, a field of stepped lozenges, in madder red, indigo, ivory and ochre
+  rug() {
+    const S = 64, P = new Painter(S, 241), f = makeFbm(241, 4, 2);
+    const RED = [0.55, 0.13, 0.11], BLUE = [0.16, 0.2, 0.36], IVORY = [0.86, 0.8, 0.66], OCHRE = [0.78, 0.55, 0.2];
+    P.each((x, y, u, v) => {
+      const edge = Math.min(x, S - 1 - x, y, S - 1 - y);
+      let col;
+      if (edge < 2) col = BLUE;
+      else if (edge < 8) col = Math.abs((x % 8) - 4) + Math.abs((y % 8) - 4) < 3 ? OCHRE : RED;
+      else if (edge < 9) col = IVORY;
+      else {
+        const d = Math.abs(x - 32) + Math.abs(y - 32);
+        col = d < 6 ? IVORY : d < 10 ? BLUE : d < 12 ? IVORY : d % 8 < 2 ? BLUE : RED;
+      }
+      const w = ((x + y) % 2 ? 0.94 : 1.04) * (0.9 + f(u, v) * 0.2);
+      P.set(x, y, col[0] * w, col[1] * w, col[2] * w);
+    });
+    P.speckle(0.04);
+    return P;
+  },
+  // cut stone (light, tinted by the material): courses of long blocks with chamfered edges, each a little different
+  ashlar() {
+    const S = 128, P = new Painter(S, 261), big = makeFbm(261, 4, 3), fine = makeFbm(263, 32, 2);
+    P.each((x, y, u, v) => { const c = 0.86 + (big(u, v) - 0.5) * 0.12 + (fine(u, v) - 0.5) * 0.08; P.set(x, y, c, c * 0.97, c * 0.92); });
+    for (let row = 0; row < 8; row++) for (let col = 0; col < 4; col++) {
+      const x0 = col * 32 + (row % 2) * 16, y0 = row * 16, t = 0.9 + hash2(col, row, 7) * 0.16;
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 32; x++) P.mul(x0 + x, y0 + y, t);
+      for (let x = 0; x < 32; x++) { P.mul(x0 + x, y0, 0.66); P.mul(x0 + x, y0 + 1, 1.1); }
+      for (let y = 0; y < 16; y++) { P.mul(x0, y0 + y, 0.7); P.mul(x0 + 1, y0 + y, 1.08); }
+      P.bevel(x0 + 1, y0 + 1, 31, 15, 1.08, 0.86);
+    }
+    P.speckle(0.03);
+    return P;
+  },
+  // office carpet tiles (light, tinted by the material): half-meter squares with the pile turned on every other one
+  carpettile() {
+    const S = 128, P = new Painter(S, 271), f = makeFbm(271, 4, 3);
+    P.each((x, y, u, v) => {
+      const turn = ((x >> 5) + (y >> 5)) % 2, line = turn ? (x & 3) === 0 : (y & 3) === 0;
+      const c = (0.8 + (f(u, v) - 0.5) * 0.12) * (turn ? 0.96 : 1.03) * (line ? 0.94 : 1) * (0.94 + hash2(x, y, 3) * 0.12);
+      P.set(x, y, c, c, c * 1.02);
+    });
+    for (let i = 0; i < S; i++) for (const g of [0, 32, 64, 96]) { P.mul(g, i, 0.88); P.mul(i, g, 0.88); }
+    return P;
+  },
+  // steel bar grating (light, tinted by the material): bearing bars close together, cross bars further apart, dark gaps
+  grate() {
+    const S = 64, P = new Painter(S, 281), f = makeFbm(281, 4, 2);
+    P.each((x, y, u, v) => {
+      const c = 0.8 + (f(u, v) - 0.5) * 0.2;
+      if (x % 4 === 0 || y % 16 === 0) P.set(x, y, c * 1.1, c * 1.1, c * 1.12); else P.set(x, y, 0.14, 0.14, 0.15);
+    });
+    P.speckle(0.04);
+    return P;
+  },
+  // a heap of coal: black lumps with a dull shine on their tops and dark gaps under them
+  coal() {
+    const S = 64, P = new Painter(S, 291), f = makeFbm(291, 8, 2);
+    P.each((x, y, u, v) => { const c = 0.1 + (f(u, v) - 0.5) * 0.06; P.set(x, y, c, c, c * 1.05); });
+    for (let k = 0; k < 140; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0, r = 1 + ((P.rng() * 3) | 0), g = 0.13 + P.rng() * 0.1;
+      for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) if (a * a + b * b <= r * r) P.set(x + a, y + b, g, g, g * 1.06);
+      P.mul(x - 1, y - r, 2.2); P.mul(x, y - r, 2.6);
+      for (let a = -r; a <= r; a++) P.mul(x + a, y + r + 1, 0.5);
+    }
+    return P;
+  },
+  // striped awning cloth (light, tinted by the material): broad stripes in two shades, faded by the sun
+  awning() {
+    const S = 64, P = new Painter(S, 251), f = makeFbm(251, 4, 3);
+    P.each((x, y, u, v) => {
+      const c = (0.86 + (f(u, v) - 0.5) * 0.16) * (y & 1 ? 0.97 : 1.02) * ((x >> 3) % 2 ? 0.62 : 1);
+      P.set(x, y, c, c, c);
+    });
+    P.speckle(0.03);
+    return P;
+  },
+  // the sawn ends of stacked logs: rings round a heart that is never quite in the middle, a thin bark rim, a drying
+  // crack, black gaps between the logs (four logs across)
+  logpile() {
+    const S = 128, P = new Painter(S, 301), f = makeFbm(301, 8, 2);
+    P.each((x, y, u, v) => { const c = 0.06 + f(u, v) * 0.05; P.set(x, y, c, c * 0.9, c * 0.75); });
+    for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
+      const cx = col * 32 + (row % 2) * 16 + 16 + (hash2(col, row, 5) - 0.5) * 4, cy = row * 32 + 16 + (hash2(col, row, 6) - 0.5) * 3;
+      const r = 13.5 + hash2(col, row, 7) * 2.6, tone = 0.84 + hash2(col, row, 8) * 0.2, rings = 4 + hash2(col, row, 9) * 3;
+      const ox = (hash2(col, row, 10) - 0.5) * 5, oy = (hash2(col, row, 11) - 0.5) * 5;
+      for (let dy = -17; dy <= 17; dy++) for (let dx = -17; dx <= 17; dx++) {
+        const d = Math.hypot(dx, dy);
+        if (d > r) continue;
+        const px = Math.round(cx + dx), py = Math.round(cy + dy);
+        if (d > r - 1.8) { P.set(px, py, 0.27 * tone, 0.18 * tone, 0.11 * tone); continue; }
+        const dh = Math.hypot(dx - ox, dy - oy), ring = 0.5 + 0.5 * Math.cos(dh / r * rings * Math.PI * 2);
+        const c = tone * (dh < r * 0.3 ? 0.88 : 1) * (0.84 + ring * 0.13 - dh / r * 0.12) * (dx + dy > r * 0.9 ? 0.9 : 1);
+        P.set(px, py, 0.92 * c, 0.75 * c, 0.5 * c);
+      }
+      const a = hash2(col, row, 12) * Math.PI * 2;
+      for (let t = 2; t < r - 2; t++) P.mul(Math.round(cx + ox + Math.cos(a) * t), Math.round(cy + oy + Math.sin(a) * t), 0.5);
+    }
+    P.speckle(0.04);
+    return P;
+  },
+  // a log pile from the side: round logs lying one over the other, lit along the middle of the curve, bark plates
+  // and furrows running along them, black gaps between (four logs high)
+  logside() {
+    const S = 128, P = new Painter(S, 311), plates = makeFbm(311, 8, 3), fine = makeFbm(313, 16, 2);
+    const H = S / 4;
+    P.each((x, y, u, v) => {
+      const li = Math.floor(y / H), t = (y - li * H) / H, round = Math.sin(t * Math.PI);
+      if (round < 0.2) { P.set(x, y, 0.05, 0.045, 0.04); return; }
+      const off = hash2(li, 1, 3), p = plates(u * 0.5 + off, v * 4), g = fine(u * 0.5 + off, v * 2);
+      const c = (0.28 + round * 0.56) * (0.84 + (p - 0.5) * 0.5) * (g < 0.4 ? 0.62 : 1);
+      P.set(x, y, 0.56 * c, 0.43 * c, 0.3 * c);
+    });
+    P.speckle(0.05);
+    return P;
+  },
+  // rough bark round a single log (u around it, v along it): long plates parted by dark furrows
+  barkrough() {
+    const S = 64, P = new Painter(S, 321), f = makeFbm(321, 4, 3), g = makeFbm(323, 8, 2);
+    P.each((x, y, u, v) => {
+      const w = Math.abs(Math.sin((u * 7 + f(u, v * 0.5) * 2.2) * Math.PI));
+      const c = (0.64 + (g(u, v) - 0.5) * 0.4) * (w < 0.22 ? 0.45 : 0.84 + w * 0.2);
+      P.set(x, y, 0.5 * c, 0.38 * c, 0.27 * c);
+    });
+    P.speckle(0.06);
+    return P;
+  },
+  // sawn boards stacked to dry, seen from the side: layers of planks, every one a little different, with the
+  // stickers that keep the air between them
+  lumber() {
+    const S = 128, P = new Painter(S, 331), f = makeFbm(331, 8, 2);
+    const L = 16;
+    P.each((x, y, u, v) => {
+      const li = Math.floor(y / L), k = y % L;
+      if (k >= 12) {
+        if ((x + li * 11) % 42 < 5) P.set(x, y, 0.42, 0.34, 0.22);
+        else P.set(x, y, 0.06, 0.05, 0.045);
+        return;
+      }
+      const b = Math.floor((x + hash2(li, 0, 2) * 128) / 64), tone = 0.8 + hash2(li, b, 3) * 0.22;
+      const grain = 0.5 + 0.5 * Math.sin((v * 40 + f(u, v) * 6) * Math.PI);
+      const c = tone * (0.84 + grain * 0.1) * (k === 0 ? 1.14 : k === 11 ? 0.72 : 1);
+      P.set(x, y, 0.86 * c, 0.69 * c, 0.47 * c);
+    });
+    for (let li = 0; li < S / L; li++) {
+      const jx = (hash2(li, 0, 2) * 128) | 0;
+      for (const j of [jx, jx + 64]) for (let y = li * L; y < li * L + 12; y++) { P.mul(j, y, 0.45); P.mul(j + 1, y, 1.1); }
+    }
+    P.speckle(0.03);
+    return P;
+  },
+  // wooden roof shingles: overlapping rows of uneven width, a shadow under each row, grey with weather, some moss
+  shingle() {
+    const S = 128, P = new Painter(S, 341), moss = makeFbm(341, 4, 3), f = makeFbm(343, 16, 2);
+    const R = 16, n = 9;
+    for (let row = 0; row < S / R; row++) {
+      const rs = [];
+      let sum = 0;
+      for (let i = 0; i < n; i++) { const r = 0.7 + hash2(row, i, 5) * 0.6; rs.push(r); sum += r; }
+      let x0 = Math.floor(hash2(row, 9, 5) * 20), acc = 0;
+      for (let i = 0; i < n; i++) {
+        const x1 = Math.round((acc += rs[i]) / sum * S) + Math.floor(hash2(row, 9, 5) * 20), tone = 0.78 + hash2(row, i, 6) * 0.3;
+        for (let y = row * R; y < row * R + R; y++) for (let x = x0; x < x1; x++) {
+          const u = (((x % S) + S) % S) / S, v = y / S, k = y - row * R, m = moss(u, v);
+          const c = tone * (0.84 + (f(u, v) - 0.5) * 0.25) * (k > R - 4 ? 0.6 : k < 2 ? 1.12 : 1);
+          let r = 0.56 * c, g = 0.49 * c, b = 0.41 * c;
+          if (m > 0.62) { const a = Math.min(1, (m - 0.62) * 4); r += (0.3 * c - r) * a; g += (0.42 * c - g) * a; b += (0.2 * c - b) * a; }
+          P.set(x, y, r, g, b);
+        }
+        for (let y = row * R; y < row * R + R - 3; y++) P.mul(x0, y, 0.55);
+        x0 = x1;
+      }
+    }
+    P.speckle(0.04);
+    return P;
+  },
+  // rubble masonry: rounded field stones in different greys, lit from the top left, in a pale mortar
+  fieldstone() {
+    const S = 128, P = new Painter(S, 351), f = makeFbm(351, 8, 2);
+    const G = 6, C = S / G, pts = [];
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) pts.push([(i + 0.2 + hash2(i, j, 1) * 0.6) * C, (j + 0.2 + hash2(i, j, 2) * 0.6) * C, 0.7 + hash2(i, j, 3) * 0.36]);
+    P.each((x, y, u, v) => {
+      let d1 = 1e9, d2 = 1e9, t = 1, sx = 0, sy = 0;
+      const ci = Math.floor(x / C), cj = Math.floor(y / C);
+      for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) { // one stone per cell: the nearest are next door
+        const wi = ((i % G) + G) % G, wj = ((j % G) + G) % G, [px, py, tone] = pts[wj * G + wi];
+        const dx = x - px - (i - wi) * C, dy = y - py - (j - wj) * C, d = Math.hypot(dx, dy * 1.3);
+        if (d < d1) { d2 = d1; d1 = d; t = tone; sx = dx; sy = dy; } else if (d < d2) d2 = d;
+      }
+      const edge = d2 - d1;
+      if (edge < 2.4) { const c = 0.56 + (f(u, v) - 0.5) * 0.12; P.set(x, y, c, c * 0.97, c * 0.9); return; }
+      const c = t * (0.62 + (f(u, v) - 0.5) * 0.25) * (1 - (sx + sy) / 40) * (edge < 4.5 ? 0.84 : 1);
+      P.set(x, y, c, c * 0.98, c * 0.95);
+    });
+    P.speckle(0.04);
+    return P;
+  },
+  // forest floor: humus under a mat of pine needles, patches of moss, a few cones
+  needles() {
+    const S = 128, P = new Painter(S, 361), big = makeFbm(361, 4, 4), moss = makeFbm(367, 8, 3);
+    P.each((x, y, u, v) => {
+      const c = 0.62 + (big(u, v) - 0.5) * 0.4;
+      if (moss(u, v) > 0.6) P.set(x, y, 0.27 * c, 0.37 * c, 0.16 * c); else P.set(x, y, 0.42 * c, 0.3 * c, 0.19 * c);
+    });
+    for (let k = 0; k < 560; k++) {
+      const x = P.rng() * S, y = P.rng() * S, a = P.rng() * Math.PI, len = 3 + P.rng() * 4, k2 = P.rng() < 0.5 ? 1.35 : 0.68;
+      for (let t = 0; t < len; t++) P.mul(Math.round(x + Math.cos(a) * t), Math.round(y + Math.sin(a) * t), k2);
+    }
+    for (let k = 0; k < 7; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0;
+      for (let a = -2; a <= 2; a++) for (let b = -3; b <= 3; b++) if (a * a / 4 + b * b / 9 <= 1) P.set(x + a, y + b, 0.3, 0.19, 0.1);
+      P.mul(x, y - 3, 1.6); P.mul(x - 1, y - 2, 1.4); P.mul(x + 1, y + 3, 0.5);
+    }
+    P.speckle(0.05);
+    return P;
+  },
+  // packed snow: soft drifts in cold blue shadow, wind ripples, a few glittering crystals and boot prints
+  snow() {
+    const S = 128, P = new Painter(S, 381), big = makeFbm(381, 4, 4), rip = makeFbm(383, 8, 2);
+    P.each((x, y, u, v) => {
+      const d = big(u, v), w = Math.sin((v * 7 + rip(u, v) * 2.4) * Math.PI * 2) * 0.5 + 0.5;
+      const c = 0.88 + (d - 0.5) * 0.16 + (w - 0.5) * 0.04;
+      P.set(x, y, c * 0.95, c * 0.97, c * 1.02);
+    });
+    for (let k = 0; k < 9; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0;
+      for (let a = -3; a <= 3; a++) for (let b = -5; b <= 5; b++) if (a * a / 9 + b * b / 25 <= 1) P.mul(x + a, y + b, 0.93 + (b < 0 ? 0.03 : 0));
+    }
+    for (let k = 0; k < 70; k++) { const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0; P.set(x, y, 1, 1, 1); P.mul(x + 1, y + 1, 0.9); }
+    return P;
+  },
+  // granite: grey crystals, darker cracks and ledges running across, some rust-coloured lichen
+  rock() {
+    const S = 128, P = new Painter(S, 391), big = makeFbm(391, 4, 4), fine = makeFbm(393, 32, 2), lich = makeFbm(397, 8, 3);
+    P.each((x, y, u, v) => {
+      const c = 0.56 + (big(u, v) - 0.5) * 0.28 + (fine(u, v) - 0.5) * 0.16;
+      const l = lich(u, v);
+      if (l > 0.68) P.set(x, y, c * 1.04, c * 0.86, c * 0.6); else P.set(x, y, c, c * 0.99, c * 1.02);
+    });
+    for (let k = 0; k < 5; k++) {
+      let x = P.rng() * S, y = P.rng() * S;
+      const dy = (P.rng() - 0.5) * 0.6;
+      for (let t = 0; t < 70; t++) { P.mul(Math.round(x), Math.round(y), 0.55); P.mul(Math.round(x), Math.round(y) - 1, 1.15); x += 1; y += dy + (P.rng() - 0.5) * 0.8; }
+    }
+    for (let k = 0; k < 4; k++) P.crack((P.rng() * S) | 0, (P.rng() * S) | 0, 16 + P.rng() * 20, 0.6);
+    P.speckle(0.07);
+    return P;
+  },
+  // yard gravel: small grey-beige stones, each with a lit top and a shadow under it
+  gravel() {
+    const S = 128, P = new Painter(S, 371), f = makeFbm(371, 4, 3);
+    P.each((x, y, u, v) => { const c = 0.5 + (f(u, v) - 0.5) * 0.2; P.set(x, y, c, c * 0.96, c * 0.88); });
+    for (let k = 0; k < 900; k++) {
+      const x = (P.rng() * S) | 0, y = (P.rng() * S) | 0, r = P.rng() < 0.7 ? 1 : 2, g = 0.48 + P.rng() * 0.3;
+      for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) if (a * a + b * b <= r * r + 0.5) P.set(x + a, y + b, g, g * 0.96, g * 0.88);
+      P.mul(x, y - r, 1.25); P.mul(x, y + r + 1, 0.6);
+    }
+    P.speckle(0.05);
+    return P;
+  },
 };
 
 // Texture coordinates from position (box projection along the main axis of each triangle), for models whose

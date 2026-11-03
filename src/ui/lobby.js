@@ -1,13 +1,14 @@
 import { esc } from '../net/net.js';
 import { MAP_LIST } from '../world/maps/index.js';
+import { pointsOf } from '../game/points.js';
 
 // =============================================================================
 // Multiplayer in the menu: the name, the search for a room, and the room itself: who is there,
 // what is being voted on, and the chat. Nobody runs this room, everybody votes.
 // =============================================================================
-const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['gun', 'GUN GAME', 'Wettrüsten: Jeder Kill bringt die nächste Waffe, zuletzt zählt nur das Messer.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
+const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['gun', 'GUN GAME', 'Wettrüsten: Jeder Kill bringt die nächste Waffe, zuletzt zählt nur das Messer.'], ['wing', 'WINGMAN', '2 gegen 2 um die Punkte A und B. Wer beide hält, gewinnt.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
 const STAGES = { mode: 'WELCHER MODUS?', map: 'WELCHE KARTE?', bots: 'FREIE PLÄTZE MIT BOTS FÜLLEN?' };
-const MODE_NAME = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game' };
+const MODE_NAME = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game', wing: 'Wingman' };
 
 export class Lobby {
   constructor(game) { this.game = game; this.el = document.getElementById('menu'); this.draft = ''; this.tick = null; this.open = false; this.lastBoard = null; }
@@ -149,8 +150,13 @@ export class Lobby {
     const bar = (k) => `<span class="n">${esc(count(k))}</span><span class="b" style="width:${total ? Math.min(100, (+count(k) / total) * 100) || 0 : 0}%"></span>`;
     let opts = '';
     if (L.stage === 'mode') opts = MODES.map(([k, n, d]) => `<button class="mp-opt ${mine === k ? 'on' : ''}" data-vote="${k}"><h4>${n}</h4><p>${d}</p>${bar(k)}</button>`).join('');
-    else if (L.stage === 'map') opts = MAP_LIST.filter((m) => !m.large).map((m) => `<button class="mp-opt ${mine === m.id ? 'on' : ''}" data-vote="${m.id}"><h4>${esc(m.name)}</h4><p>${esc(m.desc)}</p>${bar(m.id)}</button>`).join('');
-    else opts = `<button class="mp-opt ${mine === 'yes' ? 'on' : ''}" data-vote="yes"><h4>MIT BOTS</h4><p>Die freien Plätze füllen Bots auf.</p>${bar('yes')}</button><button class="mp-opt ${mine === 'no' ? 'on' : ''}" data-vote="no"><h4>OHNE BOTS</h4><p>Nur ihr.</p>${bar('no')}</button>`;
+    else if (L.stage === 'map') opts = MAP_LIST.filter((m) => !m.large && (!L.choice || L.choice.mode !== 'wing' || pointsOf(m))).map((m) => `<button class="mp-opt ${mine === m.id ? 'on' : ''}" data-vote="${m.id}"><h4>${esc(m.name)}</h4><p>${esc(m.desc)}</p>${bar(m.id)}</button>`).join('');
+    else {
+      // Wingman: with bots it is 2 against 2, without them just you (two of you: 1 against 1)
+      const wing = L.choice && L.choice.mode === 'wing';
+      const yes = wing ? 'Bots füllen auf 2 gegen 2 auf.' : 'Die freien Plätze füllen Bots auf.', no = wing ? 'Nur ihr: zu zweit 1 gegen 1, zu viert 2 gegen 2.' : 'Nur ihr.';
+      opts = `<button class="mp-opt ${mine === 'yes' ? 'on' : ''}" data-vote="yes"><h4>MIT BOTS</h4><p>${yes}</p>${bar('yes')}</button><button class="mp-opt ${mine === 'no' ? 'on' : ''}" data-vote="no"><h4>${wing ? 'OHNE BOTS · 1 GEGEN 1' : 'OHNE BOTS'}</h4><p>${no}</p>${bar('no')}</button>`;
+    }
     return `<div class="section-title">${STAGES[L.stage]}</div>${summary()}<div class="mp-opts">${opts}</div>${clock}`;
   }
 
