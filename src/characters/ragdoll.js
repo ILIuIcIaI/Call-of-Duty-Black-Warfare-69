@@ -5,11 +5,12 @@ import * as THREE from 'three';
 // The body: Verlet particles at the joints. Pelvis and ribcage are rigid blocks (shape matching) that turn on
 // each other at the waist; arms, legs and the head hang on sticks. Joint limits (waist, neck, hips, knees,
 // elbows), the body itself and the level keep every part where a body can put it.
-// The muscles: for a moment after the hit the body still fights. It staggers a step or two to stay up, a hand
-// goes to the wound, the knees give, the arms reach for the ground it falls toward, the chin tucks when it goes
-// over backwards, and once it is down a leg draws up one last time. Then the muscles let go one after the
-// other and it lies still. The hit decides how it fights: a head shot drops it where it stands, a shotgun up
-// close throws it, a runner stumbles on and falls onto its hands.
+// The muscles: for a moment after the hit the body still fights. It staggers one to three steps to stay up, each
+// weaker than the last, a hand goes to the wound, the knees give, the arms reach for the ground it falls toward,
+// the chin tucks when it goes over backwards. The legs carry it only while a foot stands on the ground, so it
+// comes down with all its weight; there the muscles let go and it lies still. The hit decides how it fights: a
+// head shot drops it where it stands, a shotgun up close knocks it back, a runner stumbles on and falls onto its
+// hands. Once no will is left, nothing lifts it any more (see passive()).
 // The skeleton's bones are re-oriented from the particles every frame.
 // =============================================================================
 
@@ -31,6 +32,7 @@ const IW = MASS.map((m) => 1 / m);
 const PELVIS_BLOCK = [0, 4, 5, WAIST, SACRUM], RIB_BLOCK = [WAIST, 1, 2, 10, 11, BACK, FRONT];
 const TORSO = [0, 4, 5, WAIST, SACRUM, 1, 2, 10, 11, BACK, FRONT, 3]; // what the balance holds up
 const BLOCKS = [0, 4, 5, WAIST, SACRUM, 1, 2, 10, 11, BACK, FRONT];
+const IN_BLOCK = new Uint8Array(20); for (const i of BLOCKS) IN_BLOCK[i] = 1;
 const CARRY = [1, 1, 1, 1, 1, 1, 0.5, 0.5, 0, 0, 1, 1, 0.6, 0.6, 0.6, 0.6, 1, 1, 1, 1]; // how much of each part's weight the legs carry while it stands
 const LINKS = [[4, 6], [6, 8], [5, 7], [7, 9], [10, 12], [12, 14], [11, 13], [13, 15], [2, 3]];
 // how close parts may come: hands and elbows to the body, knees and feet to each other, the head to the pelvis and the knees
@@ -43,8 +45,13 @@ const NEAR = [
 ];
 // how far the joints go (radians), as [toward +x, toward -x, forward, back] in the joint's own frame
 const HIP_L = [0.35, 0.85, 2.05, 0.45], HIP_R = [0.85, 0.35, 2.05, 0.45]; // a leg goes far out, little across
-const NECK_LIM = [0.6, 0.6, 0.95, 0.7], WAIST_LIM = [0.55, 0.55, 1.0, 0.4], WAIST_TWIST = 0.6;
-const G = 11, DAMP = 0.997, JOINT_DAMP = 0.025, MU_S = 1.0, MU_K = 0.65;
+// (the back bends leave room for a body lying on its pack: held tighter, the limits fight the floor and lift it)
+const NECK_LIM = [0.6, 0.6, 0.95, 1.0], WAIST_LIM = [0.55, 0.55, 1.0, 0.6], WAIST_TWIST = 0.6;
+// how far one pass of a joint limit may move a part (m) or turn a block (rad): a limb far out of its range comes back over a
+// few steps instead of snapping across in one (the twitch of a body on the ground)
+const STEP_MAX = 0.04, TURN_MAX = 0.1;
+// (joint friction: LIMP_DAMP once the muscles are gone - heavy limbs don't swing on)
+const G = 11, DAMP = 0.997, JOINT_DAMP = 0.025, LIMP_DAMP = 0.06, MU_S = 1.0, MU_K = 0.65;
 const UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0), ORIGIN = new THREE.Vector3(), ZERO = new THREE.Vector3();
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _q4 = new THREE.Quaternion(), _q5 = new THREE.Quaternion(), _m = new THREE.Matrix4();
@@ -154,7 +161,7 @@ export class Ragdoll {
     this.handT = [new THREE.Vector3(), new THREE.Vector3()]; this.handOm = [0, 0];
     this.footT = [new THREE.Vector3(), new THREE.Vector3()]; this.footOm = [0, 0];
     this.fall = new THREE.Vector3();
-    this.t = 0; this.still = 0; this.asleep = false; this.landT = -1; this.gave = false;
+    this.t = 0; this.ls = 1; this.kneelT = -1; this.still = 0; this.asleep = false; this.landT = -1; this.gave = false;
     this.S = 0; this.tone = 0; this.headT = 0; this.neckOm = 0; this.waistFlex = 0; this.waistOm = 0;
     this.plan = this.makePlan(sol, opts);
     this.kick(opts);
@@ -185,17 +192,18 @@ export class Ragdoll {
     const legHit = near >= 4 && near <= 9 ? near % 2 : -1, armHit = near >= 10 ? near % 2 : -1;
     const run = Math.hypot(v.x, v.z);
     const kind = part === 'head' ? 'head' : s >= 5.6 ? 'blast' : !grounded || standH < 0.55 ? 'down' : run > 3.6 ? 'run' : legHit >= 0 ? 'leg' : back ? 'back' : 'torso';
-    //                 support  hold  fade  steps tone  relax lean
+    // (stag: how fast the body staggers off the hit, m/s - its own reaction more than the bullet's push; the steps catch it)
+    //                 support  hold  fade  steps tone  relax lean  stag
     const K = {
-      torso: [1, 0.26, 0.24, 2, 0.95, 1.1, 0.07],
-      back: [0.9, 0.16, 0.22, 2, 0.9, 1.0, 0.2],
-      run: [0.85, 0.22, 0.22, 3, 0.9, 0.9, 0.3],
-      leg: [0.75, 0.1, 0.2, 0, 0.9, 1.0, 0.22],
-      head: [0, 0, 0, 0, 0.35, 0.22, 0],
-      blast: [0, 0, 0, 0, 0.35, 0.4, 0],
-      down: [0, 0, 0, 0, 0.75, 0.9, 0],
+      torso: [1, 0.42, 0.3, 3, 0.95, 1.1, 0.1, 0.8],
+      back: [0.95, 0.38, 0.3, 3, 0.9, 1.0, 0.22, 0.95],
+      run: [0.9, 0.36, 0.28, 3, 0.9, 0.9, 0.3, 0],
+      leg: [0.75, 0.16, 0.24, 1, 0.9, 1.0, 0.22, 0.25],
+      head: [0, 0, 0, 0, 0.3, 0.22, 0, 0],
+      blast: [0.55, 0.1, 0.18, 1, 0.45, 0.45, 0, 1.0],
+      down: [0, 0, 0, 0, 0.75, 0.9, 0, 0],
     }[kind];
-    const pl = { kind, sup: K[0], hold: K[1] * (0.8 + rnd() * 0.5), fade: K[2], steps: K[3], tone: K[4], relax: K[5], lean: K[6], standH, legHit, armHit, clutch: -1 };
+    const pl = { kind, sup: K[0], hold: K[1] * (0.8 + rnd() * 0.5), fade: K[2], steps: K[3] > 1 && rnd() < 0.35 ? K[3] - 1 : K[3], tone: K[4], relax: K[5], lean: K[6], stag: K[7] * (0.85 + rnd() * 0.35), standH, legHit, armHit, clutch: -1 };
     // which way it leans: with the hit; a runner with the run, a shot leg toward its side
     pl.leanDir = new THREE.Vector3(d.x, 0, d.z);
     if (kind === 'run') pl.leanDir.set(v.x, 0, v.z);
@@ -211,15 +219,14 @@ export class Ragdoll {
         pl.clutchAt = part === 'chest' ? new THREE.Vector3(clamp(w.x, -0.15, 0.15), clamp(w.y, -0.04, 0.2), -0.25) : new THREE.Vector3(clamp(w.x, -0.13, 0.13), clamp(w.y, 0.02, 0.18), -0.19);
       }
     }
-    pl.writhe = kind !== 'head' && kind !== 'blast' && rnd() < 0.85;
-    pl.writheLeg = legHit >= 0 ? legHit : rnd() < 0.5 ? 0 : 1;
     // the torso as it stood, seen from the pelvis: the shape the balance holds it in, upright and without the heading
     const qi = _q.copy(this.pb.q).invert();
     pl.shape = TORSO.map((i) => _b.subVectors(p[i], p[0]).applyQuaternion(qi).clone());
     pl.tilt = new THREE.Quaternion().setFromAxisAngle(UP, -Math.atan2(-fwd.x, -fwd.z)).multiply(this.pb.q);
     // the feet: on the ground they stand, a shot leg doesn't
-    this.feet = [0, 1].map((k) => ({ mode: grounded && pl.sup > 0 && k !== legHit ? 'stance' : 'free', plant: p[8 + k].clone(), from: new THREE.Vector3(), to: new THREE.Vector3(), t0: 0, dur: 0.2 }));
-    this.stepsLeft = pl.steps; this.stepEnd = -1;
+    // (each foot is planted on the ground under it: one that was in the air as it died - a runner's - isn't standing anywhere yet)
+    this.feet = [0, 1].map((k) => { const gk = k === 0 ? g0 : g1; return { mode: grounded && pl.sup > 0 && k !== legHit ? 'stance' : 'free', plant: new THREE.Vector3(p[8 + k].x, gk === null ? p[8 + k].y : Math.min(p[8 + k].y, gk + RAD[8] + 0.03), p[8 + k].z), from: new THREE.Vector3(), to: new THREE.Vector3(), t0: 0, dur: 0.2 }; });
+    this.stepsLeft = pl.steps; this.stepsDone = 0; this.stepEnd = -1; this.grip = 1;
     return pl;
   }
 
@@ -231,15 +238,21 @@ export class Ragdoll {
     if (d) {
       const s = opts.strength || 3, at = opts.point || p[opts.part === 'head' ? 3 : opts.part === 'stomach' ? 0 : 1];
       for (let i = 0; i < N; i++) {
+        // the part that was hit jerks; the body as a whole hardly moves (a bullet doesn't throw a man, his legs give)
         const w = Math.exp(-p[i].distanceToSquared(at) / 0.06);
-        o[i].addScaledVector(d, -s * (1.05 * w + 0.12) * (pl.kind === 'head' ? 0.6 : 1) * h);
+        o[i].addScaledVector(d, -s * (0.75 * w + 0.05) * (pl.kind === 'head' ? 0.5 : 1) * h);
       }
+    }
+    // it staggers off the hit: the torso and the arms move off the feet, which stay where they stand (the steps catch it)
+    if (pl.stag > 0) for (let i = 0; i < N; i++) {
+      const f = i === 8 || i === 9 ? 0 : i === 6 || i === 7 ? 0.5 : 1;
+      o[i].addScaledVector(pl.leanDir, -pl.stag * f * h);
     }
     // a little twist of the arms, so no two deaths look the same
     for (const i of [10, 11, 14, 15]) o[i].add(_a.set((Math.random() - 0.5) * 0.9, 0, (Math.random() - 0.5) * 0.9).multiplyScalar(h));
     const fwd = _a.set(0, 0, -1).applyQuaternion(this.pb.q);
     if (pl.kind === 'head') this.give(1.25, 0.8); // the lights go out: the knees fold where it stands
-    if (pl.kind === 'blast') { for (let i = 0; i < N; i++) o[i].addScaledVector(d, -(opts.strength || 3) * 0.25 * h); this.give(0.9, 0.2); } // thrown off its feet
+    if (pl.kind === 'blast') { for (let i = 0; i < N; i++) o[i].addScaledVector(d, -(opts.strength || 3) * 0.11 * h); this.give(0.5, 0.1); } // knocked back off its feet
     if (pl.legHit >= 0) o[6 + pl.legHit].addScaledVector(fwd, -1.2 * h); // the shot leg buckles
   }
 
@@ -255,8 +268,15 @@ export class Ragdoll {
     const n = Math.min(4, Math.max(1, Math.ceil(dt * Ragdoll.hz - 0.01))), h = dt / n;
     for (let i = 0; i < n; i++) { this.t += h; this.step(h); }
     if (!(this.p[0].x === this.p[0].x)) { this.asleep = true; return; } // (never happens; if it did, the last good pose stays)
-    // asleep once the muscles are gone and nothing moves any more
-    const calm = this.tone < 0.01 && this.landT >= 0 && this.moved < 0.06;
+    // asleep once the muscles are gone and nothing moves any more; and a body that has lain there a while and only still
+    // creeps (the joint limits nudging against the floor, slower than anything falls) is at rest as well
+    let vmax = 0;
+    if (this.tone < 0.01 && this.landT >= 0 && this.t > this.landT + 1.4) {
+      const p = this.p, o = this.o, ih = 1 / this.h;
+      for (let i = 0; i < N; i++) vmax = Math.max(vmax, Math.abs(p[i].x - o[i].x) + Math.abs(p[i].y - o[i].y) + Math.abs(p[i].z - o[i].z));
+      vmax *= ih;
+    }
+    const calm = this.tone < 0.01 && this.landT >= 0 && (this.moved < 0.06 || (this.t > this.landT + 1.4 && vmax < 0.45));
     this.still = calm ? this.still + dt : 0;
     if (this.still > 0.35 || this.t > 9) this.asleep = true;
     this.apply();
@@ -283,9 +303,11 @@ export class Ragdoll {
       pi.x += vx; pi.y += vy; pi.z += vz;
       E0 += MASS[i] * (vx * vx + vy * vy + vz * vz);
     }
-    // the joints have friction: what swings at a joint slows down, the body as a whole doesn't (arms and legs don't swing on like pendulums)
+    // the joints have friction: what swings at a joint slows down, the body as a whole doesn't (arms and legs don't swing on like
+    // pendulums), and more of it once the muscles are gone: a limp arm is heavy, it flops and lies, it doesn't swing
+    const jd = JOINT_DAMP + (LIMP_DAMP - JOINT_DAMP) * (1 - Math.min(1, this.tone * 1.5 + this.S));
     for (let k = 0; k < LINKS.length; k++) {
-      const a = LINKS[k][0], b = LINKS[k][1], oa = o[a], ob = o[b], pa = p[a], pb = p[b], wa = IW[a], wb = IW[b], f = JOINT_DAMP / (wa + wb);
+      const a = LINKS[k][0], b = LINKS[k][1], oa = o[a], ob = o[b], pa = p[a], pb = p[b], wa = IW[a], wb = IW[b], f = jd / (wa + wb);
       const dx = (pb.x - ob.x) - (pa.x - oa.x), dy = (pb.y - ob.y) - (pa.y - oa.y), dz = (pb.z - ob.z) - (pa.z - oa.z);
       ob.x += dx * f * wb; ob.y += dy * f * wb; ob.z += dz * f * wb;
       oa.x -= dx * f * wa; oa.y -= dy * f * wa; oa.z -= dz * f * wa;
@@ -294,6 +316,9 @@ export class Ragdoll {
     for (let i = 0; i < N; i++) if (this.rad[i] < RAD[i]) this.rad[i] = Math.min(RAD[i], this.rad[i] + 0.12 * h);
     this.qP0.copy(this.pb.q); this.qT0.copy(this.tb.q);
     this.touch.fill(0);
+    // Once it has lain there a moment without a will, the joint limits go soft: a body at rest doesn't hold itself in shape, it
+    // lies how it fell, and hard limits fighting the floor would push it about (a corpse sitting itself up, a leg twitching).
+    this.ls = this.landT >= 0 ? 1 - 0.65 * smooth((this.t - this.landT - 0.3) / 0.5) * (1 - Math.min(1, this.tone * 4)) : 1;
     const n = Ragdoll.iter;
     for (let k = 0; k < n; k++) {
       this.links();
@@ -302,6 +327,11 @@ export class Ragdoll {
       this.near();
       if (k & 1 || k === n - 1) this.collide();
     }
+    // what of the torso rests on the floor keeps no speed upward from the corrections: pushed out of it, yes, thrown up, no
+    if (settle) for (let i = 0; i < N; i++) {
+      if ((IN_BLOCK[i] || i === 3) && this.lying[i] > 0.5 && p[i].y - o[i].y > 0.25 * h) o[i].y = p[i].y - 0.25 * h;
+    }
+    this.passive(h);
     // how far anything got in two steps
     let m = 0;
     for (let i = 0; i < N; i++) {
@@ -320,6 +350,39 @@ export class Ragdoll {
     }
   }
 
+  // With no will left, nothing can lift the body: the energy of a passive body (its speed and its height) only ever goes down,
+  // to friction and the floor. What the solver adds anyway, limits pushing against the floor a little every step until a corpse
+  // sits itself up or creeps, is taken back: speed first, then whatever rose this step. (While the muscles still work, they may
+  // lift it: staggering, bracing.)
+  passive(h) {
+    if (this.tone > 0.02 || this.S > 1e-3) { this.Emax = Infinity; return; }
+    const p = this.p, o = this.o, B = this.back1, ih2 = 1 / (h * h);
+    let ke = 0, pe = 0;
+    for (let i = 0; i < N; i++) {
+      const dx = p[i].x - o[i].x, dy = p[i].y - o[i].y, dz = p[i].z - o[i].z;
+      ke += 0.5 * MASS[i] * (dx * dx + dy * dy + dz * dz) * ih2; pe += MASS[i] * G * p[i].y;
+    }
+    const E = ke + pe, tol = 0.4; // J (for the whole body: well under a millimetre of height)
+    if (!(this.Emax < Infinity)) { this.Emax = E; return; }
+    let excess = E - this.Emax - tol;
+    if (excess > 0) {
+      if (ke > excess) {
+        const f = Math.sqrt((ke - excess) / ke);
+        for (let i = 0; i < N; i++) { const pi = p[i], oi = o[i]; oi.x = pi.x - (pi.x - oi.x) * f; oi.y = pi.y - (pi.y - oi.y) * f; oi.z = pi.z - (pi.z - oi.z) * f; }
+      } else {
+        for (let i = 0; i < N; i++) o[i].copy(p[i]);
+        excess -= ke;
+        // the height it gained this step: what rose goes back toward where it was a step ago (that place was out of the floor)
+        let up = 0;
+        for (let i = 0; i < N; i++) { const d = p[i].y - B[i * 3 + 1]; if (d > 0) up += MASS[i] * G * d; }
+        if (up > 1e-9) {
+          const f = Math.max(0, 1 - excess / up);
+          for (let i = 0; i < N; i++) { const d = p[i].y - B[i * 3 + 1]; if (d > 0) { p[i].y = B[i * 3 + 1] + d * f; o[i].y = p[i].y; } }
+        }
+      }
+    } else this.Emax = Math.min(this.Emax, E);
+  }
+
   // how fast a block turns (world, rad/s), from its turn now and one step ago
   spin(q, q0, ih, out) {
     const d = _q5.copy(q0).invert().premultiply(q);
@@ -333,13 +396,40 @@ export class Ragdoll {
     const end = pl.hold + pl.fade;
     const S = this.S = t < pl.hold ? pl.sup : t < end ? pl.sup * (1 - smooth((t - pl.hold) / pl.fade)) : 0;
     let tone = pl.tone * (1 - smooth((t - end) / pl.relax));
-    if (this.landT >= 0) tone *= 1 - smooth((t - this.landT - 0.5) / 0.9);
+    // (on the ground it goes limp soon: what is left of the muscles there would only push against the floor and lift it; and once it
+    // has sunk onto its knees it doesn't kneel there upright for long, it topples)
+    if (this.landT >= 0) tone *= 1 - smooth((t - this.landT - 0.15) / 0.6);
+    if (this.kneelT < 0 && this.S < 0.05 && (this.touched[6] || this.touched[7]) && p[0].y - this.gy < pl.standH * 0.62) this.kneelT = t;
+    if (this.kneelT >= 0) tone *= 1 - smooth((t - this.kneelT - 0.2) / 0.45);
     this.tone = tone;
     // the knees give as the balance goes
     if (!this.gave && pl.sup > 0 && S < pl.sup * 0.45) { this.gave = true; if (this.touched[8] || this.touched[9]) this.give(0.7, 0.35); }
-    // down on the ground
+    // the legs hold the body up only while a foot stands on something: what is in the air falls with all its weight
+    // and only as far as it stands over them: a body that has gone too far past its feet, is bent over toward the ground or
+    // has already sunk to its knees doesn't get held (or pushed back) up, it goes down
+    let grip = 0, fx = 0, fz = 0, nf = 0;
+    for (let j = 0; j < 2; j++) {
+      const F = this.feet[j];
+      if (F.mode !== 'stance') continue;
+      grip = Math.max(grip, 1 - smooth((p[8 + j].y - F.plant.y - 0.04) / 0.1));
+      fx += p[8 + j].x; fz += p[8 + j].z; nf++;
+    }
+    if (nf) {
+      const off = Math.hypot(p[0].x - fx / nf, p[0].z - fz / nf);
+      const dx = p[1].x - p[0].x, dy = p[1].y - p[0].y, dz = p[1].z - p[0].z, up = dy / (Math.sqrt(dx * dx + dy * dy + dz * dz) || 1);
+      // (a runner's hips are well ahead of the foot it stands on, mid-stride: that is no reason yet to give up)
+      const offOk = pl.kind === 'run' ? 0.5 : 0.28;
+      grip *= (1 - smooth((off - offOk) / 0.32)) * smooth((up - 0.35) / 0.4) * smooth(((p[0].y - this.gy) / pl.standH - 0.5) / 0.22);
+    }
+    this.grip = grip;
+    // down on the ground (and how hard it came down: for the sound)
     const T = this.touched;
-    if (this.landT < 0 && t > end + 0.05 && (T[0] || T[1] || T[BACK] || T[FRONT] || T[SACRUM] || T[WAIST])) this.landT = t;
+    if (this.landT < 0 && t > end + 0.05 && (T[0] || T[1] || T[BACK] || T[FRONT] || T[SACRUM] || T[WAIST])) {
+      this.landT = t;
+      let v = 0;
+      for (const i of BLOCKS) v = Math.max(v, -V[i * 3 + 1]);
+      if (this.onLand) this.onLand(v, p[1]);
+    }
     if (S > 0.3 && this.stepsLeft > 0) this.stepping(t);
     // falling: where to, and is that forward (or to the side) for the ribcage?
     const falling = this.landT < 0 && S < 0.35 && t > 0.08;
@@ -359,11 +449,11 @@ export class Ragdoll {
       else if (falling && ahead) {
         // forward or to the side: both hands go out to the ground ahead
         // (once the hand is down, the arm holds, it doesn't push the body back up)
-        H.set(p[1].x + this.fall.x * 0.38 + side.x * s * 0.2, this.gy + 0.07, p[1].z + this.fall.z * 0.38 + side.z * s * 0.2); om = T[14 + k] ? 5 : 20;
+        H.set(p[1].x + this.fall.x * 0.38 + side.x * s * 0.2, this.gy + 0.07, p[1].z + this.fall.z * 0.38 + side.z * s * 0.2); om = T[14 + k] ? 2.5 : 18;
       } else if (falling && over && k !== pl.clutch) {
         // over backwards: the free hand reaches back for the ground
         H.set(p[1].x - ft.x * 0.3 + side.x * s * 0.32, this.gy + 0.1, p[1].z - ft.z * 0.3 + side.z * s * 0.32); om = 12;
-      } else if (k === pl.clutch && (this.landT < 0 || t < this.landT + 1.4)) {
+      } else if (k === pl.clutch && (this.landT < 0 || t < this.landT + 0.5)) {
         // the hand on the wound
         (pl.clutchBlock ? tb : pb).toWorld(pl.clutchAt, H); om = 20;
       } else if (S > 0.2) {
@@ -374,20 +464,17 @@ export class Ragdoll {
     }
     // the head: looking at what hit it; then up when it falls forward, chin in when it goes over backwards
     this.headT = falling && ahead ? 0.3 : falling && over ? -0.6 : -0.15;
-    this.neckOm = pl.kind === 'head' ? 0 : 22 * tone;
+    this.neckOm = pl.kind === 'head' || this.lying[3] > 0.2 ? 0 : 22 * tone; // (a head on the floor isn't held up)
     // the waist: a little curl round the wound (arched from a shot in the back), more of one as it falls; nothing once it is down
     this.waistFlex = pl.kind === 'back' && S > 0.2 ? 0.15 : falling ? -0.3 : -0.12;
     this.waistOm = this.landT < 0 ? 14 * tone : 0;
     // the legs, once the balance is gone and while it falls: knees a little bent and together (not when a knee is already
-    // on the ground: that would stand it back up); then, on the ground, one draws up and goes down again
+    // on the ground: that would stand it back up). (No last kick of a leg once it lies: drawn up against the floor, it
+    // tipped the whole body up, and it looked wound up.)
     for (let k = 0; k < 2; k++) {
       const s = k === 0 ? -1 : 1;
       let om = S > 0.05 || k === pl.legHit || this.landT >= 0 || T[6] || T[7] ? 0 : 6 * tone;
       _b.set(s * 0.13, -0.8, -0.1);
-      if (pl.writhe && this.landT >= 0 && k === pl.writheLeg) {
-        const u = (t - this.landT - 0.15) / 1.1;
-        if (u > 0 && u < 1) { const w = Math.sin(Math.PI * u); _b.lerp(_c.set(s * 0.12, -0.45, -0.38), w); om = 11 * Math.max(0.35, w) * pl.tone; }
-      }
       pb.toWorld(_b, this.footT[k]);
       this.footOm[k] = om;
     }
@@ -400,7 +487,7 @@ export class Ragdoll {
     const T = Math.sqrt(Math.max(0.3, p[0].y - this.gy) / G) * 1.1;
     const cx = p[0].x + V[0] * T, cz = p[0].z + V[2] * T;
     const sx = (F[0].plant.x + F[1].plant.x) * 0.5, sz = (F[0].plant.z + F[1].plant.z) * 0.5;
-    if (Math.hypot(cx - sx, cz - sz) < 0.16) return;
+    if (Math.hypot(cx - sx, cz - sz) < 0.11) return;
     // the foot farther from there steps, to its own side of the body, never across the other one, at most 60 cm
     const k = Math.hypot(cx - F[0].plant.x, cz - F[0].plant.z) > Math.hypot(cx - F[1].plant.x, cz - F[1].plant.z) ? 0 : 1, s = k === 0 ? -1 : 1;
     const right = _a.set(1, 0, 0).applyQuaternion(this.pb.q); right.y = 0; right.normalize();
@@ -408,28 +495,32 @@ export class Ragdoll {
     const other = F[1 - k].plant, across = ((tx - other.x) * right.x + (tz - other.z) * right.z) * s;
     if (across < 0.14) { tx += right.x * s * (0.14 - across); tz += right.z * s * (0.14 - across); }
     const f = p[8 + k], dx = tx - f.x, dz = tz - f.z, dl = Math.hypot(dx, dz);
-    if (dl > 0.6) { tx = f.x + dx * 0.6 / dl; tz = f.z + dz * 0.6 / dl; }
+    const reach = this.plan.kind === 'run' ? 0.85 : 0.6;
+    if (dl > reach) { tx = f.x + dx * reach / dl; tz = f.z + dz * reach / dl; }
     const g = this.col.raycast(tx, p[0].y, tz, 0, -1, 0, 2.5, _hit);
     const sw = F[k];
-    sw.mode = 'swing'; sw.t0 = t; sw.dur = 0.17 + Math.random() * 0.06;
+    // (a stagger: slower than a walking step, and each one lower and weaker than the one before - the legs are going)
+    sw.mode = 'swing'; sw.t0 = t; sw.dur = (this.plan.kind === 'run' ? 0.16 : 0.22) + Math.random() * 0.07 + this.stepsDone * 0.03;
+    sw.lift = Math.max(0.05, 0.13 - this.stepsDone * 0.03);
     sw.from.copy(f); sw.to.set(tx, (g ? g.y : f.y - 0.3) + RAD[8], tz);
-    this.stepsLeft--;
+    this.stepsLeft--; this.stepsDone++;
   }
 
   // ---------------------------------------------------------------- forces: weight, balance, muscles
   muscles() {
     const p = this.p, A = this.acc, V = this.vel, t = this.t, pl = this.plan, S = this.S, dmax = 0.9 / this.h;
     if (S > 1e-3) {
-      const k = S * smooth((t - 0.03) / 0.12); // (the muscles answer the hit a moment late)
+      // (the muscles answer the hit a moment late; they only hold up what stands on a foot, and less with every stagger)
+      const k = S * smooth((t - 0.03) / 0.12) * this.grip * (1 - 0.12 * this.stepsDone);
       for (let i = 0; i < N; i++) A[i * 3 + 1] += G * k * CARRY[i];
       if (k > 1e-3) {
         // the torso held in its standing shape: upright or leaning, heading where it heads now, the pelvis at standing height
         const f = _a.set(0, 0, -1).applyQuaternion(this.pb.q);
-        // (a runner and a body shot in the back pitch on forward, ever more)
-        const lean = pl.kind === 'run' ? pl.lean + 0.45 * smooth(t / 0.5) : pl.kind === 'back' ? pl.lean + 0.35 * smooth(t / 0.35) : pl.lean;
+        // (a runner and a body shot in the back pitch on forward, ever more; every stagger bends it further over and lower)
+        const lean = (pl.kind === 'run' ? pl.lean + 0.45 * smooth(t / 0.5) : pl.kind === 'back' ? pl.lean + 0.35 * smooth(t / 0.35) : pl.lean) + 0.08 * this.stepsDone;
         const Q = _q.setFromAxisAngle(UP, Math.atan2(-f.x, -f.z)).multiply(pl.tilt);
         Q.premultiply(_q2.setFromAxisAngle(_b.crossVectors(UP, pl.leanDir).normalize(), lean));
-        const y = this.gy + pl.standH * (1 - 0.14 * smooth(t / Math.max(0.05, pl.hold + pl.fade)));
+        const y = this.gy + pl.standH * (1 - 0.14 * smooth(t / Math.max(0.05, pl.hold + pl.fade)) - 0.035 * this.stepsDone);
         const om = 16, dm = Math.min(2 * 0.8 * om, dmax), brake = pl.kind === 'run' || pl.kind === 'back' ? 0.95 : 0.85, bx = V[0] * brake, bz = V[2] * brake;
         for (let n = 0; n < TORSO.length; n++) {
           const i = TORSO[n], T = _c.copy(pl.shape[n]).applyQuaternion(Q);
@@ -444,15 +535,16 @@ export class Ragdoll {
         const F = this.feet[j], i = 8 + j;
         if (F.mode === 'swing') {
           const u = Math.min(1, (t - F.t0) / F.dur), e = smooth(u), om = 55, dm = Math.min(2 * 0.9 * om, dmax);
-          const tx = F.from.x + (F.to.x - F.from.x) * e, ty = F.from.y + (F.to.y - F.from.y) * e + 0.1 * Math.sin(Math.PI * u), tz = F.from.z + (F.to.z - F.from.z) * e;
+          const tx = F.from.x + (F.to.x - F.from.x) * e, ty = F.from.y + (F.to.y - F.from.y) * e + (F.lift || 0.1) * Math.sin(Math.PI * u), tz = F.from.z + (F.to.z - F.from.z) * e;
           A[i * 3] += S * (om * om * (tx - p[i].x) - dm * V[i * 3]);
           A[i * 3 + 1] += S * (om * om * (ty - p[i].y) - dm * V[i * 3 + 1] + G);
           A[i * 3 + 2] += S * (om * om * (tz - p[i].z) - dm * V[i * 3 + 2]);
           if (u >= 1) { F.mode = 'stance'; F.plant.copy(F.to); this.stepEnd = t; }
         } else if (F.mode === 'stance') {
-          const om = 30, dm = Math.min(2 * 0.9 * om, dmax);
-          A[i * 3] += S * (om * om * (F.plant.x - p[i].x) - dm * V[i * 3]);
-          A[i * 3 + 2] += S * (om * om * (F.plant.z - p[i].z) - dm * V[i * 3 + 2]);
+          // (it holds only while it is down on the ground: a foot lifted off it swings with the body instead of dragging it back)
+          const c = 1 - smooth((p[i].y - F.plant.y - 0.04) / 0.1), om = pl.kind === 'run' ? 14 : 30, dm = Math.min(2 * 0.9 * om, dmax), Sc = S * c;
+          A[i * 3] += Sc * (om * om * (F.plant.x - p[i].x) - dm * V[i * 3]);
+          A[i * 3 + 2] += Sc * (om * om * (F.plant.z - p[i].z) - dm * V[i * 3 + 2]);
         }
       }
     }
@@ -530,10 +622,12 @@ export class Ragdoll {
     if (!changed) return;
     const want = _q2.setFromUnitVectors(UP, u).multiply(_q3.setFromAxisAngle(UP, ang));
     const fix = _q4.copy(qP).multiply(want).multiply(_q3.copy(qT).invert()); // world: from the ribcage's turn to the allowed one
-    // what lies on the ground stays there and the other block turns (else the two would ratchet each other up off the floor)
+    // what lies on the ground stays there and the other block turns (else the two would ratchet each other up off the floor);
+    // with both down the limit only gives a gentle push: the floor wins, or a body on its back sits itself up a little every step
     const onP = this.lies(this.pb), onT = this.lies(this.tb), sT = onP === onT ? 0.5 : onP ? 1 : 0;
-    if (sT > 0) this.turn(this.tb, _q5.identity().slerp(fix, sT * 0.6));
-    if (sT < 1) this.turn(this.pb, _q5.identity().slerp(fix, (1 - sT) * 0.6).invert());
+    const fa = 2 * Math.acos(Math.min(1, Math.abs(fix.w))), s = (onP && onT ? 0.12 : 0.6) * this.ls * (fa > TURN_MAX ? TURN_MAX / fa : 1);
+    if (sT > 0) this.turn(this.tb, _q5.identity().slerp(fix, sT * s));
+    if (sT < 1) this.turn(this.pb, _q5.identity().slerp(fix, (1 - sT) * s).invert());
   }
 
   // (decided from the contacts of the last steps, not this one's: a block that lies on the ground lies there for the whole step)
@@ -550,9 +644,12 @@ export class Ragdoll {
     const u = _a.subVectors(p[3], p[2]).applyQuaternion(_q.copy(q).invert()).normalize();
     if (!cone(u, 1, NECK_LIM)) return;
     u.applyQuaternion(q).multiplyScalar(this.len[8]).add(p[2]).sub(p[3]);
-    // (a head on the ground stays put and the neck gives, unless the ribcage lies there too)
-    const onH = this.lying[3] > 0.2, sH = onH === this.lies(this.tb) ? 0.85 : onH ? 0 : 1;
-    p[3].addScaledVector(u, sH * 0.6); p[2].addScaledVector(u, (sH - 1) * 0.6);
+    const ul = u.length(); if (ul > STEP_MAX) u.multiplyScalar(STEP_MAX / ul);
+    // (the head and the ribcage share the correction by their weight, always: pushing only the head would push the whole body
+    // up off the floor, a little every step, until a body on its back sits up; a head on the ground gives no more than that)
+    const onH = this.lying[3] > 0.2, sH = onH ? 0.5 : 0.85;
+    const k = 0.6 * this.ls;
+    p[3].addScaledVector(u, sH * k); p[2].addScaledVector(u, (sH - 1) * k);
   }
 
   hips() {
@@ -562,8 +659,9 @@ export class Ragdoll {
       const u = _a.subVectors(p[k], p[h]).applyQuaternion(qi).normalize();
       if (!cone(u, -1, j === 0 ? HIP_L : HIP_R)) continue;
       u.applyQuaternion(q).multiplyScalar(this.len[j * 2]).add(p[h]).sub(p[k]);
-      const onK = this.lying[k] > 0.2, onP = this.lies(this.pb), sK = onK === onP ? IW[k] / (IW[k] + IW[h]) : onK ? 0 : 1;
-      p[k].addScaledVector(u, sK); p[h].addScaledVector(u, sK - 1);
+      const ul = u.length(); if (ul > STEP_MAX) u.multiplyScalar(STEP_MAX / ul);
+      const onK = this.lying[k] > 0.2, onP = this.lies(this.pb), sK = onK === onP ? IW[k] / (IW[k] + IW[h]) : onK ? 0 : 1, s = (onK && onP ? 0.25 : 1) * this.ls;
+      p[k].addScaledVector(u, sK * s); p[h].addScaledVector(u, (sK - 1) * s);
     }
   }
 
@@ -582,8 +680,8 @@ export class Ragdoll {
     const F = _b.set(0, 0, -1).applyQuaternion(_q.setFromUnitVectors(_c.copy(DOWN).applyQuaternion(q), u).multiply(q));
     const l = _c.subVectors(p[c], p[b]), L = l.length() || 1e-6, x = sign * l.dot(F) / L;
     if (x >= min) return;
-    const e = (min - x) * L * sign;
-    p[c].addScaledVector(F, e * 0.6); p[b].addScaledVector(F, -e * 0.4);
+    const e = Math.min((min - x) * L, STEP_MAX) * sign;
+    p[c].addScaledVector(F, e * 0.6 * this.ls); p[b].addScaledVector(F, -e * 0.4 * this.ls);
   }
 
   near() {
@@ -594,7 +692,8 @@ export class Ragdoll {
         const a = L[k][0], b = L[k][1], min = L[k][2], pa = p[a], pb = p[b];
         const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z, d2 = dx * dx + dy * dy + dz * dz;
         if (d2 >= min * min) continue;
-        const d = Math.sqrt(d2) || 1e-6, wa = IW[a], wb = IW[b], f = (d - min) / (d * (wa + wb));
+        // (a torso part on the floor doesn't give way to a hand, elbow or knee under it: the limb moves, or the body would climb onto its own arm)
+        const d = Math.sqrt(d2) || 1e-6, wa = IW[a], wb = IN_BLOCK[b] && this.lying[b] > 0.2 && !IN_BLOCK[a] ? 0 : IW[b], f = (d - min) / (d * (wa + wb));
         pa.x += dx * f * wa; pa.y += dy * f * wa; pa.z += dz * f * wa;
         pb.x -= dx * f * wb; pb.y -= dy * f * wb; pb.z -= dz * f * wb;
       }
@@ -614,7 +713,7 @@ export class Ragdoll {
       nx /= dep; ny /= dep; nz /= dep;
       const oi = o[i], vx = q.x - oi.x, vy = q.y - oi.y, vz = q.z - oi.z, vn = vx * nx + vy * ny + vz * nz;
       // no bounce: whatever the push out gave it along the normal (a foot a little in the floor as it died), it doesn't keep
-      const vmax = 0.25 * this.h;
+      const vmax = 0.04 * this.h;
       if (vn > vmax) { oi.x += nx * (vn - vmax); oi.y += ny * (vn - vmax); oi.z += nz * (vn - vmax); }
       const tx = vx - vn * nx, ty = vy - vn * ny, tz = vz - vn * nz, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
       if (tl < 1e-9) continue;
