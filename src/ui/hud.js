@@ -379,10 +379,10 @@ export class HUD {
       if (this.lastAmmo !== 'knife') { this.lastAmmo = 'knife'; this.el.ammoMag.textContent = '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = 'scaleX(1)'; this.el.ammoHint.textContent = ''; }
     } else if (wpn && wpn.w) {
       const w = wpn.w;
-      const s = w.mag + '|' + w.reserve + '|' + w.def.name;
+      const res = wpn.infiniteAmmo ? '∞' : w.reserve, s = w.mag + '|' + res + '|' + w.def.name;
       if (s !== this.lastAmmo) {
         this.lastAmmo = s;
-        this.el.ammoMag.textContent = w.mag; this.el.ammoRes.textContent = '/ ' + w.reserve; this.el.ammoW.textContent = w.def.name;
+        this.el.ammoMag.textContent = w.mag; this.el.ammoRes.textContent = '/ ' + res; this.el.ammoW.textContent = w.def.name;
         this.el.ammoMag.classList.toggle('low', w.mag <= Math.ceil(w.def.mag * 0.25));
         this.el.ammoBar.style.transform = `scaleX(${w.mag / w.def.mag})`;
       }

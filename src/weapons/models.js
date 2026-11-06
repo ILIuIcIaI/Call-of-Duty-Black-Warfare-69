@@ -104,6 +104,24 @@ export function profCurve(parent, mat, segs, t, x = 0, bevel = 0.002) {
 function group(parent, name, x = 0, y = 0, z = 0) {
   const g = new THREE.Group(); g.name = name; g.position.set(x, y, z); parent.add(g); return g;
 }
+// Iron sights that leave the target in view. y is the line of sight (the model's ironY): the rear sight is a real
+// notch, two ears with nothing between them above the notch floor, and the front post ends exactly on the line, so
+// the shot goes where the tip of the post points and everything above it stays visible.
+function rearNotch(parent, mat, y, z, base, { w = 0.02, gap = 0.008, floor = 0.004, lip = 0.0015, d = 0.012 } = {}) {
+  box(parent, mat, w, y - floor - base, d, 0, (base + y - floor) / 2, z);
+  const ew = (w - gap) / 2, top = y + lip;
+  for (const s of [-1, 1]) box(parent, mat, ew, top - base, d, s * (gap + ew) / 2, (base + top) / 2, z);
+}
+function frontPost(parent, mat, y, z, base, w = 0.004, d = 0.006) {
+  box(parent, mat, w, y - base, d, 0, (base + y) / 2, z);
+}
+// a rear aperture (ghost ring) on a stem, with ears either side and nothing across the hole
+function rearRing(parent, mat, y, z, base, r = 0.0072, t = 0.0016) {
+  const ring = M(new THREE.TorusGeometry(r, t, 6, 18), mat); place(ring, 0, y, z); parent.add(ring);
+  box(parent, mat, 0.004, y - r - t - base, 0.006, 0, (base + y - r - t) / 2, z);
+  const ex = r + t + 0.0028, top = y + 0.006;
+  for (const s of [-1, 1]) box(parent, mat, 0.0025, top - base, 0.012, s * ex, (base + top) / 2, z);
+}
 // Rail with cross slots
 function rail(parent, mat, z0, z1, y, w = 0.021) {
   box(parent, mat, w, 0.007, z1 - z0, 0, y + 0.0035, (z0 + z1) / 2);
@@ -658,11 +676,10 @@ function buildAR(m, opt) {
   const ironUp = opt === 'iron';
   if (ironUp) {
     box(root, m.metal, 0.02, 0.012, 0.03, 0, 0.094, 0.07, 0, 0, 0, 0.002);
-    box(root, m.metal, 0.02, 0.022, 0.008, 0, 0.11, 0.075);
-    const ring = M(new THREE.TorusGeometry(0.0055, 0.0022, 6, 14), m.metal); place(ring, 0, 0.112, 0.07); root.add(ring);
+    rearRing(root, m.metal, 0.112, 0.07, 0.1);
     box(root, m.metal, 0.012, 0.02, 0.012, 0, 0.094, -0.44);
-    box(root, m.metal, 0.003, 0.02, 0.003, 0, 0.109, -0.44);
-    box(root, m.metal, 0.003, 0.024, 0.008, 0.008, 0.108, -0.44); box(root, m.metal, 0.003, 0.024, 0.008, -0.008, 0.108, -0.44);
+    frontPost(root, m.metal, 0.112, -0.44, 0.099, 0.003, 0.003);
+    box(root, m.metal, 0.003, 0.019, 0.008, 0.008, 0.1055, -0.44); box(root, m.metal, 0.003, 0.019, 0.008, -0.008, 0.1055, -0.44);
   } else {
     box(root, m.metal, 0.016, 0.012, 0.032, 0, 0.094, -0.44, 0, 0, 0, 0.002);
     box(root, m.metal, 0.014, 0.004, 0.026, 0, 0.1015, -0.44, 0, 0, 0, 0.0015);
@@ -711,8 +728,8 @@ function buildSMG(m, opt) {
   box(P.mag, m.poly, 0.028, 0.012, 0.05, 0, -0.164, -0.007, 0, 0, 0, 0.003);
   // iron sights
   if (opt === 'iron') {
-    box(root, m.metal, 0.02, 0.016, 0.012, 0, 0.1, 0.07); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.106, 0.07);
-    box(root, m.metal, 0.004, 0.018, 0.006, 0, 0.1, -0.17); box(root, m.metal, 0.02, 0.006, 0.01, 0, 0.094, -0.17);
+    rearNotch(root, m.metal, 0.109, 0.07, 0.092, { gap: 0.007 });
+    frontPost(root, m.metal, 0.109, -0.17, 0.091); box(root, m.metal, 0.02, 0.006, 0.01, 0, 0.094, -0.17);
   }
 
   // ---- detail pass: side rails, pins, controls, mag witness holes, stock hinge, grip rings
@@ -776,8 +793,8 @@ function buildLMG(m, opt) {
   P.belt = group(P.mag, 'belt', 0, 0, 0);
   for (let i = 0; i < 4; i++) cyl(P.belt, m.brass, 0.0055, 0.0055, 0.045, 0.012 + i * 0.01, -0.0, -0.01, 'x', 6);
   if (opt === 'iron') {
-    box(root, m.metal, 0.02, 0.02, 0.012, 0, 0.088, 0.1); box(root, m.dark, 0.006, 0.01, 0.013, 0, 0.094, 0.1);
-    box(root, m.metal, 0.004, 0.03, 0.006, 0, 0.068, -0.6);
+    rearNotch(root, m.metal, 0.096, 0.1, 0.078);
+    box(root, m.metal, 0.012, 0.031, 0.012, 0, 0.0685, -0.6); frontPost(root, m.metal, 0.096, -0.6, 0.084);
   }
 
   // ---- detail pass: receiver rivets, cover latch, carry handle grip, deployed-ready bipod, gas tube
@@ -829,8 +846,8 @@ function buildDMR(m, opt) {
   prof(P.mag, m.metal, [[0.03, 0.0], [-0.03, 0.0], [-0.034, -0.12], [0.026, -0.12]], 0.03, 0, 0.003);
   box(P.mag, m.metal, 0.034, 0.012, 0.064, 0, -0.123, -0.004, 0, 0, 0, 0.003);
   if (opt === 'iron') {
-    box(root, m.metal, 0.02, 0.02, 0.012, 0, 0.1, 0.08); box(root, m.dark, 0.006, 0.01, 0.013, 0, 0.105, 0.08);
-    box(root, m.metal, 0.004, 0.028, 0.006, 0, 0.082, -0.66);
+    rearNotch(root, m.metal, 0.108, 0.08, 0.09);
+    box(root, m.metal, 0.012, 0.03, 0.012, 0, 0.083, -0.66); frontPost(root, m.metal, 0.108, -0.66, 0.098);
   }
 
   // ---- detail pass: steel fittings on the wood furniture
@@ -890,8 +907,8 @@ function buildSniper(m, opt) {
   for (const dz of [-0.06, 0.06]) for (const sx of [-1, 1]) box(root, m.steel, 0.004, 0.006, 0.006, sx * 0.0125, 0.073, dz, 0, 0, 0, 0.001);
   box(root, m.metal, 0.03, 0.006, 0.07, 0, -0.054, -0.03, 0, 0, 0, 0.002);
   if (opt === 'iron') { // a found rifle can come without any scope
-    box(root, m.metal, 0.02, 0.016, 0.012, 0, 0.094, 0.07); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.099, 0.07);
-    box(root, m.metal, 0.004, 0.05, 0.006, 0, 0.078, -0.82);
+    rearNotch(root, m.metal, 0.103, 0.07, 0.086);
+    frontPost(root, m.metal, 0.103, -0.82, 0.053);
   }
 
   return {
@@ -927,9 +944,11 @@ function buildShotgun(m, opt) {
   P.shellHand = group(root, 'shell', 0, 0, 0);
   const sh = shellCasing(m, 'shotgun'); P.shellHand.add(sh); P.shellHand.visible = false;
   if (opt === 'iron') {
-    const bead = M(new THREE.SphereGeometry(0.004, 8, 6), m.brass); place(bead, 0, 0.071, -0.62); root.add(bead);
+    // (the line of sight runs over the rail on the receiver: the notch sits on the rail, the bead on a blade)
+    const bead = M(new THREE.SphereGeometry(0.004, 8, 6), m.brass); place(bead, 0, 0.0825, -0.62); root.add(bead);
+    box(root, m.metal, 0.003, 0.0115, 0.006, 0, 0.07675, -0.62);
     box(root, m.metal, 0.004, 0.006, 0.4, 0, 0.068, -0.42);
-    box(root, m.metal, 0.018, 0.01, 0.01, 0, 0.074, 0.04); box(root, m.dark, 0.005, 0.006, 0.011, 0, 0.078, 0.04);
+    rearNotch(root, m.metal, 0.0865, 0.04, 0.0775, { w: 0.018, gap: 0.007, floor: 0.0035, d: 0.01 });
   }
 
   // ---- detail pass: side saddle with shells, ventilated heat shield, pins and controls
@@ -943,7 +962,7 @@ function buildShotgun(m, opt) {
   box(root, m.steel, 0.006, 0.012, 0.012, 0, 0.006, -0.57, 0, 0, 0, 0.002);
 
   return {
-    root, parts: P, ironY: 0.074, railY: 0.0775, opticZ: -0.03,
+    root, parts: P, ironY: 0.0865, railY: 0.0775, opticZ: -0.03,
     anchors: {
       rhand: rhandGrip(0, -0.06, 0.1, 0.45), lhand: lhandRail(0, 0.015, -0.27, 0.4),
       muzzle: new THREE.Vector3(0, 0.055, -0.64), eject: new THREE.Vector3(0.03, 0.045, -0.04),
@@ -968,10 +987,9 @@ function buildPistol(m, opt, variant) {
   box(P.slide, m.metal, 0.028, 0.03, 0.185, 0, 0.03, -0.035, 0, 0, 0, 0.003);
   for (let i = 0; i < 6; i++) box(P.slide, m.dark, 0.0285, 0.018, 0.003, 0, 0.03, 0.035 + i * 0.008 - 0.02);
   box(P.slide, m.dark, 0.003, 0.012, 0.03, 0.0142, 0.034, -0.05);
-  box(P.slide, m.metal, 0.012, 0.008, 0.006, 0, 0.048, 0.05);
-  box(P.slide, m.dark, 0.004, 0.006, 0.0065, 0, 0.049, 0.05);
-  box(P.slide, m.metal, 0.003, 0.009, 0.006, 0, 0.049, -0.12);
-  const dot = M(new THREE.SphereGeometry(0.0016, 6, 4), m.emissiveRed); place(dot, 0, 0.052, -0.118); P.slide.add(dot);
+  rearNotch(P.slide, m.metal, 0.0525, 0.05, 0.044, { w: 0.012, gap: 0.005, floor: 0.003, lip: 0.001, d: 0.006 });
+  frontPost(P.slide, m.metal, 0.0525, -0.12, 0.0445, 0.003);
+  const dot = M(new THREE.SphereGeometry(0.0014, 6, 4), m.emissiveRed); place(dot, 0, 0.05, -0.1172); P.slide.add(dot);
   cyl(root, m.metal, 0.0065, 0.0065, 0.02, 0, 0.03, -0.13);
   if (auto) {
     // compensator + selector
@@ -1025,14 +1043,14 @@ function buildRevolver(m, opt) {
   cyl(P.mag, m.dark, 0.016, 0.016, 0.02, 0, 0, 0.02, 'z', 10);
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; cyl(P.mag, m.brass, 0.0045, 0.004, 0.03, Math.cos(a) * 0.0115, Math.sin(a) * 0.0115, -0.01, 'z', 6); }
 
-  // ---- detail pass: hammer spur, cylinder latch, grip screw & medallion, sight insert
-  box(root, m.steel, 0.008, 0.008, 0.016, 0, 0.078, 0.052, -0.6, 0, 0, 0.002);
-  for (let i = 0; i < 3; i++) box(root, m.dark, 0.0085, 0.0015, 0.004, 0, 0.083 - i * 0.002, 0.048 + i * 0.004, -0.6);
+  // ---- detail pass: hammer spur (kept under the line of sight), cylinder latch, grip screw & medallion, sights
+  box(root, m.steel, 0.008, 0.008, 0.016, 0, 0.07, 0.052, -0.6, 0, 0, 0.002);
+  for (let i = 0; i < 3; i++) box(root, m.dark, 0.0085, 0.0015, 0.004, 0, 0.075 - i * 0.002, 0.048 + i * 0.004, -0.6);
   box(root, m.steel, 0.004, 0.008, 0.014, -0.0175, 0.04, 0.01, 0, 0, 0, 0.0015);
   cyl(root, m.steel, 0.0032, 0.0032, 0.036, 0, -0.05, 0.05, 'x', 10);
   cyl(root, m.brass, 0.006, 0.006, 0.002, 0.0175, -0.065, 0.054, 'x', 12);
-  box(root, m.emissiveRed, 0.0025, 0.004, 0.003, 0, 0.081, -0.225);
-  box(root, m.dark, 0.004, 0.004, 0.006, 0, 0.072, 0.04);
+  if (opt === 'iron') rearNotch(root, m.steel, 0.08, 0.03, 0.062, { w: 0.012, gap: 0.005, floor: 0.003, lip: 0.001, d: 0.008 });
+  box(root, m.emissiveRed, 0.0025, 0.005, 0.002, 0, 0.0765, -0.2195);
 
   return {
     root, parts: P, ironY: 0.08, railY: 0.07, opticZ: 0.0,
@@ -1088,11 +1106,10 @@ function buildBurst(m, opt) {
   box(P.mag, m.brass, 0.009, 0.005, 0.03, 0, 0.022, 0.0, 0, 0, 0, 0.002);
   if (opt === 'iron') {
     box(root, m.metal, 0.02, 0.012, 0.03, 0, 0.094, 0.07, 0, 0, 0, 0.002);
-    box(root, m.metal, 0.02, 0.022, 0.008, 0, 0.11, 0.075);
-    const ring = M(new THREE.TorusGeometry(0.0055, 0.0022, 6, 14), m.metal); place(ring, 0, 0.112, 0.07); root.add(ring);
+    rearRing(root, m.metal, 0.112, 0.07, 0.1);
     box(root, m.metal, 0.012, 0.02, 0.012, 0, 0.09, -0.36);
-    box(root, m.metal, 0.003, 0.018, 0.003, 0, 0.103, -0.36);
-    box(root, m.metal, 0.003, 0.022, 0.008, 0.008, 0.102, -0.36); box(root, m.metal, 0.003, 0.022, 0.008, -0.008, 0.102, -0.36);
+    frontPost(root, m.metal, 0.112, -0.36, 0.094, 0.003, 0.003);
+    box(root, m.metal, 0.003, 0.024, 0.008, 0.008, 0.103, -0.36); box(root, m.metal, 0.003, 0.024, 0.008, -0.008, 0.103, -0.36);
   }
   return {
     root, parts: P, ironY: 0.112, railY: 0.0895, opticZ: 0.0,
@@ -1139,8 +1156,8 @@ function buildPDW(m, opt) {
   box(P.mag, m.poly, 0.028, 0.01, 0.052, 0, -0.158, -0.012, 0.08, 0, 0, 0.003);
   for (const s of [-1, 1]) for (let i = 0; i < 4; i++) cyl(P.mag, m.dark, 0.0028, 0.0028, 0.002, s * 0.0122, -0.03 - i * 0.03, -0.008 - i * 0.002, 'x', 8);
   if (opt === 'iron') {
-    box(root, m.metal, 0.02, 0.014, 0.012, 0, 0.094, 0.07); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.099, 0.07);
-    box(root, m.metal, 0.004, 0.018, 0.006, 0, 0.092, -0.17); box(root, m.metal, 0.02, 0.006, 0.01, 0, 0.086, -0.17);
+    rearNotch(root, m.metal, 0.101, 0.07, 0.087, { gap: 0.007 });
+    frontPost(root, m.metal, 0.101, -0.17, 0.083); box(root, m.metal, 0.02, 0.006, 0.01, 0, 0.086, -0.17);
   }
   return {
     root, parts: P, ironY: 0.101, railY: 0.0855, opticZ: -0.03,
@@ -1197,8 +1214,8 @@ function buildAMR(m, opt) {
   for (const s of [-1, 1]) for (let i = 0; i < 3; i++) box(P.mag, m.dark, 0.002, 0.09, 0.008, s * 0.0255, -0.06, -0.03 + i * 0.03);
   box(P.mag, m.brass, 0.018, 0.008, 0.08, 0, 0.008, 0, 0, 0, 0, 0.003);
   if (opt === 'iron') {
-    box(root, m.metal, 0.024, 0.016, 0.012, 0, 0.098, 0.09); box(root, m.dark, 0.008, 0.008, 0.013, 0, 0.103, 0.09);
-    box(root, m.metal, 0.005, 0.076, 0.006, 0, 0.07, -0.9);
+    rearNotch(root, m.metal, 0.107, 0.09, 0.09, { w: 0.024, gap: 0.009 });
+    frontPost(root, m.metal, 0.107, -0.9, 0.032, 0.005);
   }
   return {
     root, parts: P, ironY: 0.107, railY: 0.0895, opticZ: -0.02,
@@ -1247,8 +1264,8 @@ function buildAutoshot(m, opt) {
   for (const s of [-1, 1]) for (let i = 0; i < 3; i++) box(P.mag, m.dark, 0.002, 0.086, 0.008, s * 0.0255, -0.055, -0.025 + i * 0.025);
   cyl(P.mag, m.shell, 0.0095, 0.0095, 0.05, 0, 0.012, -0.002, 'z', 10);
   if (opt === 'iron') {
-    box(root, m.metal, 0.02, 0.012, 0.012, 0, 0.096, 0.05); box(root, m.dark, 0.006, 0.008, 0.013, 0, 0.1, 0.05);
-    box(root, m.metal, 0.004, 0.024, 0.006, 0, 0.09, -0.36); box(root, m.metal, 0.02, 0.008, 0.012, 0, 0.082, -0.36);
+    rearNotch(root, m.metal, 0.102, 0.05, 0.09);
+    frontPost(root, m.metal, 0.102, -0.36, 0.078); box(root, m.metal, 0.02, 0.008, 0.012, 0, 0.082, -0.36);
   }
   return {
     root, parts: P, ironY: 0.102, railY: 0.0905, opticZ: -0.05,
@@ -1277,10 +1294,9 @@ function buildHandcannon(m, opt) {
   for (let i = 0; i < 7; i++) box(P.slide, m.dark, 0.0345, 0.026, 0.0028, 0, 0.038, 0.02 + i * 0.006);
   for (let i = 0; i < 3; i++) for (const s of [-1, 1]) box(P.slide, m.dark, 0.002, 0.012, 0.018, s * 0.0171, 0.034, -0.09 - i * 0.024);
   box(P.slide, m.dark, 0.003, 0.016, 0.034, 0.0172, 0.045, -0.03);
-  box(P.slide, m.metal, 0.016, 0.008, 0.008, 0, 0.064, 0.055);
-  box(P.slide, m.dark, 0.005, 0.007, 0.0085, 0, 0.0655, 0.055);
-  box(P.slide, m.metal, 0.004, 0.01, 0.008, 0, 0.0635, -0.115);
-  const dot = M(new THREE.SphereGeometry(0.0018, 6, 4), m.emissiveRed); place(dot, 0, 0.0675, -0.112); P.slide.add(dot);
+  rearNotch(P.slide, m.metal, 0.0695, 0.055, 0.06, { w: 0.016, gap: 0.006, floor: 0.003, lip: 0.001, d: 0.008 });
+  frontPost(P.slide, m.metal, 0.0695, -0.115, 0.0585, 0.004, 0.008);
+  const dot = M(new THREE.SphereGeometry(0.0015, 6, 4), m.emissiveRed); place(dot, 0, 0.0665, -0.1108); P.slide.add(dot);
   cyl(root, m.dark, 0.0095, 0.0095, 0.012, 0, 0.034, -0.162);
   P.mag = group(root, 'mag', 0, 0, 0.032);
   prof(P.mag, m.metal, [[-0.018, 0.0], [0.018, 0.0], [0.04, -0.108], [0.004, -0.108]], 0.028, 0, 0.002);

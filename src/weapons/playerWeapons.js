@@ -146,11 +146,15 @@ export class PlayerWeapons {
     if (w.def.reloadStyle === 'pistol' && w.mag === 0) this.vm.persist.slide = 1;
   }
 
+  // Gun Game: the ammo never runs out, you only reload the magazine
+  get infiniteAmmo() { const m = this.game.match; return !!(m && m.gun); }
+
   // --------------------------------------------------------------- update
   update(dt, input, player) {
     const g = this.game, t = g.time;
     const w = this.w, def = w.def;
     if (!player.alive) return;
+    if (this.infiniteAmmo && !def.melee) w.reserve = def.reserve;
 
     // ---- weapon switching
     let want = -1;
@@ -169,11 +173,11 @@ export class PlayerWeapons {
 
     // ---- sprint / movement restrictions
     const sprinting = player.sprinting;
-    // can't aim or shoot with no free hands, in the middle of rolling over, or while swapping
-    const lowered = player.mode === 'mantle' || player.proneRollT > 0 || this.state === 'holster';
+    // you can aim and shoot at any time, except while climbing (no free hands) or swapping guns
+    const lowered = player.mode === 'mantle' || this.state === 'holster';
     if (sprinting) this.raiseT = player.tac ? def.tacToFire : def.sprintToFire;
-    else if (player.mode === 'slide') this.raiseT = Math.min(this.raiseT, 0.08);
-    else this.raiseT = Math.max(0, this.raiseT - dt);
+    // a slide brings the gun up out of any sprint within a moment
+    else this.raiseT = Math.max(0, (player.mode === 'slide' ? Math.min(this.raiseT, 0.08) : this.raiseT) - dt);
     if (lowered) this.raiseT = Math.max(this.raiseT, player.mantle && player.mantle.high ? 0.28 : 0.15);
 
     // ---- ADS
@@ -186,7 +190,8 @@ export class PlayerWeapons {
     this.adsAmount = clamp(this.adsAmount + (this.wantsAds ? adsRate : -adsRate * 1.3) * dt, 0, 1);
 
     // ---- fire input
-    if (input.firePressed) this.fireBuffer = 0.15; else this.fireBuffer -= dt;
+    // (a press while the gun is still coming up out of a sprint or slide waits for it instead of getting lost)
+    if (input.firePressed) this.fireBuffer = Math.max(0.15, lowered ? 0 : this.raiseT + 0.05); else this.fireBuffer -= dt;
     this.firingRecently = input.fire && this.state !== 'holster' && this.state !== 'draw';
     const triggerHeld = input.fire;
     const canShootState = this.state === 'idle' || (this.state === 'reload' && def.reloadStyle === 'shell' && w.mag > 0);
@@ -222,7 +227,7 @@ export class PlayerWeapons {
     this.vm.update(dt, {
       ads: this.adsAmount, firing: this.firingRecently, mantleHigh: !!(player.mantle && player.mantle.high), ledge: player.mantle,
       sprint: sprinting, tac: player.tac, slide: player.mode === 'slide', dive: player.mode === 'dive', mantle: player.mode === 'mantle',
-      crawl: player.stance === 'prone' && player.speedH > 0.3 && t - this.lastShotT > 0.5 && !this.firingRecently, crouch: player.stance === 'crouch', lower: player.proneRollT > 0,
+      crawl: player.stance === 'prone' && player.speedH > 0.3 && t - this.lastShotT > 0.5 && !this.firingRecently, crouch: player.stance === 'crouch', lower: player.proneRollT > 0 && !this.firingRecently && this.adsAmount < 0.05,
       bobPhase: player.bobPhase, bobAmt: player.bobAmt * (player.onGround ? 1 : 0),
       lookDX: g.lookDX, lookDY: g.lookDY, vy: player.vel.y, strafe: player.moveInput.x,
       landImpulse: player._landVm || 0, corner, mantleK: player.mantle ? Math.min(1, player.mantle.t / player.mantle.dur) : 0,

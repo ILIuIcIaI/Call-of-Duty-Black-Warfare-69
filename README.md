@@ -21,7 +21,7 @@ The newest mode: 2 against 2, you and a bot against two bots, or players togethe
 - **Respawns** never run out, and you always come back at your own base.
 - **What you see:** the flag of whoever is taking a point climbs the pole, the owner's flag flies at the top, blue for your team and red for the others. Both points show under the score, as markers over the map and on the minimap, and the circle you stand in tells you how far the taking has come.
 - **Bots** play for the points: they split up while both are open, take the last one together, and run back when the others start taking one of theirs.
-- **Maps:** Millrace and Cornice, built for the mode, plus Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point was placed so that both teams walk the same distance to it and no spawn can see it. On Blacksite point A is up on the guard tower and point B around the helicopter.
+- **Maps:** Millrace, Cornice and Nightline, built for the mode, plus Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point sits in an open spot you can hold, with cover inside the circle and several ways in, and was placed so that both teams walk the same distance to it and no spawn can see it. Where a map has an open place a floor up, one point is up there and the other down below: in the boardroom on Atrium, on the terrace on Citadel, on the guard tower on Blacksite, on the tea house terraces on Sirocco and on the gondola deck on Cornice. The circle only shows where standing counts, so it never runs through walls or hangs over a drop.
 - **Multiplayer:** with bots it is 2 against 2, without bots only the players play, so two of you play 1 against 1.
 
 ### Runs on a toaster
@@ -37,7 +37,7 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 
 ### Six new maps
 
-**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, point A in the saw hall over the water and point B on the timber landing by the jetty; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, point A up on the gondola deck and point B in the hut by the tiled stove; and **Nightline**, the terminus of a metro line at night after the last train, point A on the platform in front of a parked train you can run through and point B in the ticket hall behind the turnstiles.
+**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, point A around the frame saw in the saw hall over the water and point B on the timber landing by the jetty; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, point A up on the gondola deck and point B in the hut by the tiled stove; and **Nightline**, the terminus of a metro line at night after the last train, point A on the platform in front of a parked train you can run through and point B around the ticket booth in the ticket hall behind the turnstiles.
 
 | Sirocco | Sirocco, the well square |
 |---|---|
@@ -125,6 +125,7 @@ Everyone for themselves, and every kill puts the next weapon in your hands. The 
 - **The knife:** two stabs on someone at full health, or one on a bot from behind. It's the only thing you hold on the last level, and the left mouse button stabs with it.
 - **Skins:** every new weapon comes with a random skin, the standard look included.
 - **No loadout:** the ladder decides what you carry. The HUD shows your level, the next weapon and who is ahead, and the scoreboard shows everyone's level and weapon.
+- **Unlimited ammo:** the reserve never runs out, so you only ever reload.
 - **Bots** climb the same ladder and come at you with the knife when they get there. It works on all eleven maps, and with your friends over the network.
 
 | Who is ahead, and with what | The last level |
@@ -179,7 +180,7 @@ When a bot gets you, you see it from the scene's camera:
 
 ### Fast movement
 
-Sprint, press Shift again for a tactical sprint, and drop straight into a slide. Jump out of the slide to cancel it and keep your speed. You can also dive, wall-jump up to three times, or hit crouch in mid-air to lay flat and land prone.
+Sprint, press Shift again for a tactical sprint, and drop straight into a slide, shooting all the way. Jump out of the slide to cancel it and keep your speed. You can also dive, wall-jump up to three times, or hit crouch in mid-air to lay flat and land prone. The only time you can't shoot is while climbing.
 
 Prone is a real stance too. You can turn a full 360°, and looking behind you rolls the character onto their back with the legs in view. Shift gets you up and running immediately.
 
@@ -235,7 +236,7 @@ Fourteen weapons, each with its own stats and handling, plus the knife at the en
 | M-50 Bastion | Heavy pistol | Semi-automatic | 125 | 7 |
 | SK-18 Wasp | Machine pistol | Automatic | 1050 | 22 |
 
-Fourteen optics, from iron sights and red dots through 2x to 12x scopes to thermal sights. Scopes use a picture-in-picture lens. Which ones are available in the loadout menu depends on the weapon.
+Fourteen optics, from iron sights and red dots through 2x to 12x scopes to thermal sights. With iron sights the shot goes where the tip of the front post points, and the rear sight is an open notch or ring, so the target stays in view. Scopes use a picture-in-picture lens. Which ones are available in the loadout menu depends on the weapon.
 
 Aiming against an edge rests the weapon on it for less recoil, and at corners you lean out.
 
