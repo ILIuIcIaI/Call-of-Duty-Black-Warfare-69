@@ -298,7 +298,9 @@ export class Viewmodel {
       case 'bolt': {
         const b = w.parts.bolt;
         out.pos.set(0.062 + 0.04, b.position.y - 0.012 - 0.01, b.position.z + 0.03);
-        out.quat.copy(basisQuat([0, 1, 0], [-0.2, 0, -0.98], [-0.98, 0, 0.2]));
+        // the fist closes round the knob (which sticks out to the right) with its back up toward the eye, so the forearm
+        // runs back and down to the right, out of the picture; turned the other way it ran up over the gun at the face
+        out.quat.copy(basisQuat([0, 0.71, 0.7], [-1, 0, 0], [0, -0.7, 0.71]));
         break;
       }
       default:
@@ -465,13 +467,14 @@ export class Viewmodel {
   onShot(def, ads) {
     const r = def.recoil, snap = r.snap || 0;
     // Every round slams the gun straight back at the shooter, sharply, and it springs forward again: a light gun a little, a
-    // heavy one hard (vis). The muzzle rises only a touch, from the hip a little more; aimed it hardly rises, so the sights
-    // stay on the target instead of the barrel coming up over it. The small ones jerk back harder on top of that (snap).
+    // heavy one hard (vis). From the hip it slams back twice as far as aimed: there it may hit hard, aimed the sight picture
+    // stays calm. The muzzle rises only a touch, from the hip a little more; aimed it hardly rises, so the sights stay on
+    // the target instead of the barrel coming up over it. The small ones jerk back harder on top of that (snap).
     // (Only the gun moves here: where the shot goes is the camera's business, untouched.)
     const lift = r.vis * (ads ? 0.2 : 0.7) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.85);
-    this.recoilPos.impulse(rand(-0.05, 0.05) * lift, rand(0, 0.06) * lift, (1.2 + Math.random() * 0.3) * back * (ads ? 0.9 : 1));
+    this.recoilPos.impulse(rand(-0.05, 0.05) * lift, rand(0, 0.06) * lift, (1.2 + Math.random() * 0.3) * back * (ads ? 0.9 : 2));
     this.recoilRot.impulse((1.6 + Math.random() * 0.7) * lift, rand(-0.45, 0.45) * lift, rand(-1.0, 1.0) * lift);
-    this.jerk.impulse(((3.2 + Math.random() * 0.8) * back + (4 + Math.random() * 1.2) * snap) * (ads ? 0.85 : 1));
+    this.jerk.impulse(((3.2 + Math.random() * 0.8) * back + (4 + Math.random() * 1.2) * snap) * (ads ? 0.85 : 2));
     this.drive = Math.min(1, this.drive + (def.fire === 'auto' || def.fire === 'burst' ? 0.17 : 0.5));
     this.vib = Math.min(1, this.vib + 0.45);
     this.shotKick = 1;
@@ -562,7 +565,11 @@ export class Viewmodel {
     if (!this.model) return;
     const w = this.model;
     const P = this.poseVals;
-    this.adsVis.target = st.ads;
+    // Working the bolt takes the gun off the eye. The hand goes up to the bolt right in front of the face, and with the gun
+    // at the eye (scoping in or out while the bolt ran) the arm filled the whole picture. Scoped none of this shows (the
+    // scope picture covers it); the gun comes back up as the bolt closes.
+    const working = !!(this.clip && this.clip.name === 'bolt' && this.clipT < 0.8);
+    this.adsVis.target = working ? 0 : st.ads;
     this.adsVis.update(dt);
     const adsE = smoother(clamp(this.adsVis.x, 0, 1));
     const adsOver = Math.max(0, this.adsVis.x - 1); // tiny overshoot = settle feeling
