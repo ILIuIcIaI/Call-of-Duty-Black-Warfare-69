@@ -3,6 +3,10 @@ import { clamp } from '../core/math.js';
 import { drawScope } from './scopes.js';
 import { esc } from '../net/net.js';
 import { GUN_TIERS, WEAPONS } from '../weapons/defs.js';
+import { CAPTURE } from '../game/points.js';
+
+// the Wingman flag, for the badge under the score and the marker over it
+const FLAG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 2h2v20H5zM8 3h11l-2.6 4.5L19 12H8z" fill="currentColor"/></svg>';
 const _p = new THREE.Vector3(), _f = new THREE.Vector3();
 
 // =============================================================================
@@ -281,7 +285,7 @@ export class HUD {
       x.beginPath(); x.arc(px, pz, 3.6 / zoom, 0, Math.PI * 2); x.fill();
       x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 1 / zoom; x.stroke();
     }
-    // Wingman: the two circles in the colour of whoever holds them, the letter upright
+    // Wingman: the circle in the colour of whoever holds the flag, a little flag upright in it
     const pts = g.match && g.match.points;
     if (pts) for (const P of pts.list) {
       const px = (P.x - this.mmOx) * this.mmS, pz = (P.z - this.mmOz) * this.mmS, own = P.owner === p.team;
@@ -289,7 +293,8 @@ export class HUD {
       x.strokeStyle = P.owner < 0 ? '#ffffff' : own ? '#48b8ff' : '#ff4a3a'; x.lineWidth = 1.5 / zoom;
       x.beginPath(); x.arc(px, pz, P.r * this.mmS, 0, Math.PI * 2); x.fill(); x.stroke();
       x.save(); x.translate(px, pz); x.rotate(-p.yaw); x.scale(1 / zoom, 1 / zoom);
-      x.fillStyle = '#fff'; x.font = 'bold 14px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(P.id, 0, 1);
+      x.fillStyle = '#fff'; x.fillRect(-4, -7, 1.6, 14);
+      x.beginPath(); x.moveTo(-2.4, -7); x.lineTo(6, -7); x.lineTo(3.8, -3.6); x.lineTo(6, -0.2); x.lineTo(-2.4, -0.2); x.closePath(); x.fill();
       x.restore();
     }
     x.restore();
@@ -424,7 +429,8 @@ export class HUD {
     if (this._mmT <= 0) { this._mmT = 1 / (g.engine.q.hudHz || 30); this.drawMinimap(); }
   }
 
-  // Wingman: the two points under the score, a marker over each in the world, and what the circle you stand in is doing
+  // Wingman: the flag under the score with the minute the others have to take it back, a marker over it in the world,
+  // and what the circle you stand in is doing
   updatePoints() {
     const g = this.game, pts = g.match && g.match.points;
     if (!pts) {
@@ -433,10 +439,11 @@ export class HUD {
     }
     if (!this.ptEl) {
       this.ptEl = document.createElement('div'); this.ptEl.id = 'sb-points';
-      this.ptEl.innerHTML = pts.list.map((P) => `<div class="pt"><span>${P.id}</span><i></i></div>`).join('');
+      this.ptEl.innerHTML = pts.list.map(() => `<div class="pt">${FLAG_ICON}<i></i></div>`).join('') + '<div class="hold"><b></b><span></span></div>';
       this.el.hud.appendChild(this.ptEl);
-      this.ptBadges = [...this.ptEl.children];
-      this.ptMarks = pts.list.map((P) => { const m = document.createElement('div'); m.className = 'ptmark'; m.innerHTML = `<b>${P.id}</b><span></span>`; this.tagRoot.appendChild(m); return m; });
+      this.ptBadges = [...this.ptEl.children].slice(0, pts.list.length);
+      this.holdEl = this.ptEl.lastChild;
+      this.ptMarks = pts.list.map(() => { const m = document.createElement('div'); m.className = 'ptmark'; m.innerHTML = `<b>${FLAG_ICON}</b><span></span>`; this.tagRoot.appendChild(m); return m; });
       this.capEl = document.createElement('div'); this.capEl.id = 'cap-status'; this.capEl.innerHTML = '<span></span><i><b></b></i>';
       this.el.hud.appendChild(this.capEl);
     }
@@ -459,12 +466,24 @@ export class HUD {
       if (M.className !== mc) M.className = mc;
       txt(M.lastChild, p.alive ? Math.round(Math.hypot(P.x - p.pos.x, P.z - p.pos.z)) + ' m' : '');
     });
+    // under the flag: the minute (the holders' to hold on, the others' to take it back) and the seconds of a taking
+    const F = pts.list[0], HD = this.holdEl, secs = (P) => Math.max(1, Math.ceil((1 - P.k) * CAPTURE)) + ' S';
+    const fTaking = F.cap >= 0 && F.k > 0, held = F.owner >= 0;
+    if (!held && !fTaking && !F.contested) css(HD, 'display', 'none');
+    else {
+      css(HD, 'display', '');
+      const left = Math.ceil(pts.holdLeft), ownFlag = F.owner === p.team;
+      txt(HD.firstChild, held ? (ownFlag ? 'HALTEN ' : 'ZURÜCKEROBERN ') + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : '');
+      txt(HD.lastChild, F.contested ? 'UMKÄMPFT' : fTaking ? (F.cap === p.team ? 'IHR NEHMT EIN · ' : 'GEGNER NEHMEN EIN · ') + secs(F) : '');
+      const cl = 'hold ' + (held ? side(F.owner) : '') + (held && !ownFlag && left <= 15 ? ' urgent' : '') + (fTaking ? ' taking-' + side(F.cap) : '') + (F.contested ? ' contest' : '');
+      if (HD.className !== cl) HD.className = cl;
+    }
     // the circle you are standing in
     const C = this.capEl;
     if (!here) { css(C, 'display', 'none'); return; }
     css(C, 'display', '');
     const mine = here.owner === p.team, taking = here.cap >= 0 && here.k > 0;
-    const text = here.contested ? 'PUNKT ' + here.id + ' · UMKÄMPFT' : taking && here.cap === p.team ? 'PUNKT ' + here.id + ' WIRD EINGENOMMEN' : mine ? 'PUNKT ' + here.id + ' GEHÖRT EUREM TEAM' : taking ? 'GEGNER NEHMEN PUNKT ' + here.id + ' EIN' : 'PUNKT ' + here.id;
+    const text = here.contested ? 'FLAGGE · UMKÄMPFT' : taking && here.cap === p.team ? 'FLAGGE WIRD EINGENOMMEN · ' + secs(here) : mine ? 'DIE FLAGGE GEHÖRT EUREM TEAM' : taking ? 'GEGNER NEHMEN DIE FLAGGE EIN · ' + secs(here) : 'FLAGGE';
     txt(C.firstChild, text);
     const cl = here.contested ? 'contest' : taking ? side(here.cap) : side(here.owner);
     if (C.className !== cl) C.className = cl;
@@ -509,7 +528,7 @@ export class HUD {
       b.innerHTML = `<h3>${g.mapDef.name} — WARZONE · ${alive.length} LEBEN NOCH</h3><table>${head}${rows.slice(0, 12).map(row).join('')}</table>`;
     } else if (m.teams) {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
-      b.innerHTML = `<h3>${g.mapDef.name} — ${m.wing ? 'WINGMAN · ' + m.points.list.map((P) => P.id + ': ' + (P.owner < 0 ? 'frei' : P.owner === g.player.team ? 'ihr' : 'Gegner')).join(' · ') : 'TEAM DEATHMATCH'}</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — ${m.wing ? 'WINGMAN · FLAGGE: ' + m.points.list.map((P) => (P.owner < 0 ? 'frei' : P.owner === g.player.team ? 'eure' : 'Gegner')).join(' · ') : 'TEAM DEATHMATCH'}</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
     } else if (m.gun) {
       const by = [...g.combatants].sort((a, c) => (c.tier || 0) - (a.tier || 0) || c.kills - a.kills);
       const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td>${ping(c)}</tr>`;

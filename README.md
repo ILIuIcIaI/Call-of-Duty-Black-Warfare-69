@@ -2,11 +2,11 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. One map, PoolDay, comes from a Counter-Strike 1.6 map file ([credits](#credits-and-license)). Apart from that, no code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for two points in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on eleven maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
+A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for one flag in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on eleven maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
 
 Apart from that one map file, the game has no model, texture or audio files: every soldier, weapon, skin, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
-![Wingman on Sirocco: point A is being taken, its blue flag climbs the pole on the dome of the cistern, a teammate nearby](docs/screenshots/wingman-sirocco.jpg)
+![Wingman on Sirocco: the flag is being taken, the blue flag climbs the pole on the dome of the cistern, a teammate nearby](docs/screenshots/wingman-sirocco.jpg)
 
 **Current version: [0.6.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
 
@@ -14,14 +14,15 @@ Apart from that one map file, the game has no model, texture or audio files: eve
 
 ### Wingman
 
-The newest mode: 2 against 2, you and a bot against two bots, or players together over the local network. Two points stand on the map, **A** and **B**, each a circle with a flagpole in the middle.
+The newest mode: 2 against 2, you and a bot against two bots, or players together over the local network, for one flag: a circle with a flagpole in the middle.
 
-- **Taking a point:** stand in its circle. Alone it takes 10 seconds, with your teammate about 7. With both teams in the circle nothing moves, and a half-taken point slowly falls back once everybody has left it.
-- **Winning:** the team that holds both points at the same time wins at once. After 7 minutes, the team with more kills wins.
+- **Taking the flag:** stand in its circle for 10 seconds, players and bots alike, however many of a team stand in it. With both teams in the circle nothing moves, and a half-taken flag slowly falls back once everybody has left it.
+- **Holding it:** once a team has the flag, the others have one minute to take it back. If they don't, the holders win. Taking it back starts the minute again, for the other side.
+- **The clock:** a match always lasts 8 minutes, and the minute never changes that. Whoever holds the flag when the time is up wins; if nobody does, the team with more kills wins.
 - **Respawns** never run out, and you always come back at your own base.
-- **What you see:** the flag of whoever is taking a point climbs the pole, the owner's flag flies at the top, blue for your team and red for the others. Both points show under the score, as markers over the map and on the minimap, and the circle you stand in tells you how far the taking has come.
-- **Bots** play for the points: they split up while both are open, take the last one together, and run back when the others start taking one of theirs.
-- **Maps:** Millrace, Cornice and Nightline, built for the mode, plus Sirocco, Atrium, Dynamo, Blacksite, Citadel, Backrooms and Drydock. Every point sits in an open spot you can hold, with cover inside the circle and several ways in, and was placed so that both teams walk the same distance to it and no spawn can see it. Where a map has an open place a floor up, one point is up there and the other down below: in the boardroom on Atrium, on the terrace on Citadel, on the guard tower on Blacksite, on the tea house terraces on Sirocco and on the gondola deck on Cornice. The circle only shows where standing counts, so it never runs through walls or hangs over a drop.
+- **What you see:** the flag of whoever is taking it climbs the pole, the holder's flag flies at the top, blue for your team and red for the others. Under the score sits the flag with the minute, "HALTEN" when it is yours and a red "ZURÜCKEROBERN" when it isn't, and the seconds a taking still needs. The flag also has a marker over the map and a place on the minimap.
+- **Bots** play for the flag: both of a team go to take it, stay in the circle to hold it, and go back for it when the others have it.
+- **Maps:** all eleven. Millrace, Cornice and Nightline were built for the mode. Every flag stands where both teams run the same distance to it and no spawn can see it, and on PoolDay it stands down in the middle of the empty pool, where you have to crouch out in the open to take it. The circle only shows where standing counts, so it never runs through walls or hangs over a drop.
 - **Multiplayer:** with bots it is 2 against 2, without bots only the players play, so two of you play 1 against 1.
 
 ### Runs on a toaster
@@ -37,7 +38,7 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 
 ### Six new maps
 
-**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, point A around the frame saw in the saw hall over the water and point B on the timber landing by the jetty; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, point A up on the gondola deck and point B in the hut by the tiled stove; and **Nightline**, the terminus of a metro line at night after the last train, point A on the platform in front of a parked train you can run through and point B around the ticket booth in the ticket hall behind the turnstiles.
+**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, the flag around the frame saw in the saw hall over the water; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, the flag up on the gondola deck; and **Nightline**, the terminus of a metro line at night after the last train, the flag on the platform in front of a parked train you can run through.
 
 | Sirocco | Sirocco, the well square |
 |---|---|
@@ -61,7 +62,7 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 
 | Nightline | Nightline, the ticket hall |
 |---|---|
-| ![The platform of the terminus at night: the parked train on the left, orange tiled pillars, point A round the kiosk and the balcony of the mezzanine at the far end](docs/screenshots/nightline-platform.jpg) | ![Point B in the ticket hall: the glass ticket booth in the circle, the turnstiles beside it and the shuttered street exit up on the landing behind the railing](docs/screenshots/nightline-ticket-hall.jpg) |
+| ![The platform of the terminus at night: the parked train on the left, orange tiled pillars, the flag round the kiosk and the balcony of the mezzanine at the far end](docs/screenshots/nightline-platform.jpg) | ![The ticket hall: the glass ticket booth, the turnstiles beside it and the shuttered street exit up on the landing behind the railing](docs/screenshots/nightline-ticket-hall.jpg) |
 
 ### Bodies that fight as they fall
 
@@ -244,7 +245,7 @@ Aiming against an edge rests the weapon on it for less recoil, and at corners yo
 
 ### Maps
 
-Besides the island of Serena, eleven maps for Team Deathmatch, Free for All and Gun Game, ten of them for [Wingman](#wingman) as well:
+Besides the island of Serena, eleven maps for Team Deathmatch, Free for All, Gun Game and [Wingman](#wingman):
 
 | Map | Size | Setting |
 |---|---|---|
@@ -286,7 +287,7 @@ Besides the island of Serena, eleven maps for Team Deathmatch, Free for All and 
 
 ### Modes and bots
 
-- **Team Deathmatch** and **Free for All**, with a score limit and a 10-minute time limit, **[Gun Game](#gun-game)**, where the knife decides it, and **[Wingman](#wingman)**, 2 against 2 for two points.
+- **Team Deathmatch** and **Free for All**, with a score limit and a 10-minute time limit, **[Gun Game](#gun-game)**, where the knife decides it, and **[Wingman](#wingman)**, 2 against 2 for one flag.
 - 1 to 8 bots on four difficulty levels: Recruit, Regular, Veteran and Elite.
 - [Bodies that fight as they fall](#bodies-that-fight-as-they-fall), a third-person death camera, a visible first-person body, a minimap, a kill feed and glass that breaks.
 

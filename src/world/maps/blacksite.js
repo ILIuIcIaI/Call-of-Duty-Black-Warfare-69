@@ -169,9 +169,11 @@ export default {
     barrier(b, -20.5, 4.5, 'z', 3.0);
     sandbags(b, -12.6, -13.6, 2.6, 'x', 1.0);
     sandbags(b, -12.2, 15.5, 2.6, 'x', 1.0);
-    // motor pool truck (south) + jeep crates (north)
+    // motor pool truck (south); north, a container and crates at the lab's corner screen the helipad (the capture
+    // point) from the spawn yard
     truck(b, -10.6, -19.5, 'z', 'carPaintGreen', 1);
-    crate(b, -9.0, 17.0, 1.2); crate(b, -9.0, 18.25, 1.2); crate(b, -9.0, 17.6, 1.2, 1.2);
+    container(b, -9.4, 16.0, 'z', 'contGreen');
+    crate(b, -11.2, 12.8, 1.2); crate(b, -11.2, 12.8, 1.2, 1.2);
     barrel(b, -12.0, 20.5, 'metalRed'); barrel(b, -11.4, 21.1, 'metalDark');
     // floodlights
     lampPost(b, -24.5, -21.5, 6.5, [1, 0]);
@@ -182,7 +184,8 @@ export default {
   },
 
   spawns() {
-    const west = [[-27, 0, -15], [-27, 0, 0.5], [-27, 0, 17], [-23.5, 0, -9], [-23, 0, 3], [-22.5, 0, 20.5], [-28, 0, -20.5], [-24, 0, -18]];
+    // (none in the yard's north end: from there the helipad lies in sight past the container)
+    const west = [[-27, 0, -15], [-27, 0, 0.5], [-29, 0, 12.5], [-23.5, 0, -9], [-23, 0, 3], [-23, 0, 7.0], [-28, 0, -20.5], [-24, 0, -18]];
     const yawW = -Math.PI / 2;
     return { 0: west.map(([x, y, z]) => [x, y, z, yawW]), 1: west.map(([x, y, z]) => [-x, y, z, -yawW]) };
   },
@@ -195,10 +198,12 @@ export default {
 };
 
 function sandbagsRing(B, y) {
-  // parapet of sandbags around the tower top (gap on the south side for the stairs)
-  B.box(-2.7, y, -15.6, 2.7, y + 1.0, -15.3, 'sandbag');
-  B.box(-2.7, y, -20.7, -1.0, y + 1.0, -20.4, 'sandbag');
-  B.box(1.0, y, -20.7, 2.7, y + 1.0, -20.4, 'sandbag');
-  B.box(-2.7, y, -20.4, -2.4, y + 1.0, -15.6, 'sandbag');
-  B.box(2.4, y, -20.4, 2.7, y + 1.0, -15.6, 'sandbag');
+  // parapet of sandbags around the tower top (gap on the south side for the stairs); 1.2 m, so from the yards nobody
+  // sees whoever stands in the capture circle up there
+  const h = 1.2;
+  B.box(-2.7, y, -15.6, 2.7, y + h, -15.3, 'sandbag');
+  B.box(-2.7, y, -20.7, -1.0, y + h, -20.4, 'sandbag');
+  B.box(1.0, y, -20.7, 2.7, y + h, -20.4, 'sandbag');
+  B.box(-2.7, y, -20.4, -2.4, y + h, -15.6, 'sandbag');
+  B.box(2.4, y, -20.4, 2.7, y + h, -15.6, 'sandbag');
 }

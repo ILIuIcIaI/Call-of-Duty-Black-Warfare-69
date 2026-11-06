@@ -67,6 +67,9 @@ export default {
     B.box(28.55, 3.9, -0.9, 28.62, 4.9, 0.9, 'woodDark', { collide: false, ao: false });
     // center divider between the two terrace staircases
     B.box(24, 0, -1.5, 28.5, 3.0, 1.5, 'stoneWall');
+    // the terrace under the kiosk and behind it (without it the strip behind the kiosk was a pit 3 m deep)
+    B.box(28.5, 0, -1.5, 34, 3.0, 1.5, 'stoneWall');
+    B.box(28.5, 3.0, -1.5, 34, 3.04, 1.5, 'pavers', { collide: false, ao: false });
     // east connector: cafe tables with umbrellas
     for (const [x, z] of [[14.5, -2], [17.5, 2], [15, 3.2]]) {
       B.box(x - 0.45, 0, z - 0.45, x + 0.45, 0.78, z + 0.45, 'metalDark');

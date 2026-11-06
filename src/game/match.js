@@ -26,27 +26,22 @@ export class Match {
     this.cfg = cfg;
     this.score = [0, 0];
     this.gun = cfg.mode === 'gun';
-    // Wingman: 2 against 2 for the points A and B (points.js), respawns without end, 7 minutes
+    // Wingman: 2 against 2 for one flag (points.js), respawns without end, always 8 minutes
     this.wing = cfg.mode === 'wing';
     this.teams = cfg.mode === 'tdm' || this.wing;
     this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : this.wing ? Infinity : 50 + cfg.bots * 5;
-    this.timeLeft = cfg.net ? cfg.leftMs / 1000 : this.wing ? 420 : 600;
+    this.timeLeft = cfg.net ? cfg.leftMs / 1000 : this.wing ? 480 : 600;
     this.ended = false;
     this.lastUsed = new Map();
     this.spawnPoints = this.collectSpawns();
     if (this.wing) this.points = new Points(game, pointsOf(game.mapDef) || this.fallbackPoints());
   }
 
-  // a map without its own two points: halfway between the middle and each end of the line between the bases
+  // a map without its own flag: the middle of the map
   fallbackPoints() {
-    const g = this.game, b = g.mapDef.bounds, sp = g.mapDef.spawns(), nav = g.nav;
-    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
-    const ew = Math.abs(sp[0][0][0] - sp[1][0][0]) > Math.abs(sp[0][0][2] - sp[1][0][2]); // bases west and east: points north and south
-    return [-1, 1].map((s) => {
-      const x = ew ? cx : cx + s * (b.maxX - b.minX) / 4, z = ew ? cz + s * (b.maxZ - b.minZ) / 4 : cz;
-      const n = nav.nearest(x, 0, z, 8);
-      return n < 0 ? [x, 0, z] : [nav.X[n], nav.Y[n], nav.Z[n]];
-    });
+    const g = this.game, b = g.mapDef.bounds, nav = g.nav;
+    const x = (b.minX + b.maxX) / 2, z = (b.minZ + b.maxZ) / 2, n = nav.nearest(x, 0, z, 8);
+    return [n < 0 ? [x, 0, z] : [nav.X[n], nav.Y[n], nav.Z[n]]];
   }
 
   collectSpawns() {
@@ -189,17 +184,19 @@ export class Match {
     this.timeLeft -= dt;
     // bot respawns
     for (const b of g.bots) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) this.spawn(b);
-    // Wingman: the points are decided alone, or by the PC that runs the bots (the others are told, see Net)
+    // Wingman: the flag is decided alone, or by the PC that runs the bots (the others are told, see Net)
     if (this.wing) {
       const net = this.cfg.net && g.net;
       if (!net || g.net.isAuth) {
-        const both = this.points.update(dt);
-        if (net) g.net.sendPoints(this.points, both);
-        else if (both >= 0) { this.end(both); return; }
-      }
+        const held = this.points.update(dt);
+        if (net) g.net.sendPoints(this.points, held);
+        else if (held >= 0) { this.end(held, 'hold'); return; }
+      } else this.points.follow(dt);
       this.points.show();
     }
     if (this.cfg.net) return; // the room keeps the score
+    // Wingman out of time: whoever holds the flag (nobody: more kills)
+    if (this.wing && this.timeLeft <= 0) { const o = this.points.list[0].owner; this.end(o >= 0 ? o : null, 'time'); return; }
     // win conditions
     let winner = null;
     if (this.teams) {
@@ -211,28 +208,10 @@ export class Match {
     if (winner !== null || this.timeLeft <= 0) this.end(winner);
   }
 
-  // ---- Wingman: where a bot goes. A point of ours that the others are taking: whoever of us is closer goes back.
-  // Otherwise the points we don't hold: with both still open the two of a team split up, the last one they take together.
-  // (thought over every two seconds, so nobody turns on the spot when the two ways are about as long)
+  // ---- Wingman: where a bot goes. There is one flag: the two of a team take it, hold it, or go to take it back.
   objectiveFor(b) {
     if (!this.wing || this.ended) return null;
-    const g = this.game;
-    if (b._obj && g.time - b._objT < 2 && b._obj.owner !== b.team) return b._obj;
-    const T = b.team, pts = this.points.list;
-    const mate = g.combatants.find((c) => c !== b && c.team === T);
-    const d = (c, P) => Math.hypot(c.pos.x - P.x, c.pos.z - P.z);
-    let pick = null;
-    const threatened = pts.find((P) => P.owner === T && P.cap >= 0 && P.cap !== T);
-    const open = pts.filter((P) => P.owner !== T);
-    if (threatened && (!mate || !mate.alive || d(b, threatened) <= d(mate, threatened))) pick = threatened;
-    else if (open.length === 1) pick = open[0];
-    else if (open.length === 2) {
-      const [P, Q] = open;
-      if (!mate || !mate.alive) pick = d(b, P) <= d(b, Q) ? P : Q;
-      else pick = d(b, P) + d(mate, Q) <= d(b, Q) + d(mate, P) ? P : Q;
-    }
-    b._obj = pick; b._objT = g.time;
-    return pick;
+    return this.points.list[0];
   }
 
   scores() {
@@ -243,15 +222,24 @@ export class Match {
     return { f: g.player.kills, e: others.length ? Math.max(...others) : 0 };
   }
 
-  end(winner) {
+  // how a Wingman match ended, in a line under the result
+  wingNote(winner, how) {
+    const g = this.game, f = this.score[g.player.team], e = this.score[1 - g.player.team];
+    if (winner === null) return 'ZEIT ABGELAUFEN · NIEMAND HÄLT DIE FLAGGE · KILLS ' + f + ' : ' + e;
+    const own = winner === g.player.team;
+    if (how === 'hold') return own ? 'DEIN TEAM HAT DIE FLAGGE EINE MINUTE GEHALTEN' : 'DIE GEGNER HABEN DIE FLAGGE EINE MINUTE GEHALTEN';
+    return 'ZEIT ABGELAUFEN · ' + (own ? 'DEIN TEAM HÄLT DIE FLAGGE' : 'DIE GEGNER HALTEN DIE FLAGGE');
+  }
+
+  end(winner, how) {
     this.ended = true;
     const g = this.game;
     let won;
     if (this.teams) {
-      // (Wingman out of time: whoever has more kills)
+      // (Wingman out of time with nobody on the flag: whoever has more kills)
       if (winner === null) won = this.score[g.player.team] > this.score[1 - g.player.team] ? true : this.score[g.player.team] === this.score[1 - g.player.team] ? null : false;
       else won = winner === g.player.team;
-      if (this.wing) this.endNote = winner === null ? 'ZEIT ABGELAUFEN · KILLS ' + this.score[g.player.team] + ' : ' + this.score[1 - g.player.team] : (winner === g.player.team ? 'DEIN TEAM HÄLT' : 'DIE GEGNER HALTEN') + ' BEIDE PUNKTE';
+      if (this.wing) this.endNote = this.wingNote(winner, how);
     } else if (this.gun) {
       won = (winner || this.gunLeader()) === g.player;
     } else {

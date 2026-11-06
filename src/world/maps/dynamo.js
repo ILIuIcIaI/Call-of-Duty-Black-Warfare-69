@@ -211,7 +211,11 @@ export default {
     b.box(-19.62, 0, 10.2, -19.58, 2.4, 11.6, 'metalDark', flat);
     const belt = new THREE.BoxGeometry(1.6, 1.2, 11.5);
     b.geom(belt, 'corrugated', mtx(-20.3, 6.2, 5.0, -0.42, 1, 1, 1, 0.42, 0));
-    dozer(b, -23.0, 10.8);
+    // the conveyor gallery from the shed into the tower, 2 m up: under it you walk, it screens the coal bunker (a capture
+    // point) from the car park, and from the dozer's cab you climb onto it and on to the shed's roof
+    b.box(-26.4, 2.0, 11.4, -19.6, 4.0, 13.0, 'corrugated');
+    b.box(-26.4, 2.0, 11.36, -19.6, 2.15, 13.04, 'metalDark', flat);
+    dozer(b, -23.0, 10.0);   // (its cab clear of the gallery)
     for (const [x, z] of [[-29.6, 6.2], [-17.0, 16.5]]) b.geom(new THREE.SphereGeometry(1.4, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'coal', mtx(x, 0, z, 0, 1.2, 0.7, 1));
     for (const [x, z] of [[-29.6, 6.2], [-17.0, 16.5]]) b.box(x - 1.0, 0, z - 0.8, x + 1.0, 0.9, z + 0.8, 'coal', { visual: false });
     b.box(-31, 0, 17, -27.5, 0.012, 19, 'coal', flat);
@@ -240,7 +244,8 @@ export default {
     gantry(b, 16.2, 29.8, 16.4, 8);
     for (const x of [21.0, 23.4]) { b.box(x - 0.3, 0, 7.6, x + 0.3, 0.5, 8.2, 'concrete'); b.geom(new THREE.CylinderGeometry(0.1, 0.1, 2.6, 8), 'metal', mtx(x, 1.8, 7.9)); for (let k = 0; k < 5; k++) b.geom(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 10), 'clay', mtx(x, 2.4 + k * 0.22, 7.9)); }
     b.box(20.6, 0, 7.5, 23.8, 0.6, 8.3, 'concrete');                                 // their plinth (what stops you is there to see)
-    for (const [x, z] of [[27.0, 5.6], [16.6, 6.2]]) { b.box(x - 0.6, 0, z - 0.5, x + 0.6, 1.6, z + 0.5, 'metalWhite', { pen: 0.4 }); b.box(x - 0.5, 0.9, z + 0.5, x + 0.5, 1.4, z + 0.52, 'black', flat); }
+    // switch cabinets (the first one stands where the car park would see past the control house into the capture circle)
+    for (const [x, z] of [[26.0, 5.2], [16.6, 6.2]]) { b.box(x - 0.6, 0, z - 0.5, x + 0.6, 1.6, z + 0.5, 'metalWhite', { pen: 0.4 }); b.box(x - 0.5, 0.9, z + 0.5, x + 0.5, 1.4, z + 0.52, 'black', flat); }
     railing(b, 15, 19, 21, 19, 2.0, 'metalDark', true);
     railing(b, 25, 19, 31, 19, 2.0, 'metalDark', true);
     lampPost(b, 31.2, 5, 7, [-1, 0]);
@@ -248,7 +253,9 @@ export default {
   },
 
   spawns() {
-    const north = [[-27.5, 0, 21.2], [-21.5, 0, 23.0], [-15.0, 0, 21.4], [-5.8, 0, 20.6], [0, 0, 20.4], [5.8, 0, 20.6], [15.0, 0, 21.4], [21.5, 0, 23.0], [27.5, 0, 21.2]];
+    // (the two in the west corner stand behind the coal shed: from the car park in front of it the coal bunker, a
+    // capture point, lies in sight under the conveyor gallery)
+    const north = [[-30.0, 0, 21.5], [-31.0, 0, 18.0], [-15.0, 0, 21.4], [-5.8, 0, 20.6], [0, 0, 20.4], [5.8, 0, 20.6], [15.0, 0, 21.4], [21.5, 0, 23.0], [27.5, 0, 21.2]];
     return { 0: north.map(([x, y, z]) => [x, y, z, 0]), 1: north.map(([x, y, z]) => [x, y, -z, Math.PI]) };
   },
 

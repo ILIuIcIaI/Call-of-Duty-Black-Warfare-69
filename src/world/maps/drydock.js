@@ -131,7 +131,9 @@ export default {
     crate(b, -20.6, -21.3, 1.2);
     crate(b, -17.2, -28.0, 1.2); crate(b, -16.0, -28.0, 1.2); crate(b, -16.6, -28.0, 1.2, 1.2);
     pallet(b, -29.2, -28.6); pallet(b, -29.2, -28.6, 0.14);
-    barrier(b, -11.5, -22.8, 'x', 3.2);
+    // two containers by the one in the middle: round it a pocket to hold (the capture point) that the spawn yard can't see
+    container(b, -11.8, -24.2, 'z', 'contOrange');
+    container(b, -11.5, -19.0, 'x', 'contGrey');
     // cable reels
     b.box(-4.0, 0, -28.4, -2.6, 1.4, -26.2, 'woodDark', { visual: false });
     b.geom(new THREE.CylinderGeometry(0.7, 0.7, 1.4, 16), 'woodDark', mtx(-3.3, 0.7, -27.3, 0, 1, 1, 1, Math.PI / 2));

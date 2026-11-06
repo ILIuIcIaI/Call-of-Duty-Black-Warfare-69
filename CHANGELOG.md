@@ -8,22 +8,18 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 - You can shoot at any time now, except while climbing. In a slide the gun stayed down until the slide was over; now it comes up at once and fires. Rolling over while lying down no longer stops you either, and a single press of the trigger while sprinting is no longer lost: the shot goes off as soon as the gun is up.
 - Gun Game: the ammo never runs out. You still reload, and the ammo counter shows ∞ instead of the reserve.
-- Wingman: the points were placed again, in open spots you can hold: cover inside the circle, several ways in and room to move. Where a map has an open place a floor up, one point is up there and the other down below.
-  - Atrium: A upstairs in the boardroom over the server room, B in the lobby by the main entrance.
-  - Citadel: A at the well between the west houses, B up on the terrace around the kiosk.
-  - Sirocco: A stays in the caravanserai's courtyard around the cistern; B is up on the tea house terraces, and its circle takes in the square in front.
-  - Drydock: A in a pocket between containers in the middle of the quay (two new containers there, in place of a concrete barrier), B between the containers in the yard.
-  - Dynamo: A around the coal bunker below the heap, B behind the control house. A covered conveyor gallery now joins the coal shed and the transfer tower; you can climb onto it, and from there onto the shed roofs.
-  - Blacksite: A stays on the guard tower and B around the helicopter, but a container on each side of the helipad and a crate stack at each lab corner now screen them from the spawn yards.
-  - Backrooms: A in the open part of the dark rooms, B at the end of the pillar hall in front of the red room.
-  - Millrace and Nightline keep their points, with bigger circles. Cornice stays as it was.
-- The circle of a point only shows where standing counts: it no longer runs through walls, crates or roofs, doesn't hang over drops and follows steps.
-- A few spawns moved, two per team on Blacksite and Dynamo and one on Sirocco, so that no spawn looks onto a point.
+- Wingman is now about one flag instead of the points A and B. Ten seconds in its circle take it, for players and bots alike and however many of a team stand in it; with both teams in it nothing moves. Once a team holds the flag, the others have one minute to take it back, or the holders win; taking it back starts the minute again for the other side. A match always lasts eight minutes, the minute never changes that, and whoever holds the flag when the time is up wins (if nobody does, the kills decide).
+- Under the score the flag shows that minute: "HALTEN" in blue while it is yours, a red "ZURÜCKEROBERN" while it isn't, flashing in the last 15 seconds, and below it the seconds a taking still needs. The flag on the pole carries a star instead of a letter.
+- Bots go for the flag together: both of a team take it, stay in the circle to hold it, and go back for it when the others have it.
+- All eleven maps now have Wingman, PoolDay too: there the flag stands down in the middle of the empty pool, in the open. On the other maps it stands where point A was.
+- The circle only shows where standing counts: it no longer runs through walls, crates or roofs, doesn't hang over drops and follows steps.
+- Maps: two new containers on the quay of Drydock, in place of a concrete barrier. On Blacksite a container on each side of the helipad and a crate stack at each lab corner. On Dynamo a covered conveyor gallery joins the coal shed and the transfer tower; you can climb onto it, and from there onto the shed roofs. A few spawns moved, two per team on Blacksite and Dynamo and one on Sirocco.
+- Both computers need this version to play together; the lobby says so if another one is on the network.
 
 ### Fixed
 
 - Iron sights no longer hide what you aim at. On every gun the rear sight was a solid block with a notch only painted on, right on the line of sight, and on the AR-77 and the KR-3 a solid plate sat in front of the rear ring, so a soldier you aimed at disappeared behind the sight. Now every rear sight is an open notch (a real ring on those two), the tip of the front post marks where the shot goes, and the target stays in view above and around it. On the HMG-90 and the MK-14 the front post now reaches the line of sight, and on the Breacher-12 the line of sight runs above the rail instead of through it.
-- Wingman: some spawns could see a point. On Drydock, Blacksite and Sirocco the old points lay in view of a spawn; none does now. And everyone standing in a circle counts: in the Backrooms, 14 of the 32 standing spots in the circle of point B didn't.
+- Wingman: on Drydock, Blacksite and Sirocco some spawns looked straight onto a point; none does now. And everyone standing in the circle counts: in the Backrooms, 14 of the 32 standing spots in the circle of point B didn't.
 - Citadel: the strip behind the terrace kiosk was a 3 m deep pit you could fall into and never get out of.
 
 ## [0.6.0] - 2026-11-03

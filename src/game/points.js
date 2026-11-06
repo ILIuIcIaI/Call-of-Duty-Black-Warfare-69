@@ -1,37 +1,45 @@
 import * as THREE from 'three';
 
 // =============================================================================
-// Wingman: two points, A and B, each a circle with a flag pole in the middle.
-// Whoever stands in a circle alone (with a teammate: faster) takes it; with
-// both teams in it nothing moves. The flag of whoever is taking it goes up the
-// pole, the owner's flag flies at the top. One team holding both ends the round.
-// Where the points are: the map's own wingman list, or SPOTS below for the maps
-// that were built before the mode existed.
+// Wingman: one flag, a circle with a flag pole in the middle. Ten seconds in the
+// circle take it, for players and bots alike; with both teams in it nothing
+// moves. Once a team holds it the others have one minute to take it back, or
+// the holders have won. After the eight minutes of the match whoever holds it
+// wins (match.js). The flag of whoever is taking it goes up the pole, the
+// holder's flag flies at the top.
+// Where it stands: the map's own wingman list, or SPOTS below for the maps that
+// were built before the mode existed; the first entry (from the time of the two
+// points A and B a map may still list a second one).
 // =============================================================================
-export const CAPTURE = 10;    // seconds for one player to take a point (two: a third faster), enough for the others to come back
-const DECAY = 8;              // seconds for a half-taken point to fall back once nobody is on it
+export const CAPTURE = 10;    // seconds in the circle to take the flag
+export const HOLD = 60;       // seconds the others have to take it back
+const DECAY = 8;              // seconds for a half-taken flag to fall back once nobody is on it
 const COLORS = { own: 0x48b8ff, enemy: 0xff4a3a, none: 0xe8e8e8 }; // (as in the HUD)
 
 // [x, y, z, radius, top] per point, A first. y: the floor. top: where the flag stands above the floor, when something
 // stands in the middle (a cistern, a well): the flag goes on its roof and the circle is the yard around it.
-// Measured so both teams walk the same distance, and no spawn sees one.
+// Measured so both teams walk the same distance and no spawn sees one. Each in the open at its end of the map, with
+// cover in it, ways in from several sides and room to move: no corridor, no pedestal. Where a map has an open place
+// up a floor, one point is up there (narrow catwalks, galleries and walkways don't count: there they stay down).
 export const SPOTS = {
-  sirocco: [[0, 0, -18, 4.8, 3.25], [0, 0, 16.6, 4.6, 4.1]], // the caravanserai's cistern, the well
-  atrium: [[0, 0, 13], [0, 0, -12.5]],     // the server room, the main entrance
-  dynamo: [[-17, 0, 0], [29.5, 0, 0]],     // by the coal heap, behind the control house in the switchyard
-  blacksite: [[0, 3.15, -18, 2.4], [0, 0.35, 17.8, 4.0, 2.35]], // up on the guard tower, around the helicopter
-  citadel: [[-22, 0, 0], [22, 0, 0]],      // the market street, the east street
-  backrooms: [[0, 0, -14], [0, 0, 15.5]],  // the pale rooms, the office partitions
-  drydock: [[0, 0, -20], [0, 0, 20]],      // north and south of the warehouse (big: long ways)
+  sirocco: [[0, 0, -18, 4.8, 3.25], [0, 1.3, 23.5, 6.0]],   // the caravanserai's courtyard round the cistern, up on the tea house's terraces
+  atrium: [[0, 3.6, 13.0, 3.5], [0, 0, -12.0, 3.8]],        // upstairs in the boardroom over the server room, the lobby by the main entrance
+  dynamo: [[-23, 0, 0, 6.0, 3.5], [29, 0, 0, 3.2]],         // round the coal bunker, behind the control house in the switchyard
+  blacksite: [[0, 3.15, -18, 2.4], [0, 0.35, 18.0, 4.6, 2.35]], // up on the guard tower, round the helicopter
+  citadel: [[-17, 0, 0, 3.0], [30.6, 3.0, 0, 4.6]],         // the well between the west houses, up on the terrace round the kiosk
+  backrooms: [[0, 0, -13, 4.0], [0, 0, 11, 4.0]],           // the dark part, the end of the pillar hall in front of the red room
+  drydock: [[0, 0, -24.8, 4.0], [0, 0, 23.5, 3.8]],         // round the container in the middle of the quay, between the containers in the yard
+  poolday: [[-1.5, -2.44, -1.0, 3.0]],                      // down in the middle of the empty pool: in the open, seen from all round
 };
-export function pointsOf(def) { return def.wingman || SPOTS[def.id] || null; }
+export function pointsOf(def) { const s = def.wingman || SPOTS[def.id]; return s ? s.slice(0, 1) : null; }
 
 const _p = new THREE.Vector3();
 
 export class Points {
   constructor(game, spots) {
     this.game = game;
-    this.list = spots.map(([x, y, z, r = 3.5, top = 0], i) => this.eyesOf({ id: 'AB'[i], i, x, y, z, r, top, owner: -1, cap: -1, k: 0, n: [0, 0], contested: false }));
+    this.list = spots.slice(0, 1).map(([x, y, z, r = 3.5, top = 0], i) => this.eyesOf({ i, x, y, z, r, top, owner: -1, cap: -1, k: 0, n: [0, 0], contested: false }));
+    this.holdLeft = 0; // (while a team holds the flag: what the others have left to take it back)
     this.build();
   }
 
@@ -59,23 +67,52 @@ export class Points {
     for (const P of this.list) {
       const root = P.root = new THREE.Group();
       root.position.set(P.x, P.y, P.z);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(P.r - 0.16, P.r, 48).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: COLORS.none, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      const ring = new THREE.Mesh(this.floorShape(P, P.r - 0.16, P.r, 1, 96),
+        new THREE.MeshBasicMaterial({ color: COLORS.none, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       ring.position.y = 0.03; ring.renderOrder = 1;
-      const fill = new THREE.Mesh(new THREE.CircleGeometry(P.r - 0.16, 48).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: COLORS.none, transparent: true, opacity: 0.07, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      const fill = new THREE.Mesh(this.floorShape(P, 0, P.r - 0.16, 7, 56),
+        new THREE.MeshBasicMaterial({ color: COLORS.none, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       fill.position.y = 0.025; fill.renderOrder = 1;
       // under a low ceiling (the Backrooms) the pole ends just below it, and the flag climbs only that far
       const up = g.col.raycast(P.x, P.y + P.top + 0.3, P.z, 0, 1, 0, 3.2, {}), H = up ? Math.min(3.2, up.t + 0.22) : 3.2;
       P.flagTop = H - 0.35;
       const stand = new THREE.Mesh(poleG, pole); stand.scale.y = H / 3.2; stand.position.y = P.top + H / 2;
       const foot = new THREE.Mesh(footG, pole); foot.position.y = P.top + 0.07;
-      const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7).translate(0.58, 0, 0), new THREE.MeshBasicMaterial({ map: flagTexture(P.id), side: THREE.DoubleSide }));
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7).translate(0.58, 0, 0), new THREE.MeshBasicMaterial({ map: flagTexture(), side: THREE.DoubleSide }));
       flag.position.y = P.top + 0.6;
       root.add(ring, fill, stand, foot, flag);
       P.ring = ring; P.fill = fill; P.flag = flag;
       g.scene.add(root);
     }
+  }
+
+  // The ring and its fill, made of pieces of floor: a piece only where whoever stands there counts for the point (see
+  // inside(): a floor within its height, room to stand, seen from one of its eyes), each at the height of the floor
+  // under it. So no ring through walls or through what stands in the circle, none in the air over a drop, and on
+  // steps it follows them.
+  floorShape(P, r0, r1, bands, n) {
+    const pos = [];
+    for (let j = 0; j < bands; j++) {
+      const ra = r0 + (r1 - r0) * j / bands, rb = r0 + (r1 - r0) * (j + 1) / bands, m = Math.max(8, Math.round(n * rb / r1));
+      for (let k = 0; k < m; k++) {
+        const a = k / m * Math.PI * 2, b = (k + 1) / m * Math.PI * 2, c = (a + b) / 2, rc = (ra + rb) / 2;
+        const h = this.floorAt(P, P.x + Math.cos(c) * rc, P.z + Math.sin(c) * rc);
+        if (h === null) continue;
+        const at = (r, t) => [Math.cos(t) * r, h, Math.sin(t) * r];
+        pos.push(...at(ra, a), ...at(rb, a), ...at(rb, b), ...at(ra, a), ...at(rb, b), ...at(ra, b));
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }
+
+  // the floor at (x, z) relative to the point's floor, or null where nobody standing there would count
+  floorAt(P, x, z) {
+    const col = this.game.col, y = col.floorBelow(x, z, 0.05, P.y + 1.6, P.y - 1.6);
+    if (y < P.y - 1.6 || col.overlaps(x - 0.05, y + 0.05, z - 0.05, x + 0.05, y + 1.0, z + 0.05)) return null;
+    for (const e of P.eyes) if (col.lineClear(e[0], e[1], e[2], x, y + 1.0, z)) return y - P.y;
+    return null;
   }
 
   dispose() { for (const P of this.list) if (P.root) this.game.scene.remove(P.root); }
@@ -84,36 +121,38 @@ export class Points {
   colorOf(team) { return team < 0 ? COLORS.none : team === this.game.player.team ? COLORS.own : COLORS.enemy; }
 
   // ---- the rules (only where they are decided: alone, or on the PC that runs the bots)
-  // returns the team that now holds both, or -1
+  // returns the team that has held the flag for the whole minute the others had, or -1
   update(dt) {
-    const g = this.game;
-    for (const P of this.list) {
-      P.n[0] = 0; P.n[1] = 0;
-      for (const c of g.combatants) {
-        if (!c.alive || (c.team !== 0 && c.team !== 1) || !this.inside(P, c)) continue;
-        P.n[c.team]++;
-      }
-      const [a, b] = P.n;
-      P.contested = a > 0 && b > 0;
-      if (P.contested) continue; // (both teams in the circle: nothing moves)
-      const T = a > 0 ? 0 : b > 0 ? 1 : -1;
-      if (T < 0) {
-        // nobody: a half-taken point slowly falls back
-        if (P.k > 0) { P.k = Math.max(0, P.k - dt / DECAY); if (!P.k) P.cap = -1; }
-        continue;
-      }
-      if (P.owner === T) {
-        // the owners stand on it: whatever the others had started is undone quickly
-        if (P.k > 0) { P.k = Math.max(0, P.k - dt / 1.5); if (!P.k) P.cap = -1; }
-        continue;
-      }
-      if (P.cap !== T) { P.cap = T; P.k = 0; }
-      P.k += dt / CAPTURE * (P.n[T] > 1 ? 1.5 : 1);
-      if (P.k >= 1) { P.owner = T; P.cap = -1; P.k = 0; this.taken(P, T); }
+    const g = this.game, P = this.list[0];
+    P.n[0] = 0; P.n[1] = 0;
+    for (const c of g.combatants) {
+      if (!c.alive || (c.team !== 0 && c.team !== 1) || !this.inside(P, c)) continue;
+      P.n[c.team]++;
     }
-    const [A, B] = this.list;
-    return A.owner >= 0 && A.owner === B.owner ? A.owner : -1;
+    const [a, b] = P.n, T = a > 0 ? 0 : b > 0 ? 1 : -1;
+    P.contested = a > 0 && b > 0;
+    if (P.contested) {
+      // both teams in the circle: nothing moves
+    } else if (T < 0) {
+      // nobody: a half-taken flag slowly falls back
+      if (P.k > 0) { P.k = Math.max(0, P.k - dt / DECAY); if (!P.k) P.cap = -1; }
+    } else if (P.owner === T) {
+      // the holders stand on it: whatever the others had started is undone quickly
+      if (P.k > 0) { P.k = Math.max(0, P.k - dt / 1.5); if (!P.k) P.cap = -1; }
+    } else {
+      // ten seconds, however many of a team stand in it
+      if (P.cap !== T) { P.cap = T; P.k = 0; }
+      P.k += dt / CAPTURE;
+      if (P.k >= 1) { P.owner = T; P.cap = -1; P.k = 0; this.holdLeft = HOLD; this.taken(P, T); }
+    }
+    // the others' minute runs whatever happens in the circle; it never touches the clock of the match
+    if (P.owner < 0) return -1;
+    this.holdLeft = Math.max(0, this.holdLeft - dt);
+    return this.holdLeft > 0 ? -1 : P.owner;
   }
+
+  // where somebody else decides (see update): the minute runs on here between their messages
+  follow(dt) { if (this.list[0].owner >= 0) this.holdLeft = Math.max(0, this.holdLeft - dt); }
 
   // in the circle, near its floor, and seen from one of the point's eyes (see eyesOf)
   inside(P, c) {
@@ -124,25 +163,24 @@ export class Points {
     return false;
   }
 
-  // a point changes hands: everybody hears it
+  // the flag changes hands: everybody hears it, and the others are told how long they have
   taken(P, T) {
     const g = this.game, own = T === g.player.team;
-    if (own) { g.hud.popup('PUNKT ' + P.id, 'EINGENOMMEN', true); g.audio.play('chargeFwd', { vol: 0.8 }); }
-    else { g.hud.message(`<span style="font-size:22px;color:#ff6a5a">GEGNER HABEN PUNKT ${P.id}</span>`, 2.2); g.audio.play('coverClose', { vol: 0.9, rate: 0.8 }); }
+    if (own) { g.hud.popup('FLAGGE EINGENOMMEN', 'JETZT EINE MINUTE HALTEN', true); g.audio.play('chargeFwd', { vol: 0.8 }); }
+    else { g.hud.message('<span style="font-size:22px;color:#ff6a5a">DIE GEGNER HABEN DIE FLAGGE · EINE MINUTE ZUM ZURÜCKEROBERN</span>', 2.6); g.audio.play('coverClose', { vol: 0.9, rate: 0.8 }); }
     if (this.onTaken) this.onTaken(P, T);
   }
 
-  // ---- over the network: [owner, who is taking it, how far] per point
-  pack() { return this.list.map((P) => [P.owner, P.cap, Math.round(P.k * 100), P.contested ? 1 : 0]); }
+  // ---- over the network: [holder, who is taking it, how far, contested, seconds the others have left]
+  pack() { const P = this.list[0]; return [[P.owner, P.cap, Math.round(P.k * 100), P.contested ? 1 : 0, Math.ceil(this.holdLeft)]]; }
   unpack(s) {
-    if (!Array.isArray(s)) return;
-    this.list.forEach((P, i) => {
-      const v = s[i];
-      if (!v) return;
-      const was = P.owner;
-      P.owner = v[0]; P.cap = v[1]; P.k = v[2] / 100; P.contested = !!v[3];
-      if (P.owner !== was && P.owner >= 0) this.taken(P, P.owner);
-    });
+    const P = this.list[0], v = Array.isArray(s) && s[0];
+    if (!v) return;
+    const was = P.owner;
+    P.owner = v[0]; P.cap = v[1]; P.k = v[2] / 100; P.contested = !!v[3];
+    if (P.owner !== was && P.owner >= 0) { this.holdLeft = v[4] ?? HOLD; this.taken(P, P.owner); }
+    // (whole seconds come over: the minute runs on smoothly here and is only put right when it is clearly off)
+    else if (v[4] !== undefined && Math.abs(this.holdLeft - v[4]) > 1.5) this.holdLeft = v[4];
   }
 
   // ---- every frame, everywhere: flags, rings
@@ -176,16 +214,17 @@ export class Points {
   }
 }
 
-// the cloth: white with the letter, coloured by the material
-const FLAGS = {};
-function flagTexture(id) {
-  if (FLAGS[id]) return FLAGS[id];
+// the cloth: white with a star, coloured by the material
+let FLAG = null;
+function flagTexture() {
+  if (FLAG) return FLAG;
   const c = document.createElement('canvas'); c.width = 128; c.height = 80;
   const x = c.getContext('2d');
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 80);
   x.fillStyle = 'rgba(0,0,0,0.12)'; for (let i = 0; i < 128; i += 16) x.fillRect(i, 0, 8, 80);
-  x.fillStyle = '#1c1c1c'; x.font = 'bold 62px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.fillText(id, 64, 43);
+  x.fillStyle = '#1c1c1c'; x.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 11 : 27; x.lineTo(64 + Math.cos(a) * r, 42 + Math.sin(a) * r); }
+  x.closePath(); x.fill();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  return (FLAGS[id] = t);
+  return (FLAG = t);
 }

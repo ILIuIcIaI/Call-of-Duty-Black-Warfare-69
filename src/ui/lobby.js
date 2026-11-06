@@ -6,7 +6,7 @@ import { pointsOf } from '../game/points.js';
 // Multiplayer in the menu: the name, the search for a room, and the room itself: who is there,
 // what is being voted on, and the chat. Nobody runs this room, everybody votes.
 // =============================================================================
-const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['gun', 'GUN GAME', 'Wettrüsten: Jeder Kill bringt die nächste Waffe, zuletzt zählt nur das Messer.'], ['wing', 'WINGMAN', '2 gegen 2 um die Punkte A und B. Wer beide hält, gewinnt.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
+const MODES = [['tdm', 'TEAM DEATHMATCH', 'Zwei Teams, die Karte wird gewählt.'], ['ffa', 'FREE FOR ALL', 'Jeder gegen jeden.'], ['gun', 'GUN GAME', 'Wettrüsten: Jeder Kill bringt die nächste Waffe, zuletzt zählt nur das Messer.'], ['wing', 'WINGMAN', '2 gegen 2 um eine Flagge. Wer sie eine Minute hält, gewinnt.'], ['br', 'WARZONE', 'Die Insel Serena. Einer bleibt übrig.']];
 const STAGES = { mode: 'WELCHER MODUS?', map: 'WELCHE KARTE?', bots: 'FREIE PLÄTZE MIT BOTS FÜLLEN?' };
 const MODE_NAME = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game', wing: 'Wingman' };
 

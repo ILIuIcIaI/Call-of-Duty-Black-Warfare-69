@@ -195,7 +195,20 @@ body.hoverlook #game-canvas { cursor: none; }
 #hud.br .sb-enemy::after { content: 'KILLS'; }
 #sb-timer.urgent { color: #ff8a4a; }
 /* Wingman: the two points under the score, a marker over each in the world, the circle you stand in */
-#sb-points { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+#sb-points { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#sb-points .pt svg { margin-top: -3px; }
+/* Wingman: the minute to hold on or to take the flag back, and the seconds of a taking */
+#sb-points .hold { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 12px 2px; font-family: var(--head); letter-spacing: 2px; line-height: 1; color: #fff; background: rgba(0,0,0,.5); text-shadow: 0 2px 6px #000; white-space: nowrap; }
+#sb-points .hold b { font-size: 25px; font-weight: 400; }
+#sb-points .hold b:empty, #sb-points .hold span:empty { display: none; }
+#sb-points .hold span { font-size: 17px; }
+#sb-points .hold.own { border-bottom: 3px solid var(--friendly); } #sb-points .hold.own b { color: var(--friendly); }
+#sb-points .hold.enemy { border-bottom: 3px solid var(--enemy); } #sb-points .hold.enemy b { color: var(--enemy); }
+#sb-points .hold.urgent { animation: holdUrgent .5s infinite alternate; }
+@keyframes holdUrgent { from { background: rgba(0,0,0,.5); } to { background: rgba(160,20,10,.75); } }
+#sb-points .hold.taking-own span { color: var(--friendly); }
+#sb-points .hold.taking-enemy span { color: var(--enemy); }
+#sb-points .hold.contest span { color: #ffd04a; }
 #sb-points .pt { position: relative; width: 40px; height: 34px; display: flex; align-items: center; justify-content: center; font-family: var(--head); font-size: 27px; line-height: 1; padding-top: 3px; color: #fff; background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.55); overflow: hidden; }
 #sb-points .pt.own { background: rgba(72,184,255,.85); border-color: var(--friendly); color: #071621; }
 #sb-points .pt.enemy { background: rgba(255,74,58,.85); border-color: var(--enemy); color: #210806; }

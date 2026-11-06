@@ -11,7 +11,7 @@ const os = require('os');
 const net = require('net');
 const firewall = require('./firewall.js');
 
-const VERSION = 4;
+const VERSION = 5;
 const UDP_PORT = 48069, GROUP = '239.69.0.69';
 const LOOK_MS = 900, BEACON_MS = 1000;
 const REACH_MS = 1500, RETRY_MS = 3000, SWEEP_TICKS = 6, FIREWALL_TICKS = 15;
@@ -20,10 +20,10 @@ const VIRTUAL = /v-?ethernet|virtual|vmware|vmnet|vbox|hyper-?v|wsl|docker|virbr
 const VOTE_MS = 20000, COUNTDOWN_MS = 8000, LOAD_MS = 20000, SMOOTH_FPS = 40, FULL_LINE = 262144;
 const MAX_TOTAL = { tdm: 10, ffa: 10, br: 20, gun: 10, wing: 4 };
 const GUN_LEVELS = 15; // Gun Game: 14 guns, then the knife
-const MATCH_MS = 600000, WING_MS = 420000; // (Wingman: 7 minutes)
+const MATCH_MS = 600000, WING_MS = 480000; // (Wingman: always 8 minutes)
 const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms', 'sirocco', 'atrium', 'dynamo', 'millrace', 'cornice', 'nightline'];
-// the maps that have the two points of Wingman (src/game/points.js, or the map's own wingman list)
-const WING_MAPS = ['millrace', 'cornice', 'nightline', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock'];
+// the maps that have the flag of Wingman (src/game/points.js, or the map's own wingman list)
+const WING_MAPS = ['millrace', 'cornice', 'nightline', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock', 'poolday'];
 const TEAMS = (mode) => mode === 'tdm' || mode === 'wing';
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
@@ -295,7 +295,7 @@ class Room {
     m.endsAt = m.mode === 'br' ? 0 : m.startedAt + len;
     this.everyone({ t: 'go', auth: m.auth });
     this.broadcastLobby();
-    if (m.endsAt) this.matchTimer = setTimeout(() => this.endMatch(this.leader()), len);
+    if (m.endsAt) this.matchTimer = setTimeout(() => this.timeUp(), len);
     this.clock = setInterval(() => this.others(null, { t: 'clock', ms: Date.now() - m.startedAt, left: m.endsAt ? m.endsAt - Date.now() : 0, pings: this.pings() }), 3000);
   }
 
@@ -359,7 +359,7 @@ class Room {
       if (M.team[0] >= M.limit || M.team[1] >= M.limit) this.endMatch(M.team[0] >= M.limit ? 0 : 1);
     } else if (M.mode === 'gun') {
       if (gunWon) this.endMatch(m.by);
-    } else if (M.mode !== 'wing' && k && k.kills >= M.limit) this.endMatch(m.by); // (Wingman: the points decide, or the clock)
+    } else if (M.mode !== 'wing' && k && k.kills >= M.limit) this.endMatch(m.by); // (Wingman: the flag decides, or the clock)
   }
 
   checkLast(rest = 0) {
@@ -373,11 +373,17 @@ class Room {
     setTimeout(() => { this.ending = false; if (this.match === M) this.endMatch(M.alive.size === 1 ? [...M.alive][0] : null); }, 2500 + Math.min(10, +rest || 0) * 2000);
   }
 
-  endMatch(winner) {
+  // the clock has run out. Wingman: whoever holds the flag (nobody: more kills)
+  timeUp() {
+    const M = this.match, o = M && M.mode === 'wing' && Array.isArray(M.obj) && M.obj[0] ? M.obj[0][0] : -1;
+    this.endMatch(o === 0 || o === 1 ? o : this.leader(), 'time');
+  }
+
+  endMatch(winner, how) {
     const M = this.match;
     if (!M || this.state === 'lobby') return;
     const board = M.roster.map((r) => { const s = M.score.get(r.id) || { kills: 0, deaths: 0, tier: 0 }; return { id: r.id, name: r.name, bot: r.bot, team: r.team, kills: s.kills, deaths: s.deaths, tier: s.tier }; }).sort((a, b) => (M.mode === 'gun' ? b.tier - a.tier : 0) || b.kills - a.kills);
-    this.everyone({ t: 'end', winner, board, team: M.team, mode: M.mode });
+    this.everyone({ t: 'end', winner, how: how || null, board, team: M.team, mode: M.mode });
     for (const p of this.connected()) { p.inMatch = false; p.loaded = false; }
     this.resetLobby();
     this.broadcastLobby();
@@ -416,11 +422,11 @@ class Room {
         break;
       }
       case 'obj':
-        // Wingman: the points as the PC with the bots sees them (it decides them); a team holding both has won
+        // Wingman: the flag as the PC with the bots sees it (it decides it); a team that held it for the minute has won
         if (!this.match || this.state !== 'match' || p.id !== this.match.auth || this.match.mode !== 'wing') break;
         this.match.obj = m.s;
         this.others(p, { t: 'obj', s: m.s });
-        if (m.win === 0 || m.win === 1) this.endMatch(m.win);
+        if (m.win === 0 || m.win === 1) this.endMatch(m.win, 'hold');
         break;
       case 'st': case 'bots':
         if (this.match && p.inMatch) this.others(p, { ...m, from: p.id }, true);

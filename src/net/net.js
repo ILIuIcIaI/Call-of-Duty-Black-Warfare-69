@@ -9,7 +9,7 @@ import { SKIN_IDS } from '../weapons/skins.js';
 // a match has to tell the others or hears from them. Everybody owns his own body, one
 // player owns the bots; a hit goes to the owner, and he says when somebody is dead.
 // =============================================================================
-const VERSION = 4, SEND_EVERY = 0.05, BOTS_EVERY = 0.05, PING_MS = 2000, FULL_LINE = 32768;
+const VERSION = 5, SEND_EVERY = 0.05, BOTS_EVERY = 0.05, PING_MS = 2000, FULL_LINE = 32768;
 
 export class Net {
   constructor(game) {
@@ -374,14 +374,15 @@ export class Net {
     for (const b of g.bots) if (!b.remote && b !== c) b.hear(c.pos, c);
   }
 
-  // ---------------------------------------------------------------- Wingman: the points, decided here when this PC runs the bots
-  sendPoints(points, both) {
-    const s = points.pack(), key = JSON.stringify(s), now = performance.now();
-    if (both < 0 && key === this.ptKey && now - (this.ptAt || 0) < 1000) return;
+  // ---------------------------------------------------------------- Wingman: the flag, decided here when this PC runs the bots
+  // (sent when it changes, and once a second for the minute the others have; that alone doesn't count as a change)
+  sendPoints(points, won) {
+    const s = points.pack(), key = JSON.stringify(s.map((v) => v.slice(0, 4))), now = performance.now();
+    if (won < 0 && key === this.ptKey && now - (this.ptAt || 0) < 1000) return;
     if (this.ptWon) return; // (the end is said once)
     this.ptKey = key; this.ptAt = now;
-    if (both >= 0) this.ptWon = true;
-    this.send(both >= 0 ? { t: 'obj', s, win: both } : { t: 'obj', s });
+    if (won >= 0) this.ptWon = true;
+    this.send(won >= 0 ? { t: 'obj', s, win: won } : { t: 'obj', s });
   }
 
   // ---------------------------------------------------------------- hits: to the owner, who decides
@@ -447,7 +448,7 @@ export class Net {
     if (m.mode === 'tdm' || m.mode === 'wing') won = m.winner === null ? null : m.winner === g.player.team;
     else won = m.winner === null ? null : m.winner === this.you;
     if (g.br) g.br.netFinish(won, m);
-    else { const sc = g.match; sc.ended = true; g.onMatchEnd(won); }
+    else { const sc = g.match; sc.ended = true; if (m.mode === 'wing' && sc.wingNote) sc.endNote = sc.wingNote(m.winner, m.how); g.onMatchEnd(won); }
     this.cfgEnded = true;
   }
 
