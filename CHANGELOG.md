@@ -14,6 +14,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - All eleven maps now have Wingman, PoolDay too: there the flag stands down in the middle of the empty pool, in the open. On the other maps it stands where point A was.
 - The circle only shows where standing counts: it no longer runs through walls, crates or roofs, doesn't hang over drops and follows steps.
 - Maps: two new containers on the quay of Drydock, in place of a concrete barrier. On Blacksite a container on each side of the helipad and a crate stack at each lab corner. On Dynamo a covered conveyor gallery joins the coal shed and the transfer tower; you can climb onto it, and from there onto the shed roofs. A few spawns moved, two per team on Blacksite and Dynamo and one on Sirocco.
+- Nightline, Millrace and Cornice: the invisible blocks over roofs and machines are gone. You can now climb onto the parked train, the kiosk, the ticket booth and the machines on Nightline; the truck cabs, the office roofs and the woodcutters' huts on Millrace; and the snowcats, the tiled stove and the wood shed on Cornice. Only where standing up there would put you inside something that is just drawn (the roofs of the saw hall and of the hut, the frame saw, the cable car drive) the way up stays shut.
 - Both computers need this version to play together; the lobby says so if another one is on the network.
 
 ### Fixed
@@ -21,6 +22,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Iron sights no longer hide what you aim at. On every gun the rear sight was a solid block with a notch only painted on, right on the line of sight, and on the AR-77 and the KR-3 a solid plate sat in front of the rear ring, so a soldier you aimed at disappeared behind the sight. Now every rear sight is an open notch (a real ring on those two), the tip of the front post marks where the shot goes, and the target stays in view above and around it. On the HMG-90 and the MK-14 the front post now reaches the line of sight, and on the Breacher-12 the line of sight runs above the rail instead of through it.
 - Wingman: on Drydock, Blacksite and Sirocco some spawns looked straight onto a point; none does now. And everyone standing in the circle counts: in the Backrooms, 14 of the 32 standing spots in the circle of point B didn't.
 - Citadel: the strip behind the terrace kiosk was a 3 m deep pit you could fall into and never get out of.
+- Millrace: from the crane walkway you could get onto the roof of the planing shed by the timber landing and see both teams' spawns from there. The shed is now solid up to its roof, out of reach. You also no longer stand inside the office roofs, and the invisible ledge high above the offices is gone.
 
 ## [0.6.0] - 2026-11-03
 

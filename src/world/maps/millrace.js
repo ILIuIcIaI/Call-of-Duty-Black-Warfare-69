@@ -22,7 +22,7 @@ const DZ0 = 8, DZ1 = 17.8;       // timber landing over the brook (B)
 const WALK = 3.4;                // crane walkway along the south side of the landing
 const WEIR = 2.4;                // north face of the weir (far enough from the bridge to step off its sill before the bridge is overhead)
 const flat = { ao: false };
-const noStand = { visual: false, noBullet: true };   // over roofs and machines nobody is meant to stand on: shots pass
+const noStand = { visual: false, noBullet: true };   // where whoever stood on top would be inside what is only drawn there: shots pass
 const noCol = { collide: false, ao: false };
 
 // a decorative piece moved into place with world-space UVs, so its texture is as big as on the boxes around it
@@ -84,7 +84,6 @@ function logTruck(b, x0, x1, z) {
   b.box(x1 - 2.0, 1.15, z - 1.25, x1, 2.5, z + 1.25, 'carPaintGreen', { pen: 0.4 });
   b.box(x1 - 1.9, 2.5, z - 1.15, x1 - 0.25, 3.2, z + 1.15, 'carPaintGreen', { pen: 0.4 });
   b.box(x1 - 0.25, 2.6, z - 1.1, x1 - 0.22, 3.1, z + 1.1, 'carGlass', noCol);
-  b.box(x1 - 2.0, 3.2, z - 1.25, x1, 9, z + 1.25, 'concrete', noStand);
   const wheel = new THREE.CylinderGeometry(0.52, 0.52, 0.4, 14);
   for (const wx of [x1 - 1.0, x0 + 2.6, x0 + 1.4]) for (const s of [-1, 1]) b.geom(wheel, 'rubber', mtx(wx, 0.52, z + s * 1.05, 0, 1, 1, 1, Math.PI / 2));
   for (const bx of [x1 - 2.6, x0 + 0.5]) {
@@ -100,9 +99,10 @@ export default {
   name: 'MILLRACE',
   desc: 'Sägewerk am Mühlbach im Morgennebel. A in der Sägehalle über dem Bach mit Dachboden, B auf dem Holzplatz am Steg unter der Kranbrücke. Dazwischen Brücke und Wehr, das Bachbett verbindet beide Punkte.',
   size: 'Klein',
-  // capture points of the 2 vs 2 mode: [x, floor, z, radius, flag height above the floor (on top of the saw)]; at B the
-  // flag finds the log bogie by itself
-  wingman: [[0, 0, -12.0, 3.5, 3.9], [0, 0, 12.6]],
+  // capture points of the 2 vs 2 mode: [x, floor, z, radius, flag height above the floor (on top of the saw)]. A round
+  // the frame saw in the saw hall, the loft over it to shoot down from; B round the log bogie on the landing (the flag
+  // finds it by itself), the crane walkway over it. Loft and walkway are too narrow to hold a point on.
+  wingman: [[0, 0, -12.0, 4.6, 3.9], [0, 0, 12.6, 4.0]],
   env: {
     sunDir: [0.0, 0.42, 0.9],
     sunColor: 0xffe2b8, sunIntensity: 2.7,
@@ -112,7 +112,7 @@ export default {
     fogColor: 0xc6ccbc, fogNear: 30, fogFar: 150,
   },
   bounds: { minX: -27, maxX: 27, minZ: -20, maxZ: 21 },
-  navTop: 3.45,    // loft and shop roofs (3.0) and the crane walkway (3.4) are floors, the log piles (3.5) are not
+  navTop: 3.45,    // loft and shop roofs (3.0), the crane walkway and the office roofs (3.4) are floors, the log piles (3.5) are not
 
   build(B) {
     // ------------------------------------------------------------- ground, brook, forest
@@ -140,7 +140,7 @@ export default {
     B.box(-8.2, LOFT - 0.2, MZ0 + 0.3, 8.2, LOFT, -16.0, 'woodDark');                 // loft along the north wall
     railing(B, -6.8, -16.0, 6.8, -16.0, 1.0, 'woodDark', true, LOFT);
     for (const x of [-4.2, 4.2]) B.box(x - 0.11, 0, -16.11, x + 0.11, LOFT - 0.2, -15.89, 'woodDark');
-    B.box(-8.5, EAVES, MZ0, 8.5, 12, MZ1, 'concrete', noStand);                 // nobody stands on the walls or the roof
+    B.box(-8.5, EAVES, MZ0, 8.5, 12, MZ1, 'concrete', noStand);                 // nobody on the walls: the roof is only drawn
     // roof: two slopes up to a ridge along x, gable ends in the side walls (half() builds those)
     const zr = (MZ0 + MZ1) / 2, run = MZ1 - zr + 0.45, rise = RIDGE - EAVES + 0.25, len = Math.hypot(run, rise), ang = Math.atan2(rise, run);
     for (const s of [-1, 1]) {
@@ -153,9 +153,10 @@ export default {
     B.box(-0.5, 0.45, -16.6, 0.5, 1.3, -13.0, 'barkLog', { visual: false });
     log(B, 0, 0.88, -14.8, 3.6, 0.42, 'z');
     // (one block for the whole saw: the capture point finds its sides from it and looks at the circle from there,
-    // and the flag stands on top of it)
+    // and the flag stands on top of it. Nobody else does: up there under the roof is only room to crouch, and the
+    // line shaft with its pulleys and belts runs through that room)
     B.box(-1.95, 0, -12.85, 1.95, 3.9, -11.15, 'metalDark', { visual: false, pen: 0.2 });
-    B.box(-1.95, 3.9, -12.85, 1.95, EAVES, -11.15, 'metalDark', noStand);                   // and nobody on the saw
+    B.box(-1.95, 3.9, -12.85, 1.95, EAVES, -11.15, 'metalDark', noStand);
     for (const s of [-1, 1]) {
       B.box(s * 1.5 - 0.22, 0, -12.7, s * 1.5 + 0.22, 3.9, -11.3, 'metalDark', { collide: false });
       B.geom(new THREE.CylinderGeometry(0.85, 0.85, 0.16, 18), 'metalDark', mtx(s * 1.85, 1.3, -12.0, 0, 1, 1, 1, 0, Math.PI / 2));
@@ -213,6 +214,7 @@ export default {
     for (const x of [-8.5, -3.1, 3.1, 8.5]) B.box(x - 0.1, 0, 15.85, x + 0.1, WALK - 0.15, 16.05, 'metalYellow');
     B.box(-10, 0, DZ1, 10, 6.6, 21, 'barnGrey');
     B.box(-10.4, 6.6, DZ1 - 0.4, 10.4, 7.0, 21, 'roofSlate', noCol);
+    B.box(-10, 6.6, DZ1, 10, 7.0, 21, 'roofSlate', { visual: false });   // (solid up to the top of its roof: out of reach from the walkway and the office roofs)
     B.box(-3.2, 0, DZ1 - 0.04, 3.2, 3.0, DZ1, 'woodDark', noCol);                         // big shed door
     for (const x of [-3.2, -1.6, 0, 1.6, 3.2]) B.box(x - 0.05, 0, DZ1 - 0.08, x + 0.05, 3.0, DZ1 - 0.02, 'metalDark', noCol);
     for (const x of [-6.6, 6.6]) B.box(x - 0.8, 4.2, DZ1 - 0.04, x + 0.8, 5.4, DZ1, 'black', noCol);
@@ -313,9 +315,9 @@ export default {
     lumberStack(b, -15.8, 8.6, -11.2, 10.4, 2.0);
     lumberStack(b, -15.8, 12.6, -11.2, 14.4, 2.4);
     stairs(b, -13.4, 16.9, '+x', 1.8, WALK, 4.8, 'metalDark');
-    b.box(-16.6, 0, DZ1, -10, 3.4, 21, 'barnRed');                                                // office
-    b.box(-17.0, 3.4, DZ1 - 0.4, -10, 3.7, 21, 'roofSlate', noCol);
-    b.box(-16.6, 3.4, DZ1, -10, 9, 21, 'concrete', noStand);
+    b.box(-16.6, 0, DZ1, -10, 3.1, 21, 'barnRed');                                                // office
+    b.box(-17.0, 3.1, DZ1 - 0.4, -10, 3.4, 21, 'roofSlate', noCol);
+    b.box(-16.6, 3.1, DZ1, -10, 3.4, 21, 'roofSlate', { visual: false });                          // (its roof to stand on: low enough that the planing shed's stays out of reach)
     b.box(-15.6, 1.2, DZ1 - 0.04, -14.2, 2.3, DZ1, 'black', noCol);
     b.box(-15.7, 1.12, DZ1 - 0.06, -14.1, 1.2, DZ1, 'trimWhite', noCol);
     b.pointLight(-14.9, 1.8, DZ1 - 0.5, 0xffd8a0, 1.2, 5);
@@ -331,10 +333,14 @@ export default {
     for (const s of [-1, 1]) for (const [x, y] of [[-23.4, 3.82], [-21.0, 3.8]]) log(b, x, y, s * 8.8, 1.6, 0.34, 'z');
     logTruck(b, -26.6, -17.4, -17.6);
     b.box(-26.6, 0, 12.4, -21.6, 3.0, 18.2, 'barnGrey');                                         // woodcutters' hut
-    b.box(-26.6, 3.0, 12.4, -21.6, 9, 18.2, 'concrete', noStand);
     const hut = new THREE.Shape();
     hut.moveTo(-0.4, 0); hut.lineTo(5.8 + 0.4, 0); hut.lineTo(2.9, 1.9); hut.closePath();
     b.geom(placed(new THREE.ExtrudeGeometry(hut, { depth: 5.4, bevelEnabled: false }), mtx(-26.8, 3.0, 18.2, Math.PI / 2), 2), 'shingle');
+    // under the shingles the roof in steps (ridge at z 15.3, 4.9 high), so whoever climbs up stands on it, not in it
+    for (let k = 0; k < 5; k++) {
+      const top = 3.23 + k * 0.37, d = (4.9 - top) / 0.576;
+      b.box(-26.6, k ? top - 0.37 : 3.0, 15.3 - d, -21.6, top, 15.3 + d, 'shingle', { visual: false });
+    }
     b.box(-21.62, 0, 14.6, -21.58, 2.1, 15.6, 'woodDark', noCol);
     b.box(-21.62, 1.2, 16.4, -21.58, 2.0, 17.4, 'black', noCol);
     logPile(b, -23.0, 5.0, -21.0, 6.6, 1.3, 'z');                                                   // firewood

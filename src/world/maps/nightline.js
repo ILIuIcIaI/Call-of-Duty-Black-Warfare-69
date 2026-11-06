@@ -21,7 +21,6 @@ const TZ0 = -19.8, TZ1 = -16.8;
 const flat = { ao: false };
 const noCol = { collide: false, ao: false };
 const hidden = { visual: false };
-const noStand = { visual: false, noBullet: true };   // over things a jump would get you onto but no bot could follow: shots pass
 
 function placed(geo, matrix, tile) {
   const g = geo.index ? geo.toNonIndexed() : geo.clone();
@@ -45,9 +44,8 @@ function poster(B, i, x, y, z, nx, nz, w = 2.0) {
 }
 function tube(b, x0, x1, y, z) { b.box(x0, y - 0.06, z - 0.07, x1, y, z + 0.07, 'lampOn', noCol); }
 function tubeZ(b, z0, z1, y, x) { b.box(x - 0.07, y - 0.06, z0, x + 0.07, y, z1, 'lampOn', noCol); }
-function vending(b, x0, z0, x1, z1, face = 'neonCyan', ceil = 3.8) {
+function vending(b, x0, z0, x1, z1, face = 'neonCyan') {
   b.box(x0, 0, z0, x1, 1.9, z1, 'metalRed', { pen: 0.4 });
-  b.box(x0, 1.9, z0, x1, ceil, z1, 'concrete', noStand);
   const fx = x1 - x0 < z1 - z0;  // front faces +x/-x when the machine is thin in x
   if (fx) b.box(x1 - 0.02, 0.7, z0 + 0.12, x1 + 0.01, 1.7, z1 - 0.12, face, noCol);
   else b.box(x0 + 0.12, 0.7, z0 - 0.01, x1 - 0.12, 1.7, z0 + 0.02, face, noCol);
@@ -63,8 +61,9 @@ export default {
   desc: 'Endstation der Linie 69 bei Nacht, nach der letzten Bahn. A am Bahnsteig vor dem abgestellten Zug, den man durchlaufen kann. B in der Schalterhalle hinter den Drehkreuzen. Dazwischen die Verteilerhalle mit Galerie und Rolltreppen.',
   size: 'Klein',
   // capture points of the 2 vs 2 mode: [x, floor, z, radius, flag height]; the flags stand on the roofs of the kiosk
-  // and the ticket booth
-  wingman: [[0, 0, -13.1, 3.5, 3.0], [0, 0, 14, 3.5, 3.2]],
+  // and the ticket booth. Over each a place to shoot down from: the balcony over the platform, the landing behind the
+  // booth (both too narrow, or too hard to get onto, to hold a point on)
+  wingman: [[0, 0, -13.1, 4.0, 3.0], [0, 0, 14, 4.2, 3.2]],
   env: {
     sunDir: [0.1, 1, 0.12],
     sunColor: 0xd8e4ff, sunIntensity: 0.4,
@@ -121,7 +120,6 @@ export default {
     for (const s of [-1, 1]) B.box(s > 0 ? TX - 0.1 : -TX, 0, TZ0, s > 0 ? TX : -TX + 0.1, 2.35, TZ1, 'trainSilver');
     B.box(-TX, 2.35, TZ0, TX, 2.62, TZ1, 'trainSilver');
     B.box(-TX + 0.2, 2.62, TZ0 + 0.3, TX - 0.2, 2.75, TZ1 - 0.3, 'metalDark', noCol);
-    B.box(-TX, 2.62, TZ0, TX, 7.0, TZ1, 'concrete', noStand);                                        // nobody on the train's roof
     B.box(-0.35, 0, TZ0 + 0.1, 0.35, 2.35, -19.0, 'rubber');                                         // the gangway between the cars
     B.box(-0.35, 0, -17.6, 0.35, 2.35, TZ1 - 0.1, 'rubber');
     for (const [x0, x1] of [[-12.9, -0.6], [0.6, 12.9]]) {
@@ -139,11 +137,9 @@ export default {
     }
     poster(B, 0, -TX - 0.03, 2.25, -18.3, -1, 0, 1.6);                                               // destination signs
     poster(B, 0, TX + 0.03, 2.25, -18.3, 1, 0, 1.6);
-    // the kiosk in the middle of the platform: the flag goes on its roof, nobody else does (it stands far enough from
-    // the balcony that a vault over the railing doesn't land on it)
+    // the kiosk in the middle of the platform, the flag on its roof
     B.box(-1.2, 0, -13.9, 1.2, 2.85, -12.3, 'metalDark');
     B.box(-1.4, 2.85, -14.1, 1.4, 3.0, -12.1, 'metalRed', flat);
-    B.box(-1.4, 3.0, -14.1, 1.4, 7.0, -12.1, 'concrete', noStand);                                  // (up to the ceiling: a jump off the railing)
     for (const s of [-1, 1]) B.box(-1.1, 0.9, s > 0 ? -12.29 : -13.93, 1.1, 1.9, s > 0 ? -12.27 : -13.91, 'woodDark', noCol);
     B.box(-1.1, 0.95, -12.27, 1.1, 1.0, -12.0, 'metalDark', noCol);
     for (let k = 0; k < 6; k++) B.box(-1.0 + k * 0.34, 1.0, -12.25, -0.75 + k * 0.34, 1.32, -12.23, k % 2 ? 'metalRed' : 'paintYellow', noCol);
@@ -193,7 +189,6 @@ export default {
     for (const [x0, z0, x1, z1] of [[-1.6, 12.97, 1.6, 13.03], [-1.6, 14.97, 1.6, 15.03], [-1.63, 13.0, -1.57, 15.0], [1.57, 13.0, 1.63, 15.0]]) B.glassPane(x0, 0.9, z0, x1, 2.9, z1);
     for (const [x, z] of [[-1.6, 13.0], [1.6, 13.0], [-1.6, 15.0], [1.6, 15.0]]) B.box(x - 0.06, 0.9, z - 0.06, x + 0.06, 2.9, z + 0.06, 'metalDark', noCol);
     B.box(-1.75, 2.9, 12.85, 1.75, 3.2, 15.15, 'metalDark');
-    B.box(-1.75, 3.2, 12.85, 1.75, 4.8, 15.15, 'concrete', noStand);
     B.box(-1.4, 0.9, 13.6, 1.4, 1.0, 14.4, 'woodDark', noCol);                                     // inside: desk and screen
     B.box(-0.3, 1.0, 14.0, 0.3, 1.4, 14.06, 'screen', noCol);
     poster(B, 3, 0, 2.5, 12.85, 0, -1, 1.6);
@@ -246,7 +241,6 @@ export default {
     bench(b, -8.4, -13.3, -6.8, -12.3);
     bench(b, -20.0, -13.3, -18.4, -12.3);
     b.box(-13.9, 0, -11.2, -13.1, 2.5, -10.0, 'metalDark');
-    b.box(-13.9, 2.5, -11.2, -13.1, 7.0, -10.0, 'concrete', noStand);
     b.geom(new THREE.CylinderGeometry(0.25, 0.25, 0.9, 10), 'metalDark', mtx(-11.6, 0.45, -10.0));
     b.box(-11.85, 0, -10.25, -11.35, 0.9, -9.75, 'metalDark', hidden);
     // the tunnel mouth at the end of the track, dark behind a grille
@@ -267,15 +261,14 @@ export default {
     railing(b, -10, -2.4, -6.6, -2.4, 1.05, 'metal', true, MEZ);
     railing(b, -6.6, -11.0, -6.6, -2.4, 1.05, 'metal', true, MEZ);
     wallX(b, -10, 0, 8.8, 0, 8.0, 0.4, 'tilesCream', [{ c: -5.8, w: 1.6, y: 0, h: 2.4 }]);
-    vending(b, -9.95, -8.2, -9.35, -7.0, 'neonCyan', 8.0);
-    vending(b, -9.95, -4.2, -9.35, -3.0, 'neonPink', 8.0);
+    vending(b, -9.95, -8.2, -9.35, -7.0, 'neonCyan');
+    vending(b, -9.95, -4.2, -9.35, -3.0, 'neonPink');
     bench(b, -5.6, 5.6, -4.0, 6.4);
     // ------------------------------------------------------------- the ticket hall's west side
     wallZ(b, 9.0, 20.4, -10.2, 0, 7.0, 0.4, 'tilesOrange', [{ c: 10.2, w: 1.6, y: 0, h: 2.4 }, { c: 16.4, w: 1.6, y: 0, h: 2.4 }]);
     stairs(b, -6.8, 14.4, '+z', 1.6, 1.8, 2.8, 'metalDark');
     for (const [z0, z1] of [[12.0, 13.0], [13.6, 14.6]]) {
       b.box(-9.95, 0, z0, -9.35, 1.8, z1, 'metalDark', { pen: 0.4 });
-      b.box(-9.95, 1.8, z0, -9.35, 7.0, z1, 'concrete', noStand);
       b.box(-9.36, 1.0, z0 + 0.15, -9.33, 1.5, z1 - 0.15, 'screen', noCol);
     }
     b.box(-9.95, 0, 18.0, -8.6, 1.0, 19.2, 'metalDark');
@@ -297,10 +290,7 @@ export default {
     b.box(-26.4, 3.8, -8.6, -18.6, 4.1, 9.0, 'concreteWhite');
     b.box(-26.4, 0, -8.6, -18.6, 0.015, 8.6, 'concreteFloor', flat);
     for (let z = -6.4; z <= 6.4; z += 0.8) b.box(-26.4, 0, z - 0.38, -25.9, 2.0, z + 0.38, z < -4 || z > 4 ? 'contBlue' : 'metalDark', { pen: 0.5 });
-    for (const s of [-1, 1]) {                                                                       // tool cages by the doors
-      b.box(-24.2, 0, s * 5.0 - 0.7, -22.8, 1.6, s * 5.0 + 0.7, 'grate', { pen: 1 });
-      b.box(-24.2, 1.6, s * 5.0 - 0.7, -22.8, 3.8, s * 5.0 + 0.7, 'concrete', noStand);
-    }
+    for (const s of [-1, 1]) b.box(-24.2, 0, s * 5.0 - 0.7, -22.8, 1.6, s * 5.0 + 0.7, 'grate', { pen: 1 });   // tool cages by the doors
     b.box(-23.0, 0, -1.0, -21.6, 0.78, 1.0, 'woodPale');
     for (let z = -4; z <= 4; z += 4) tubeZ(b, z - 1.0, z + 1.0, 3.75, -22.4);
     b.pointLight(-22.4, 3.0, 0, 0xe8f4ff, 2.0, 9);
@@ -312,13 +302,9 @@ export default {
     b.box(-22.6, 0, 13.4, -21.4, 2.1, 14.0, 'tilesCream', hidden);
     wallZ(b, 13.4, 20.4, -16.8, 0, 3.6, 0.4, 'tilesCream');
     b.box(-26.4, 0, 13.4, -17.0, 3.6, 20.4, 'tilesCream', hidden);                                  // (the toilets, closed)
-    for (const z of [15.0, 17.6]) {                                                                  // shop shelves
-      b.box(-16.6, 0, z - 0.5, -15.2, 1.7, z + 0.5, 'metalDark', { pen: 0.4 });
-      b.box(-16.6, 1.7, z - 0.5, -15.2, 3.6, z + 0.5, 'concrete', noStand);
-    }
+    for (const z of [15.0, 17.6]) b.box(-16.6, 0, z - 0.5, -15.2, 1.7, z + 0.5, 'metalDark', { pen: 0.4 });   // shop shelves
     b.box(-14.0, 0, 18.2, -11.4, 1.1, 19.0, 'pinewood');
     b.box(-11.0, 0, 18.4, -10.4, 1.9, 19.6, 'metalWhite');
-    b.box(-11.0, 1.9, 18.4, -10.4, 3.6, 19.6, 'concrete', noStand);
     b.box(-11.02, 0.3, 18.5, -10.98, 1.8, 19.5, 'neonCyan', noCol);
     b.pointLight(-13.5, 2.8, 16.5, 0xfff0c8, 1.8, 8);
     b.box(-16.6, 3.0, 13.4, -10.4, 3.12, 13.44, 'neonPink', noCol);

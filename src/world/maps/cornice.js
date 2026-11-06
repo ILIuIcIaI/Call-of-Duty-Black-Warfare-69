@@ -20,7 +20,7 @@ const BAL = 3.2;                 // balcony over the terrace
 const flat = { ao: false };
 const noCol = { collide: false, ao: false };
 const hidden = { visual: false };
-const noStand = { visual: false, noBullet: true };   // over roofs and machines nobody is meant to stand on: shots pass
+const noStand = { visual: false, noBullet: true };   // where whoever stood on top would be inside what is only drawn there: shots pass
 
 function placed(geo, matrix, tile) {
   const g = geo.index ? geo.toNonIndexed() : geo.clone();
@@ -54,7 +54,6 @@ function snowcat(b, x0, x1, z, paint = 'gondolaRed') {
   for (const s of [-1, 1]) b.box(x1 - 2.4, 1.85, z + s * 1.12 - 0.02, x1 - 0.8, 2.6, z + s * 1.12 + 0.02, 'carGlass', noCol);
   b.box(x1 - 0.4, 0.15, z - 1.7, x1 + 0.1, 1.2, z + 1.7, 'metalYellow');
   b.box(x0 - 0.3, 1.2, z - 0.6, x0, 1.5, z + 0.6, 'metalDark', noCol);
-  b.box(x1 - 2.6, 2.9, z - 1.1, x1 - 0.6, 9, z + 1.1, 'concrete', noStand);
 }
 function table(b, x, z, y, along = 'x') {
   const hx = along === 'x' ? 0.9 : 0.45, hz = along === 'x' ? 0.45 : 0.9;
@@ -106,7 +105,6 @@ export default {
     // ------------------------------------------------------------- A: the station (shared middle pieces)
     B.box(-8.4, 0, SZ0 + 0.4, 8.4, 0.02, SZ1 - 0.4, 'concreteFloor', flat);
     B.box(-8.8, ROOF, SZ0, 8.8, ROOF + 0.35, SZ1, 'concreteWhite');
-    B.box(-8.8, ROOF + 0.35, SZ0, 8.8, 14, SZ1, 'concrete', noStand);
     snowCap(B, -8.8, SZ0, 8.8, SZ1, ROOF + 0.35, 0.2);
     B.box(-5.0, DECK - 0.2, SZ0 + 0.4, 5.0, DECK, SZ1 - 0.4, 'concreteWhite');
     // the gondola: walk in on one side, out on the other
@@ -127,9 +125,10 @@ export default {
     B.box(-0.6, 5.9, -13.6, 0.6, 6.0, -12.4, 'metalDark', noCol);
     B.box(-0.9, F + 0.02, -13.0, -0.6, F + 0.45, -11.4, 'woodDark', noCol);                            // seats inside
     B.box(0.6, F + 0.02, -14.6, 0.9, F + 0.45, -13.0, 'woodDark', noCol);
-    // the drive at the north end and the bull wheel over it, cables out through the wall
+    // the drive at the north end and the bull wheel over it, cables out through the wall (nobody on the drive: up there
+    // is only room to crouch, inside its yellow housing and the spokes of the wheel)
     B.box(-3.0, DECK, SZ0 + 0.4, 3.0, DECK + 2.2, -17.4, 'metalDark', { pen: 0.2 });
-    B.box(-3.0, DECK + 2.2, SZ0 + 0.4, 3.0, ROOF, -17.4, 'concrete', noStand);                         // no crouching on the drive
+    B.box(-3.0, DECK + 2.2, SZ0 + 0.4, 3.0, ROOF, -17.4, 'concrete', noStand);
     B.box(-2.4, DECK + 2.2, -19.4, 2.4, DECK + 2.5, -17.8, 'metalYellow', noCol);
     B.geom(new THREE.CylinderGeometry(2.6, 2.6, 0.22, 28, 1, true), 'metalDark', mtx(0, 5.9, -17.0));
     for (let i = 0; i < 8; i++) B.geom(new THREE.BoxGeometry(5.0, 0.08, 0.12), 'metalDark', mtx(0, 5.9, -17.0, i * Math.PI / 8));
@@ -160,16 +159,16 @@ export default {
     B.box(-7.6, HUT, HZ0 + 0.4, 7.6, HUT + 0.02, HZ1 - 0.4, 'pinewood', flat);
     B.box(-8, HUT, 5.2, 8, HUT + 0.02, HZ0, 'pinewood', flat);
     for (const x of [-4.6, 4.6]) B.box(x - 0.8, 0, 4.8, x + 0.8, HUT / 2, 5.2, 'pinewood');             // half steps up
-    B.box(-8, 5.6, HZ0, 8, 12, HZ1, 'concrete', noStand);                                             // nobody on walls or roof
+    B.box(-8, 5.6, HZ0, 8, 12, HZ1, 'concrete', noStand);                                             // nobody on the walls: the roof is only drawn
     // the parlour is open up to the roof (the flag of the point needs the height): tie beams and a ridge beam
     for (const z of [10.6, 12.2, 16.6]) B.box(-7.7, 4.0, z - 0.12, 7.7, 4.26, z + 0.12, 'woodDark', noCol);   // (clear of the flag)
     B.box(-7.7, 7.9, 13.88, 7.7, 8.16, 14.12, 'woodDark', noCol);
     // the tiled stove in the middle of the parlour, a bench round it, its pipe
     B.box(-1.0, HUT, 12.8, 1.0, HUT + 1.9, 15.0, 'stoveTiles');
     B.box(-1.1, HUT + 1.9, 12.7, 1.1, HUT + 2.05, 15.1, 'woodDark', flat);
-    B.box(-1.1, HUT + 2.05, 12.7, 1.1, HUT + 4.0, 15.1, 'concrete', noStand);                        // nobody on the stove
     for (const s of [-1, 1]) B.box(s * 1.0 + (s > 0 ? 0 : -0.45), HUT, 12.8, s * 1.0 + (s > 0 ? 0.45 : 0), HUT + 0.45, 15.0, 'pinewood');
     B.geom(new THREE.CylinderGeometry(0.14, 0.14, 5.2, 10), 'metalDark', mtx(-0.6, HUT + 4.6, 14.7));
+    B.box(-0.74, HUT + 2.05, 14.56, -0.46, 5.6, 14.84, 'metalDark', hidden);                          // (solid, for whoever climbs the stove)
     for (const x of [-4.6, 4.6]) for (const z of [11.4, 15.4]) {
       B.box(x - 0.015, 3.3, z - 0.015, x + 0.015, 4.0, z + 0.015, 'black', noCol);
       B.box(x - 0.16, 3.1, z - 0.16, x + 0.16, 3.3, z + 0.16, 'lampOn', noCol);
@@ -295,7 +294,6 @@ export default {
     wallZ(b, -gz, gz, gx0 + 0.2, 0, 4.5, 0.4, 'corrugated');
     for (const s of [-1, 1]) wallX(b, gx0, gx1, s * (gz - 0.2), 0, 4.5, 0.4, 'corrugated', [{ c: -24.2, w: 2.4, y: 0, h: 3.0 }]);
     b.box(gx0, 4.5, -gz, gx1, 4.8, gz, 'metalDark');
-    b.box(gx0, 4.8, -gz, gx1, 12, gz, 'concrete', noStand);
     snowCap(b, gx0, -gz, gx1, gz, 4.8, 0.25);
     b.box(gx0 + 0.4, 0, -gz + 0.4, gx1 - 0.4, 0.02, gz - 0.4, 'concreteFloor', flat);
     snowcat(b, -25.4, -22.4, 1.2);
@@ -336,7 +334,6 @@ export default {
     b.box(-18.4, 0, 16.6, -14.4, 2.6, 19.2, 'barnGrey');
     b.box(-18.6, 2.6, 16.4, -14.2, 2.8, 19.3, 'metalDark', flat);
     snowCap(b, -18.6, 16.4, -14.2, 19.3, 2.8, 0.18);
-    b.box(-18.4, 2.6, 16.6, -14.4, 9, 19.2, 'concrete', noStand);
     for (let k = 0; k < 4; k++) b.box(-13.9 + k * 0.5, 0, 17.6, -13.82 + k * 0.5, 1.6, 17.68, 'woodDark', noCol);   // skis against the shed
     b.pointLight(-10.6, 2.4, -10.2, 0xffe0b8, 1.4, 6);
   },
