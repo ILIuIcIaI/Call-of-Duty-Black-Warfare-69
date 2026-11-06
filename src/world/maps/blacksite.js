@@ -44,7 +44,10 @@ export default {
       B.glassPane(s * 3.5 - 0.04, 1.0, -3.1, s * 3.5 + 0.04, 2.8, -1.5);
       B.glassPane(s * 3.5 - 0.04, 1.0, 1.5, s * 3.5 + 0.04, 2.8, 3.1);
     }
-    for (const x of [-2, 0, 2]) for (const z of [-2, 2]) {
+    // server racks by the doors, round the flag of the 2 vs 2 mode, set to the bots' 1 m grid: ways past them and 1.4 m
+    // behind them, so nobody (bot or not) ends up in a gap without a way out; none in the middle, where they would hide
+    // part of the circle from the flag
+    for (const x of [-2.5, 2.5]) for (const z of [-1.5, 1.5]) {
       B.box(x - 0.35, 0, z - 0.5, x + 0.35, 2.1, z + 0.5, 'metalDark', { pen: 0.4 });
       B.box(x - 0.36, 0.3, z - 0.51, x + 0.36, 1.9, z - 0.49, 'screen', { collide: false, ao: false });
     }
@@ -184,8 +187,8 @@ export default {
   },
 
   spawns() {
-    // (none in line with the lab's west door: through it and the control room's door lies the flag)
-    const west = [[-27, 0, -15], [-27.5, 0, -3.0], [-29, 0, 12.5], [-23.5, 0, -9], [-23.5, 0, -5.5], [-23, 0, 7.0], [-28, 0, -20.5], [-24, 0, -18]];
+    // (none in line with the lab's west door: through it and the server room's door and windows lies the flag)
+    const west = [[-27, 0, -15], [-27.5, 0, -3.0], [-29, 0, 12.5], [-23.5, 0, -9], [-28, 0, -8], [-23, 0, 8.0], [-28, 0, -20.5], [-24, 0, -18]];
     const yawW = -Math.PI / 2;
     return { 0: west.map(([x, y, z]) => [x, y, z, yawW]), 1: west.map(([x, y, z]) => [-x, y, z, -yawW]) };
   },
