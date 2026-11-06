@@ -115,12 +115,15 @@ function rearNotch(parent, mat, y, z, base, { w = 0.02, gap = 0.008, floor = 0.0
 function frontPost(parent, mat, y, z, base, w = 0.004, d = 0.006) {
   box(parent, mat, w, y - base, d, 0, (base + y) / 2, z);
 }
-// a rear aperture (ghost ring) on a stem, with ears either side and nothing across the hole
+// a rear aperture (ghost ring) on a stem, with ears either side and nothing across the hole. The ears stand on a bridge
+// across the foot of the sight: without it they stood beside the base, and aimed through the ring they were two bars
+// hanging loose in the air.
 function rearRing(parent, mat, y, z, base, r = 0.0072, t = 0.0016) {
   const ring = M(new THREE.TorusGeometry(r, t, 6, 18), mat); place(ring, 0, y, z); parent.add(ring);
   box(parent, mat, 0.004, y - r - t - base, 0.006, 0, (base + y - r - t) / 2, z);
-  const ex = r + t + 0.0028, top = y + 0.006;
-  for (const s of [-1, 1]) box(parent, mat, 0.0025, top - base, 0.012, s * ex, (base + top) / 2, z);
+  const ex = r + t + 0.0028, top = y + 0.006, ew = 0.0025;
+  for (const s of [-1, 1]) box(parent, mat, ew, top - base, 0.012, s * ex, (base + top) / 2, z);
+  box(parent, mat, 2 * ex + ew, 0.004, 0.012, 0, base + 0.002, z);
 }
 // Rail with cross slots
 function rail(parent, mat, z0, z1, y, w = 0.021) {

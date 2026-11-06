@@ -463,13 +463,15 @@ export class Viewmodel {
 
   // -------------------------------------------------------------- per-shot
   onShot(def, ads) {
-    const r = def.recoil;
-    const snap = r.snap || 0, k = r.vis * (ads ? 0.55 : 1) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.75) * (ads ? 0.72 : 1) * (1 - snap * 0.5);
-    // the gun is shoved back at the shooter with every round and springs forward again, the view itself stays calm;
-    // the small ones jerk straight back on top of that, the sight jumps at the face and the aim stays where it is
-    this.recoilPos.impulse(rand(-0.07, 0.07) * k, rand(0.02, 0.1) * k, (2.0 + Math.random() * 0.6) * back);
-    this.recoilRot.impulse((1.9 + Math.random() * 0.8) * k, rand(-0.5, 0.5) * k, rand(-1.1, 1.1) * k);
-    this.jerk.impulse((8 + Math.random() * 1.5) * snap * (ads ? 0.8 : 1));
+    const r = def.recoil, snap = r.snap || 0;
+    // Every round slams the gun straight back at the shooter, sharply, and it springs forward again: a light gun a little, a
+    // heavy one hard (vis). The muzzle rises only a touch, from the hip a little more; aimed it hardly rises, so the sights
+    // stay on the target instead of the barrel coming up over it. The small ones jerk back harder on top of that (snap).
+    // (Only the gun moves here: where the shot goes is the camera's business, untouched.)
+    const lift = r.vis * (ads ? 0.2 : 0.7) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.85);
+    this.recoilPos.impulse(rand(-0.05, 0.05) * lift, rand(0, 0.06) * lift, (1.2 + Math.random() * 0.3) * back * (ads ? 0.9 : 1));
+    this.recoilRot.impulse((1.6 + Math.random() * 0.7) * lift, rand(-0.45, 0.45) * lift, rand(-1.0, 1.0) * lift);
+    this.jerk.impulse(((3.2 + Math.random() * 0.8) * back + (4 + Math.random() * 1.2) * snap) * (ads ? 0.85 : 1));
     this.drive = Math.min(1, this.drive + (def.fire === 'auto' || def.fire === 'burst' ? 0.17 : 0.5));
     this.vib = Math.min(1, this.vib + 0.45);
     this.shotKick = 1;
@@ -501,10 +503,13 @@ export class Viewmodel {
     this.root.worldToLocal(_v);
     c.obj.position.copy(_v);
     c.obj.rotation.set(0, Math.random() * Math.PI, 0);
-    c.vel.set(rand(1.0, 1.6), rand(0.8, 1.3), rand(0.1, 0.5));
+    // out to the right and away, falling as brass falls: aimed, the port sits right under the eye, and casings thrown up slowly
+    // (and a little toward the face) hung big over the middle of the picture, as if parts of the gun were flying about
+    const ads = this.game.weapons ? this.game.weapons.adsAmount : 0;
+    c.vel.set(rand(1.7, 2.3) + ads * 0.5, rand(0.35, 0.75) * (1 - ads * 0.45), rand(-0.05, 0.15));
     if (w.revolver) c.vel.set(rand(-0.3, 0.3), rand(-0.6, -0.2), rand(0.3, 0.6));
     c.spin.set(rand(-25, 25), rand(-25, 25), rand(-25, 25));
-    c.life = 0.6; c.active = true; c.obj.visible = true;
+    c.grav = 9.8; c.life = 0.45; c.active = true; c.obj.visible = true;
   }
 
   // Hands on a ledge. Anchored in the world so they stay put on the edge while the camera climbs past them.
