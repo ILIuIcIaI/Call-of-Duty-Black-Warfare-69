@@ -6,7 +6,7 @@ A fast military first-person shooter for Windows and the browser. Jump out of a 
 
 Apart from that one map file, the game has no model, texture or audio files: every soldier, weapon, skin, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
-![Wingman on Sirocco: the flag is being taken, the blue flag climbs the pole on the dome of the cistern, a teammate nearby](docs/screenshots/wingman-sirocco.jpg)
+![Wingman on Sirocco: the flag on the rug stand in the domed market hall is being taken, the blue flag climbs the pole, a teammate in the doorway](docs/screenshots/wingman-sirocco.jpg)
 
 **Current version: [0.6.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
 
@@ -22,7 +22,7 @@ The newest mode: 2 against 2, you and a bot against two bots, or players togethe
 - **Respawns** never run out, and you always come back at your own base.
 - **What you see:** the flag of whoever is taking it climbs the pole, the holder's flag flies at the top, blue for your team and red for the others. Under the score sits the flag with the minute, "HALTEN" when it is yours and a red "ZURÜCKEROBERN" when it isn't, and the seconds a taking still needs. The flag also has a marker over the map and a place on the minimap.
 - **Bots** play for the flag: both of a team go to take it, stay in the circle to hold it, and go back for it when the others have it.
-- **Maps:** all eleven. Millrace, Cornice and Nightline were built for the mode. Every flag stands where both teams run the same distance to it and no spawn can see it, and on PoolDay it stands down in the middle of the empty pool, where you have to crouch out in the open to take it. The circle only shows where standing counts, so it never runs through walls or hangs over a drop.
+- **Maps:** all eleven. Millrace, Cornice and Nightline were built for the mode. On each the flag stands in the middle of the map, where every way meets, both teams run the same distance to it and no spawn can see it: on the rug stand of the domed market hall on Sirocco, on the fountain in the piazza on Citadel, flying from the summit cross on Cornice, in the brook below the weir on Millrace, between the escalators of the transfer hall on Nightline, and on PoolDay down in the empty pool, where you have to crouch out in the open to take it. The circle only shows where standing counts, so it never runs through walls or hangs over a drop.
 - **Multiplayer:** with bots it is 2 against 2, without bots only the players play, so two of you play 1 against 1.
 
 ### Runs on a toaster
@@ -38,7 +38,7 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 
 ### Six new maps
 
-**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, the flag around the frame saw in the saw hall over the water; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, the flag up on the gondola deck; and **Nightline**, the terminus of a metro line at night after the last train, the flag on the platform in front of a parked train you can run through.
+**Sirocco**, a walled caravan town in the desert: a domed market hall with a door on every side, the well square with a tea house terrace, a caravanserai with a gallery on its arcade roofs, houses to run through and flat roofs with a bridge over the street. **Atrium**, an office building in the evening: two floors around a glass-roofed lobby, open-plan offices, a server room and a boardroom behind glass, a canteen and loading yards. **Dynamo**, a coal-fired power station at dusk: a turbine hall with catwalks and a bridge, a coal heap you can climb and a switchyard with its control house. Three more were built for Wingman: **Millrace**, a sawmill on a mill stream in the morning mist, the saw hall over the water and the flag down in the brook below the weir; and **Cornice**, a cable car station and a mountain hut in the snow at sunset, the flag flying from the summit cross; and **Nightline**, the terminus of a metro line at night after the last train, a parked train you can run through on the platform, and the flag in the transfer hall between the escalators.
 
 | Sirocco | Sirocco, the well square |
 |---|---|
@@ -60,9 +60,9 @@ The game now also runs on very weak computers, and on ones with no usable graphi
 |---|---|
 | ![The snowy saddle from above: the cable car station, the hut with its balcony, the summit cross and the garages, mountains behind](docs/screenshots/cornice-overview.jpg) | ![The parlour of the hut: benches and tables around the green tiled stove](docs/screenshots/cornice-hut.jpg) |
 
-| Nightline | Nightline, the ticket hall |
+| Nightline | Nightline, the transfer hall |
 |---|---|
-| ![The platform of the terminus at night: the parked train on the left, orange tiled pillars, the flag round the kiosk and the balcony of the mezzanine at the far end](docs/screenshots/nightline-platform.jpg) | ![The ticket hall: the glass ticket booth, the turnstiles beside it and the shuttered street exit up on the landing behind the railing](docs/screenshots/nightline-ticket-hall.jpg) |
+| ![The platform of the terminus at night: the parked train on the left, orange tiled pillars, the kiosk and the balcony of the mezzanine at the far end](docs/screenshots/nightline-platform.jpg) | ![The flag in its circle in the transfer hall, the escalator up to the bridge on the right, the bridge with its railing above](docs/screenshots/nightline-transfer-hall.jpg) |
 
 ### Bodies that fight as they fall
 

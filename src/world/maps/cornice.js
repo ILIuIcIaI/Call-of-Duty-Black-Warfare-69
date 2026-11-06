@@ -6,10 +6,11 @@ import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
 // CORNICE: the top station of a cable car and a mountain hut on a snowy saddle, at sunset. Made for the 2 vs 2
 // capture mode (and small enough for Team Deathmatch). Mirror-symmetric across x = 0: team 0 comes from the west,
 // team 1 from the east, each out of a snowcat garage whose doors are at its outer corners.
-//   A (north, up on the platform deck of the station): the gondola stands in the middle and can be walked through.
+//   north (up on the platform deck of the station): the gondola stands in the middle and can be walked through.
 //      The ways up: the stair from the ski depot underneath, or the outside stair to the deck door.
-//   B (south, in the hut): the parlour with its tiled stove; in front of it the terrace, over that the balcony.
-//   middle: the summit rock with its cross, climbable from every side; a T-bar station on each side.
+//   south (in the hut): the parlour with its tiled stove; in front of it the terrace, over that the balcony.
+//   middle: the summit rock with its cross, climbable from every side, the flag flying from the cross; a T-bar
+//      station on each side.
 // =============================================================================
 const DECK = 3.0;                // platform deck of the station (A)
 const SZ0 = -20, SZ1 = -8;       // station, x -8.8..8.8
@@ -70,10 +71,11 @@ function tube(b, x0, x1, y, z) { b.box(x0, y - 0.06, z - 0.08, x1, y, z + 0.08, 
 export default {
   id: 'cornice',
   name: 'CORNICE',
-  desc: 'Bergstation im Schnee bei Abendrot. A oben auf dem Gondeldeck, erreichbar über das Skidepot darunter oder die Außentreppe. B in der Hüttenstube am Kachelofen, mit Terrasse und Balkon. In der Mitte der Gipfelfels mit Kreuz.',
+  desc: 'Bergstation im Schnee bei Abendrot: oben das Gondeldeck, darunter das Skidepot, im Süden die Hütte mit Kachelofen, Terrasse und Balkon. In der Mitte der Gipfelfels; die Flagge weht am Gipfelkreuz.',
   size: 'Klein',
-  // capture points of the 2 vs 2 mode: floor height of each centre (radius 3.5 by default)
-  wingman: [[0, DECK, -13], [0, HUT, 13.6]],
+  // the flag of the 2 vs 2 mode: [x, floor, z, radius]. On the summit rock: the floor is its first step, so the snow
+  // round it and all its steps count, and the flag finds the cross by itself and flies from its top
+  wingman: [[0, 0.7, -1.2, 5.0]],
   env: {
     sunDir: [0.0, 0.3, 0.95],
     sunColor: 0xffc49a, sunIntensity: 2.3,
@@ -160,7 +162,7 @@ export default {
     B.box(-8, HUT, 5.2, 8, HUT + 0.02, HZ0, 'pinewood', flat);
     for (const x of [-4.6, 4.6]) B.box(x - 0.8, 0, 4.8, x + 0.8, HUT / 2, 5.2, 'pinewood');             // half steps up
     B.box(-8, 5.6, HZ0, 8, 12, HZ1, 'concrete', noStand);                                             // nobody on the walls: the roof is only drawn
-    // the parlour is open up to the roof (the flag of the point needs the height): tie beams and a ridge beam
+    // the parlour is open up to the roof: tie beams and a ridge beam
     for (const z of [10.6, 12.2, 16.6]) B.box(-7.7, 4.0, z - 0.12, 7.7, 4.26, z + 0.12, 'woodDark', noCol);   // (clear of the flag)
     B.box(-7.7, 7.9, 13.88, 7.7, 8.16, 14.12, 'woodDark', noCol);
     // the tiled stove in the middle of the parlour, a bench round it, its pipe

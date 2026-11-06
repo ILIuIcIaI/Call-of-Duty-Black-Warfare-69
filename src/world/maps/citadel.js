@@ -256,7 +256,8 @@ export default {
 
   // team spawns: [x, y, z, yaw]; team 0 = north (faces +z), team 1 = south (mirrored)
   spawns() {
-    const north = [[-10, 0, -28], [-4, 0, -29], [4, 0, -29], [10, 0, -28], [-16, 0, -26.5], [17, 0, -24], [0, 0, -25.5], [-5, 0, -24.5]];
+    // (none in line with the arch through the long house: through it lies the piazza, where the flag stands on the fountain)
+    const north = [[-10, 0, -28], [-4, 0, -29], [4, 0, -29], [10, 0, -28], [-16, 0, -26.5], [17, 0, -24], [6.5, 0, -26.5], [-5, 0, -24.5]];
     return {
       0: north.map(([x, y, z]) => [x, y, z, Math.PI]),
       1: north.map(([x, y, z]) => [x, y, -z, 0]),

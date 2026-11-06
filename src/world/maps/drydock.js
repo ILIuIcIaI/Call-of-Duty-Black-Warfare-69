@@ -131,7 +131,7 @@ export default {
     crate(b, -20.6, -21.3, 1.2);
     crate(b, -17.2, -28.0, 1.2); crate(b, -16.0, -28.0, 1.2); crate(b, -16.6, -28.0, 1.2, 1.2);
     pallet(b, -29.2, -28.6); pallet(b, -29.2, -28.6, 0.14);
-    // two containers by the one in the middle: round it a pocket to hold (the capture point) that the spawn yard can't see
+    // two containers by the one in the middle: a pocket round it that the spawn yard can't see
     container(b, -11.8, -24.2, 'z', 'contOrange');
     container(b, -11.5, -19.0, 'x', 'contGrey');
     // cable reels
@@ -145,6 +145,9 @@ export default {
     // west wall: big door + side door + high windows
     wallZ(b, -11, 11, -15, 0, wh, wt, 'corrugated', [
       { c: 0, w: 5.0, y: 0, h: 4.2 }, { c: -7.6, w: 1.4, y: 0, h: 2.3 }, { c: 6.2, w: 2.0, y: 4.6, h: 1.2 }]);
+    // a container in the yard in front of the big door: from the spawn yard nobody looks in on the flag of the 2 vs 2
+    // mode in the middle, the ways in run round its ends
+    container(b, -20.0, 0, 'z', 'contBlue');
     // north wall: door to the quay, low window, catwalk windows
     wallX(b, -15, 0, -11, 0, wh, wt, 'corrugated', [
       { c: -9.2, w: 1.6, y: 0, h: 2.4 }, { c: -3.6, w: 2.0, y: 1.1, h: 1.1 },
@@ -232,7 +235,7 @@ export default {
 
   // team spawns: [x, y, z, yaw]; team 0 = west, team 1 = east (mirrored)
   spawns() {
-    const west = [[-42, 0, -14], [-42, 0, -5], [-43, 0, 8], [-41, 0, 15], [-36.5, 0, -14.5], [-36, 0, 17], [-44, 0, 0], [-39, 0, -1]];
+    const west = [[-42, 0, -14], [-42, 0, -5], [-44, 0, 7], [-41, 0, 15], [-36.5, 0, -14.5], [-36, 0, 17], [-44, 0, 0], [-39, 0, -1]];
     const yawW = -Math.PI / 2;
     return {
       0: west.map(([x, y, z]) => [x, y, z, yawW]),

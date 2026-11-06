@@ -45,7 +45,8 @@ export class Match {
   }
 
   collectSpawns() {
-    const g = this.game, sp = g.mapDef.spawns();
+    // (Wingman: a map may keep its own list, without the spawns that would look straight at the flag)
+    const g = this.game, sp = this.wing && g.mapDef.wingSpawns ? g.mapDef.wingSpawns() : g.mapDef.spawns();
     const b = g.mapDef.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
     const pts = [];
     for (const team of [0, 1]) for (const [x, y, z, yaw] of sp[team]) pts.push({ x, y, z, yaw, team });

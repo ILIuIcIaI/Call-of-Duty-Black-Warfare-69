@@ -5,9 +5,11 @@ import { projectUV } from '../textures.js';
 // =============================================================================
 // DYNAMO — a coal-fired power station at dusk. Small-medium, built for 8-10
 // players, with long cover and two floors of fighting in the middle.
-//   Center : the turbine hall: two turbine sets as long cover, a catwalk along
-//            each long wall with a stair up to it, a bridge across the hall
-//            from catwalk to catwalk. Doors at both ends and on both sides.
+//   Center : the turbine hall: two turbine sets as long cover, a way across
+//            between turbine and generator (the flag of the 2 vs 2 mode), a
+//            catwalk along each long wall with a stair up to it, a bridge
+//            across the hall from catwalk to catwalk. Doors at both ends and
+//            on both sides.
 //   West   : the coal yard: a stepped heap in a bunker you can climb, the coal
 //            shed, the conveyor's transfer tower, a bulldozer.
 //   East   : the switchyard: the control house in the middle, transformers
@@ -126,20 +128,22 @@ export default {
     b.glassPane(-HX + 0.4, HH - 0.2, 3, HX - 0.4, HH - 0.15, 5);
     b.box(-HX, HH - 0.25, 5, HX, HH, HZ, 'corrugated');
     for (let x = -12; x <= 12; x += 6) b.box(x - 0.15, HH - 1.2, 0, x + 0.15, HH - 0.25, HZ - 0.4, 'metalDark', flat);
-    // the turbine set: pedestal, turbine under its hood, generator, exciter
-    b.box(-12, 0, 1.4, 10.5, 0.8, 4.2, 'concrete');
-    b.box(-11, 0.8, 1.6, 3, 2.0, 4.0, 'machineGreen', { pen: 0.2 });
-    b.box(-11, 2.0, 1.7, 3, 2.5, 3.9, 'machineGreen', { visual: false, pen: 0.2 });     // the hood, in two steps
-    b.box(-11, 2.5, 2.0, 3, 3.1, 3.6, 'machineGreen', { visual: false, pen: 0.2 });
-    b.geom(new THREE.CylinderGeometry(1.2, 1.2, 14, 16, 1, false, 0, Math.PI), 'machineGreen', mtx(-4, 2.0, 2.8, 0, 1, 1, 1, 0, Math.PI / 2));
-    b.box(3, 0.8, 1.9, 3.5, 1.8, 3.7, 'metalDark', { pen: 0.2 });
-    b.box(3.5, 0.8, 1.6, 9.5, 3.3, 4.0, 'machineBlue', { pen: 0.2 });
-    for (let x = 4.0; x < 9.3; x += 0.5) b.box(x - 0.06, 1.0, 1.55, x + 0.06, 3.1, 4.05, 'metalDark', flat);
+    // the turbine set: turbine under its hood, and 3 m apart from it (a way across the hall between the two sets,
+    // where the flag of the 2 vs 2 mode stands) generator and exciter, each on its own pedestal
+    for (const [x0, x1] of [[-12, 1.5], [4.5, 10.5]]) {
+      b.box(x0, 0, 1.4, x1, 0.8, 4.2, 'concrete');
+      b.box(x0, 0.8, 1.4, x1, 0.83, 1.6, 'hazardStripe', flat);
+    }
+    b.box(-11, 0.8, 1.6, 1.5, 2.0, 4.0, 'machineGreen', { pen: 0.2 });
+    b.box(-11, 2.0, 1.7, 1.5, 2.5, 3.9, 'machineGreen', { visual: false, pen: 0.2 });     // the hood, in two steps
+    b.box(-11, 2.5, 2.0, 1.5, 3.1, 3.6, 'machineGreen', { visual: false, pen: 0.2 });
+    b.geom(new THREE.CylinderGeometry(1.2, 1.2, 12.5, 16, 1, false, 0, Math.PI), 'machineGreen', mtx(-4.75, 2.0, 2.8, 0, 1, 1, 1, 0, Math.PI / 2));
+    b.box(4.5, 0.8, 1.6, 9.5, 3.3, 4.0, 'machineBlue', { pen: 0.2 });
+    for (let x = 5.0; x < 9.3; x += 0.5) b.box(x - 0.06, 1.0, 1.55, x + 0.06, 3.1, 4.05, 'metalDark', flat);
     b.box(9.5, 0.8, 2.1, 10.5, 2.4, 3.5, 'machineGreen', { pen: 0.2 });
     for (const x of [-9, -1]) {
       b.geom(new THREE.TorusGeometry(1.1, 0.18, 8, 16, Math.PI), 'metalDark', mtx(x, 3.0, 2.8, Math.PI / 2));
     }
-    b.box(-12, 0.8, 1.4, 10.5, 0.83, 1.6, 'hazardStripe', flat);
     // the catwalk along the north wall, the stair up to it
     // (2 m wide, like the bridge: narrower and the bots' nav grid finds no room on them between rail and wall)
     b.box(-14.6, CW - 0.1, 5.6, 14.6, CW, 7.6, 'grate');
@@ -253,8 +257,7 @@ export default {
   },
 
   spawns() {
-    // (the two in the west corner stand behind the coal shed: from the car park in front of it the coal bunker, a
-    // capture point, lies in sight under the conveyor gallery)
+    // (the two in the west corner stand behind the coal shed, out of sight of the coal bunker under the conveyor gallery)
     const north = [[-30.0, 0, 21.5], [-31.0, 0, 18.0], [-15.0, 0, 21.4], [-5.8, 0, 20.6], [0, 0, 20.4], [5.8, 0, 20.6], [15.0, 0, 21.4], [21.5, 0, 23.0], [27.5, 0, 21.2]];
     return { 0: north.map(([x, y, z]) => [x, y, z, 0]), 1: north.map(([x, y, z]) => [x, y, -z, Math.PI]) };
   },

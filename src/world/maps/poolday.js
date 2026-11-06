@@ -329,6 +329,13 @@ export default {
   onNetEvent(game, m) { if (m.k === 'flush') this.flush(game, m); },
 
   spawns() { return { 0: SPAWN_SOUTH, 1: SPAWN_NORTH }; },
+  // the 2 vs 2 mode: only the spawns from which the flag down in the pool is out of sight (the others look in through
+  // the doors of the pool hall)
+  wingSpawns() {
+    const seen = [[-8.16, 8.68], [8.73, 10.03], [-9.43, -14.94], [-8.24, -8.51], [-8.11, -11.51], [9.62, -10.06], [6.06, -9.25]];
+    const ok = (s) => !seen.some(([x, z]) => Math.hypot(s[0] - x, s[2] - z) < 0.3);
+    return { 0: SPAWN_SOUTH.filter(ok), 1: SPAWN_NORTH.filter(ok) };
+  },
 
   // where the fights are: the hall, the pool and both wings
   hotspots: [

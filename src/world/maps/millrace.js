@@ -7,10 +7,11 @@ import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
 // MILLRACE: a sawmill on a mill brook in a pine forest, early morning. Made for the 2 vs 2 capture mode (and small
 // enough for Team Deathmatch). Mirror-symmetric across x = 0: team 0 comes from the west, team 1 from the east.
 // The brook runs along the axis, north to south.
-//   A (north): the saw hall over the brook. Frame saw in the middle, a loft along the north wall, a sharpening
+//   north:     the saw hall over the brook. Frame saw in the middle, a loft along the north wall, a sharpening
 //              shop on each side whose roof leads to a door into the loft.
-//   B (south): the timber landing over the brook, boxed in by stacks of sawn boards, a crane walkway above it.
-//   middle:    a footbridge over the brook, the weir beside it, and the brook bed itself as the low way from A to B.
+//   south:     the timber landing over the brook, boxed in by stacks of sawn boards, a crane walkway above it.
+//   middle:    a footbridge over the brook, the weir beside it (the flag stands in the brook below it), and the brook
+//              bed itself as the low way from the hall to the landing.
 //   bases:     forest clearings at the west and east ends, each behind a tall log pile.
 // =============================================================================
 const CH = 3.0;                  // the brook channel: x -3..3
@@ -97,12 +98,12 @@ function logTruck(b, x0, x1, z) {
 export default {
   id: 'millrace',
   name: 'MILLRACE',
-  desc: 'Sägewerk am Mühlbach im Morgennebel. A in der Sägehalle über dem Bach mit Dachboden, B auf dem Holzplatz am Steg unter der Kranbrücke. Dazwischen Brücke und Wehr, das Bachbett verbindet beide Punkte.',
+  desc: 'Sägewerk am Mühlbach im Morgennebel: die Sägehalle mit Dachboden, der Holzplatz unter der Kranbrücke und dazwischen Brücke und Wehr. Die Flagge steht unterhalb des Wehrs im Bach; das Bachbett und beide Ufer zählen mit, von der Brücke schießt man hinunter.',
   size: 'Klein',
-  // capture points of the 2 vs 2 mode: [x, floor, z, radius, flag height above the floor (on top of the saw)]. A round
-  // the frame saw in the saw hall, the loft over it to shoot down from; B round the log bogie on the landing (the flag
-  // finds it by itself), the crane walkway over it. Loft and walkway are too narrow to hold a point on.
-  wingman: [[0, 0, -12.0, 4.6, 3.9], [0, 0, 12.6, 4.0]],
+  // the flag of the 2 vs 2 mode: [x, floor, z, radius]. In the brook below the weir, in the middle of the map: the bed
+  // (under the bridge too), the weir and both banks count; the bridge over it is the place to shoot down from (on the
+  // bridge itself the bed under it could not be seen from the flag, and bots holding the point would wait there)
+  wingman: [[0, BED, 4.5, 5.0]],
   env: {
     sunDir: [0.0, 0.42, 0.9],
     sunColor: 0xffe2b8, sunIntensity: 2.7,
@@ -152,9 +153,8 @@ export default {
     B.box(-1.1, 0, -16.8, 1.1, 0.45, -12.9, 'metalDark');
     B.box(-0.5, 0.45, -16.6, 0.5, 1.3, -13.0, 'barkLog', { visual: false });
     log(B, 0, 0.88, -14.8, 3.6, 0.42, 'z');
-    // (one block for the whole saw: the capture point finds its sides from it and looks at the circle from there,
-    // and the flag stands on top of it. Nobody else does: up there under the roof is only room to crouch, and the
-    // line shaft with its pulleys and belts runs through that room)
+    // (one block for the whole saw. Nobody stands on it: up there under the roof is only room to crouch, and the line
+    // shaft with its pulleys and belts runs through that room)
     B.box(-1.95, 0, -12.85, 1.95, 3.9, -11.15, 'metalDark', { visual: false, pen: 0.2 });
     B.box(-1.95, 3.9, -12.85, 1.95, EAVES, -11.15, 'metalDark', noStand);
     for (const s of [-1, 1]) {

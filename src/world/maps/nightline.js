@@ -6,12 +6,12 @@ import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
 // NIGHTLINE: the end of metro line 69, at night, after the last train. Made for the 2 vs 2 capture mode (and small
 // enough for Team Deathmatch). Mirror-symmetric across x = 0: team 0 comes from the west, team 1 from the east, each
 // out of a staff room with its doors at the outer corners.
-//   A (north): the platform in front of the parked train. A kiosk in the middle of the circle, the train to walk
-//      through, a balcony from the mezzanine over it.
-//   B (south): the ticket hall behind the turnstiles, the ticket booth in the middle (glass to shoot through), the
+//   north: the platform in front of the parked train. A kiosk in the middle, the train to walk through, a balcony
+//      from the mezzanine over it.
+//   south: the ticket hall behind the turnstiles, the ticket booth in the middle (glass to shoot through), the
 //      landing in front of the closed street exit above it.
-//   middle: the transfer hall with the mezzanine bridge and its escalators; at the sides a concourse round a closed
-//      newsstand, a corridor and a little shop as a second way into B.
+//   middle: the transfer hall with the mezzanine bridge and its escalators, where the flag stands; at the sides a
+//      concourse round a closed newsstand, a corridor and a little shop as a second way into the ticket hall.
 // =============================================================================
 const PZ0 = -16.6;               // platform edge (north of it the track)
 const TRK = -1.1;                // the track bed
@@ -58,12 +58,12 @@ function bench(b, x0, z0, x1, z1) {
 export default {
   id: 'nightline',
   name: 'NIGHTLINE',
-  desc: 'Endstation der Linie 69 bei Nacht, nach der letzten Bahn. A am Bahnsteig vor dem abgestellten Zug, den man durchlaufen kann. B in der Schalterhalle hinter den Drehkreuzen. Dazwischen die Verteilerhalle mit Galerie und Rolltreppen.',
+  desc: 'Endstation der Linie 69 bei Nacht, nach der letzten Bahn: der Bahnsteig mit dem abgestellten Zug, den man durchlaufen kann, die Schalterhalle hinter den Drehkreuzen und dazwischen die Verteilerhalle mit Galerie und Rolltreppen. Dort steht die Flagge.',
   size: 'Klein',
-  // capture points of the 2 vs 2 mode: [x, floor, z, radius, flag height]; the flags stand on the roofs of the kiosk
-  // and the ticket booth. Over each a place to shoot down from: the balcony over the platform, the landing behind the
-  // booth (both too narrow, or too hard to get onto, to hold a point on)
-  wingman: [[0, 0, -13.1, 4.0, 3.0], [0, 0, 14, 4.2, 3.2]],
+  // the flag of the 2 vs 2 mode: [x, floor, z, radius]. In the transfer hall between the escalators, just south of the
+  // ad column (on the column it would not fit under the mezzanine): ways in from the platform, the ticket hall, both
+  // concourses and down the escalators, the mezzanine's railing over it to shoot down from
+  wingman: [[0, 0, 3.2, 5.0]],
   env: {
     sunDir: [0.1, 1, 0.12],
     sunColor: 0xd8e4ff, sunIntensity: 0.4,

@@ -367,7 +367,8 @@ export default {
   },
 
   spawns() {
-    const west = [[-28.0, 0, 18.5], [-24.6, 0, 17.0], [-29.0, 0, 9.0], [-24.4, 0, 8.4], [-28.6, 0, 0.6], [-24.8, 0, -1.6], [-29.5, 0, -9.6], [-24.8, 0, -17.2], [-29.0, 0, -19.6]];
+    // (none in line with the corridor from the west entrance: it runs straight into the atrium, where the flag stands)
+    const west = [[-28.0, 0, 18.5], [-24.6, 0, 17.0], [-29.0, 0, 9.0], [-24.4, 0, 8.4], [-29.0, 0, 2.8], [-24.8, 0, -1.6], [-29.5, 0, -9.6], [-24.8, 0, -17.2], [-29.0, 0, -19.6]];
     return { 0: west.map(([x, y, z]) => [x, y, z, -Math.PI / 2]), 1: west.map(([x, y, z]) => [-x, y, z, Math.PI / 2]) };
   },
 

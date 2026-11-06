@@ -184,8 +184,8 @@ export default {
   },
 
   spawns() {
-    // (none in the yard's north end: from there the helipad lies in sight past the container)
-    const west = [[-27, 0, -15], [-27, 0, 0.5], [-29, 0, 12.5], [-23.5, 0, -9], [-23, 0, 3], [-23, 0, 7.0], [-28, 0, -20.5], [-24, 0, -18]];
+    // (none in line with the lab's west door: through it and the control room's door lies the flag)
+    const west = [[-27, 0, -15], [-27.5, 0, -3.0], [-29, 0, 12.5], [-23.5, 0, -9], [-23.5, 0, -5.5], [-23, 0, 7.0], [-28, 0, -20.5], [-24, 0, -18]];
     const yawW = -Math.PI / 2;
     return { 0: west.map(([x, y, z]) => [x, y, z, yawW]), 1: west.map(([x, y, z]) => [-x, y, z, -yawW]) };
   },

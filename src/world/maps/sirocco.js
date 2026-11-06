@@ -468,8 +468,8 @@ export default {
   },
 
   spawns() {
-    // (none in line with the caravanserai's side gate: through it lies the courtyard, a capture point)
-    const west = [[-27.5, 0, 22.5], [-24.5, 0, 17], [-26.8, 0, 11.6], [-23.8, 0, 5.2], [-28.2, 0, 0.4], [-24.2, 0, -4.6], [-27.6, 0, -12.2], [-23.0, 0, -23.2], [-28.4, 0, -22.8]];
+    // (none in line with the market hall's west door: through it lies the rug stand, where the flag of the 2 vs 2 mode stands)
+    const west = [[-27.5, 0, 22.5], [-24.5, 0, 17], [-26.8, 0, 11.6], [-23.8, 0, 5.2], [-28.2, 0, -2.5], [-24.2, 0, -4.6], [-27.6, 0, -12.2], [-23.0, 0, -23.2], [-28.0, 0, -23.5]];
     return { 0: west.map(([x, y, z]) => [x, y, z, -Math.PI / 2]), 1: west.map(([x, y, z]) => [-x, y, z, Math.PI / 2]) };
   },
 

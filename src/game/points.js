@@ -16,20 +16,19 @@ export const HOLD = 60;       // seconds the others have to take it back
 const DECAY = 8;              // seconds for a half-taken flag to fall back once nobody is on it
 const COLORS = { own: 0x48b8ff, enemy: 0xff4a3a, none: 0xe8e8e8 }; // (as in the HUD)
 
-// [x, y, z, radius, top] per point, A first. y: the floor. top: where the flag stands above the floor, when something
-// stands in the middle (a cistern, a well): the flag goes on its roof and the circle is the yard around it.
-// Measured so both teams walk the same distance and no spawn sees one. Each in the open at its end of the map, with
-// cover in it, ways in from several sides and room to move: no corridor, no pedestal. Where a map has an open place
-// up a floor, one point is up there (narrow catwalks, galleries and walkways don't count: there they stay down).
+// [x, y, z, radius, top]. y: the floor. top: where the flag stands above the floor, when something stands in the
+// middle (a fountain, a market stand): the flag goes on its top and the circle is the ground around it.
+// The flag stands in the middle of the map, where every way meets: both teams walk the same distance, no spawn sees
+// it, and there is cover in the circle and room round it, so it is fought over from all sides for the whole match.
 export const SPOTS = {
-  sirocco: [[0, 0, -18, 4.8, 3.25], [0, 1.3, 23.5, 6.0]],   // the caravanserai's courtyard round the cistern, up on the tea house's terraces
-  atrium: [[0, 3.6, 13.0, 3.5], [0, 0, -12.0, 3.8]],        // upstairs in the boardroom over the server room, the lobby by the main entrance
-  dynamo: [[-23, 0, 0, 6.0, 3.5], [29, 0, 0, 3.2]],         // round the coal bunker, behind the control house in the switchyard
-  blacksite: [[0, 3.15, -18, 2.4], [0, 0.35, 18.0, 4.6, 2.35]], // up on the guard tower, round the helicopter
-  citadel: [[-17, 0, 0, 3.0], [30.6, 3.0, 0, 4.6]],         // the well between the west houses, up on the terrace round the kiosk
-  backrooms: [[0, 0, -13, 4.0], [0, 0, 11, 4.0]],           // the dark part, the end of the pillar hall in front of the red room
-  drydock: [[0, 0, -24.8, 4.0], [0, 0, 23.5, 3.8]],         // round the container in the middle of the quay, between the containers in the yard
-  poolday: [[-1.5, -2.44, -1.0, 3.0]],                      // down in the middle of the empty pool: in the open, seen from all round
+  sirocco: [[0, 0, 0, 5.5]],                // the domed market hall in the middle of town, a door on every side, the flag on the rug stand
+  atrium: [[0, 0, 0, 5.0]],                 // the atrium's floor round its centrepiece, the galleries above
+  dynamo: [[3, 0, 0, 5.0]],                 // the turbine hall, where the way across runs between turbine and generator
+  blacksite: [[0, 0, 0, 3.2]],              // the control room in the middle of the lab: a door and windows on every side
+  citadel: [[0, 0, 0, 5.0]],                // the piazza round the fountain, between the arcades
+  backrooms: [[0, 0, 6, 4.0]],              // the pillar hall, between two pillars
+  drydock: [[0, 0, 2.5, 4.5]],              // the warehouse floor, under the bridge between its galleries
+  poolday: [[-1.25, -2.44, -0.82, 3.2]],    // down in the middle of the empty pool: in the open, seen from all round
 };
 export function pointsOf(def) { const s = def.wingman || SPOTS[def.id]; return s ? s.slice(0, 1) : null; }
 
