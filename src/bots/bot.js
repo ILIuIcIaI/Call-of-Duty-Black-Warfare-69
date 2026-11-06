@@ -69,6 +69,14 @@ export class Bot {
     this.stuckT = 0; this.lastProgress = this.pos.clone();
     this.onGround = true; this.sprinting = false; this.tac = false;
     this.heard = null; this.heardT = -99;
+    // the old body stays where it fell, bleeding out and then lying there (the game keeps it); the bot comes back in a fresh one
+    if (this.soldier.dead && this.soldier.ragdoll && this.game.keepCorpse) {
+      const old = this.soldier;
+      this.soldier = this.game.freshSoldier(old.outfit);
+      this.game.keepCorpse(old);
+      this.soldier.setWeapon(this.wdef, this.optic, this.skin || 'standard');
+      this.hbFrame = -1;
+    }
     this.soldier.resetPose(); this.soldier.root.position.copy(this.pos);
     this.soldier.setVisible(true);
     if (this.soldier.weaponDrop) { this.game.scene.remove(this.soldier.weaponDrop.obj); this.soldier.weaponDrop = null; this.soldier.setWeapon(this.wdef, this.wdef.optics.includes('reflex') ? 'reflex' : this.wdef.optics[0]); }

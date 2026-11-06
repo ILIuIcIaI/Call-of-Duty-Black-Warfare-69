@@ -770,8 +770,8 @@ export class Soldier {
       for (const m of this.skinned) m.boundingSphere.center.copy(c); // root sits at the origin while ragdolling
       this.blob.scale.set(1.3, 2.2, 1);
     }
-    // after a while, sink into the ground
-    if (t > 6) { this.root.position.y -= dt * 0.3; }
+    // after a while (it has bled out and lain there a moment), sink into the ground
+    if (t > 14) { this.root.position.y -= dt * 0.3; }
     this.updateWeaponDrop(dt);
   }
 
