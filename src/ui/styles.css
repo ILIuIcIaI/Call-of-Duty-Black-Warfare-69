@@ -388,3 +388,5 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 .sdmark.bomb b { color: #ffd04a; border-color: #ffd04a; font-size: 18px; }
 .sdmark.bomb.live b { color: var(--enemy); border-color: var(--enemy); animation: holdUrgent .5s infinite alternate; }
 .sdmark span { font-weight: 700; font-size: 12px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+/* S&D: watching a teammate until the next round, only the line saying whom */
+#death-screen.watching .death-title, #death-screen.watching #death-by { display: none; }

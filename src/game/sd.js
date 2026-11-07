@@ -171,6 +171,7 @@ export class SearchDestroy {
   dispose() {
     this.bomb.dispose(); this.packed.dispose(); this.hands.dispose();
     document.getElementById('sb-timer').classList.remove('bomb');
+    document.getElementById('death-screen').classList.remove('watching');
     if (this.el) { this.el.remove(); this.el = null; }
     if (this.marks) for (const m of this.marks) m.remove();
     this.marks = null;
@@ -205,6 +206,7 @@ export class SearchDestroy {
     this.bomb.root.visible = false; this.bomb.setLed(false); this.bomb.setCode('');
     this.bomb.wires[0].visible = true; this.bomb.wires[0].position.set(0, 0, 0);
     this.spectate = null;
+    document.getElementById('death-screen').classList.remove('watching');
     if (g.playerCorpse) g.playerCorpse.setVisible(false);
     // everybody up again, at his side's spawns
     for (const c of g.combatants) {
@@ -536,6 +538,7 @@ export class SearchDestroy {
     cam.position.set(bx, by, bz);
     cam.lookAt(hx - Math.sin(yaw) * 6, hy - 0.4, hz - Math.cos(yaw) * 6);
     const box = document.getElementById('death-timer');
+    document.getElementById('death-screen').classList.add('watching'); // (the big GETÖTET goes, the line under it stays)
     const t = 'DU SIEHST ' + c.name.toUpperCase() + ' · KLICKEN: NÄCHSTER';
     if (box && box.textContent !== t) box.textContent = t;
     return true;
