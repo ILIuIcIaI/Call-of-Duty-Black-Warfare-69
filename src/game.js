@@ -810,7 +810,7 @@ export class Game {
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
     this.hud.setScope(scoped ? optic.overlay : null);
-    W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on);
+    W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on) && !(sdm && sdm.hidesGun());
     W.vm.smoke.points.visible = W.vm.root.visible;
     if (!W.vm.root.visible) W.vm.smoke.update(dt); // (the smoke of the last shots goes on without the gun, out of sight)
     if (scoped) {

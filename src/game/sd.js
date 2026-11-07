@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BombModel } from './bomb.js';
+import { buildHands } from '../weapons/models.js';
 
 // =============================================================================
 // Search and Destroy. Two teams, one bomb, no respawn within a round:
@@ -34,6 +35,81 @@ class HeldInput {
   get dy() { return this.inp.dy; }
   get suppress() { return this.inp.suppress; }
   set suppress(v) { this.inp.suppress = v; }
+}
+
+// Planting and defusing as you see it yourself: the gun goes away, you look down at the bomb on the floor in
+// front of you, the left hand steadies it and the right one types; defusing ends with the red wire torn out.
+// The hands are in the world, next to the bomb everybody else sees.
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+class HandsAtWork {
+  constructor(game) {
+    // a gloved hand, fingers along -Z, and a forearm from the wrist that is turned toward its shoulder every frame
+    const M = game.weapons.vm.mats;
+    const hand = (mirror) => {
+      const g = new THREE.Group();
+      const add = (geo, mat, x, y, z, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m; };
+      add(new THREE.BoxGeometry(0.082, 0.03, 0.088), M.glove, 0, 0, 0);
+      for (const [x, L] of [[-0.028, 0.05], [-0.0095, 0.06], [0.0095, 0.058], [0.028, 0.048]]) add(new THREE.CapsuleGeometry(0.0095, L * 0.7, 4, 8), M.glove, x, -0.006, -0.044 - L * 0.42, Math.PI / 2 + 0.3);
+      add(new THREE.CapsuleGeometry(0.0105, 0.03, 4, 8), M.glove, 0.048 * mirror, -0.006, -0.012, Math.PI / 2).rotation.z = 0.6 * mirror;
+      const arm = new THREE.Group(); arm.position.set(0, 0.004, 0.046); g.add(arm);
+      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.045, 12), M.glove); cuff.position.y = 0.02; arm.add(cuff);
+      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.053, 0.36, 12), M.sleeve); sleeve.position.y = 0.22; arm.add(sleeve);
+      return { g, arm };
+    };
+    const hl = hand(1), hr = hand(-1);
+    this.left = hl.g; this.right = hr.g;
+    this.arms = [{ open: hl.g, arm: hl.arm }, { open: hr.g, arm: hr.arm }];
+    void buildHands;
+    this.inv = new THREE.Matrix4();
+    this.root = new THREE.Group();
+    this.root.add(this.left, this.right);
+    this.root.visible = false;
+    game.scene.add(this.root);
+    this.k = 0;
+  }
+  dispose() { if (this.root.parent) this.root.parent.remove(this.root); }
+  // w: the work under way (or null), bomb: the BombModel, p: the player
+  update(dt, w, bomb, p, cam) {
+    const on = !!(w && w.ent === p);
+    this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.3 : -dt / 0.2)));
+    this.root.visible = this.k > 0.01;
+    if (!this.root.visible) { bomb.wires[0].position.set(0, 0, 0); return; }
+    const R = bomb.root;
+    R.updateWorldMatrix(true, false);
+    // toward the player, sideways and up, from the bomb's point of view
+    const yaw = R.rotation.y, toP = _a.set(Math.sin(yaw), 0, Math.cos(yaw)), side = _b.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    const from = _c.copy(cam.position).addScaledVector(toP, -0.15).add(_v.set(0, -0.5, 0)); // (where the hands come from and go back to)
+    const ease = this.k * this.k * (3 - 2 * this.k);
+    // left hand flat on the case, fingers forward and a little right
+    const L = this.left;
+    _w.copy(R.position).addScaledVector(side, -0.15).addScaledVector(toP, 0.02).add(_v.set(0, 0.09, 0));
+    L.position.copy(from).lerp(_w, ease);
+    L.rotation.set(-0.3, yaw + 0.55, 0, 'YXZ');
+    // right hand: over the key being pressed, down onto it while it is lit; defusing ends with the red wire
+    const Rh = this.right;
+    let target;
+    if (w && w.kind === 'defuse' && w.t > w.need - 1.3) {
+      const u = Math.min(1, (w.t - (w.need - 1.3)) / 1.1), pull = Math.max(0, (u - 0.45) / 0.55);
+      target = _w.set(-0.035, 0.08 + pull * 0.09, 0.0).applyMatrix4(R.matrixWorld).addScaledVector(toP, 0.06 + pull * 0.1);
+      bomb.wires[0].position.set(0, pull * 0.08, pull * 0.1);
+      bomb.wires[0].visible = pull < 0.98;
+    } else {
+      const key = w && bomb.lit >= 0 ? bomb.lit : w && w.key >= 0 ? w.key : 4;
+      bomb.keyTop(key, _w).applyMatrix4(R.matrixWorld);
+      target = _w.addScaledVector(toP, 0.07).addScaledVector(side, 0.035).add(_v.set(0, bomb.lit >= 0 ? 0.03 : 0.06, 0));
+    }
+    Rh.position.copy(from).lerp(target, ease);
+    Rh.rotation.set(-0.55, yaw - 0.45, 0, 'YXZ');
+    // the forearms: from the wrist back to a shoulder a little below and beside the eyes
+    const e = cam.matrixWorld.elements;
+    this.arms.forEach(({ open, arm }, i) => {
+      const s = i === 0 ? -1 : 1;
+      _w.set(cam.position.x + e[0] * 0.4 * s - e[4] * 0.45 + e[8] * 0.12, cam.position.y + e[1] * 0.4 * s - e[5] * 0.45 + e[9] * 0.12, cam.position.z + e[2] * 0.4 * s - e[6] * 0.45 + e[10] * 0.12);
+      open.updateWorldMatrix(true, false);
+      _w.applyMatrix4(this.inv.copy(open.matrixWorld).invert()).sub(arm.position).normalize();
+      arm.quaternion.setFromUnitVectors(UP, _w);
+    });
+  }
 }
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -77,10 +153,23 @@ export class SearchDestroy {
     this.packed.root.scale.setScalar(0.92);
     this.spectate = null; this.specT = 0;
     this.el = null;
+    this.hands = new HandsAtWork(game);
+  }
+
+  // while you plant or defuse: no gun in your hands, and your eyes on the bomb
+  hidesGun() { return this.hands.root.visible; }
+  lookAtWork(dt) {
+    const g = this.game, p = g.player, w = this.work;
+    if (!w || w.ent !== p) return;
+    const B = this.bomb.root.position, eye = p.pos.y + (p.eyeH ?? 1.05);
+    const yaw = Math.atan2(-(B.x - p.pos.x), -(B.z - p.pos.z)), pitch = -Math.atan2(eye - B.y, Math.max(0.2, flat(p.pos, B)));
+    let dy = yaw - p.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    const k = 1 - Math.exp(-7 * dt);
+    p.yaw += dy * k; p.pitch += (Math.max(-1.25, pitch + 0.3) - p.pitch) * k;
   }
 
   dispose() {
-    this.bomb.dispose(); this.packed.dispose();
+    this.bomb.dispose(); this.packed.dispose(); this.hands.dispose();
     document.getElementById('sb-timer').classList.remove('bomb');
     if (this.el) { this.el.remove(); this.el = null; }
     if (this.marks) for (const m of this.marks) m.remove();
@@ -114,6 +203,7 @@ export class SearchDestroy {
     this.used.clear();
     this.planted = null; this.dropped = null; this.work = null; this.defuser = null; this.fetcher = null;
     this.bomb.root.visible = false; this.bomb.setLed(false); this.bomb.setCode('');
+    this.bomb.wires[0].visible = true; this.bomb.wires[0].position.set(0, 0, 0);
     this.spectate = null;
     if (g.playerCorpse) g.playerCorpse.setVisible(false);
     // everybody up again, at his side's spawns
@@ -154,7 +244,7 @@ export class SearchDestroy {
     const g = this.game, site = this.inSite(ent) || this.sites[0];
     // in front of his feet, on the floor
     const yaw = ent.isPlayer ? ent.yaw : ent.aimYaw;
-    const x = ent.pos.x - Math.sin(yaw) * 0.55, z = ent.pos.z - Math.cos(yaw) * 0.55;
+    const x = ent.pos.x - Math.sin(yaw) * 0.8, z = ent.pos.z - Math.cos(yaw) * 0.8; // (in front of the knees)
     const fy = g.col.floorBelow(x, z, 0.12, ent.pos.y + 0.6, ent.pos.y - 2);
     const ok = Number.isFinite(fy) && Math.abs(fy - ent.pos.y) < 0.6 && g.col.lineClear(ent.pos.x, ent.pos.y + 0.3, ent.pos.z, x, fy + 0.1, z);
     return { site, pos: ok ? new THREE.Vector3(x, fy, z) : new THREE.Vector3(ent.pos.x, ent.pos.y, ent.pos.z), yaw };
@@ -306,6 +396,8 @@ export class SearchDestroy {
       }
     }
     this.showCarried();
+    this.lookAtWork(dt);
+    this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera);
   }
 
   // the bomb on the carrier's back, or on the floor where he fell
