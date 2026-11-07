@@ -8,7 +8,7 @@ Apart from that one map file, the game has no model, texture or audio files: eve
 
 ![Wingman on Sirocco: the flag on the rug stand in the domed market hall is being taken, the blue flag climbs the pole, a teammate in the doorway](docs/screenshots/wingman-sirocco.jpg)
 
-**Current version: [0.6.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
+**Current version: [0.7.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
 
 ## Features
 
@@ -120,18 +120,21 @@ A battle royale for you and 19 bots on Serena, an island with a town, a harbor, 
 
 ### Gun Game
 
-Everyone for themselves, and every kill puts the next weapon in your hands. The ladder has 15 levels: 14 guns from the P-11 Sidearm up to the Titan .50, and then the knife. Whoever gets a kill with the knife wins the match.
+Everyone for themselves, and every kill puts the next weapon in your hands. The ladder has 15 levels: 14 guns from the P-11 Sidearm up to the Titan .50, and then the knife. Whoever gets a kill with the knife wins the match, and that last stab is played out as a finisher.
 
 - **Melee:** a knife kill doesn't move the killer up. It takes one level away from the victim instead, unless the killer is on the last level. Killing yourself costs a level too.
 - **The knife:** two stabs on someone at full health, or one on a bot from behind. It's the only thing you hold on the last level, and the left mouse button stabs with it.
-- **Skins:** every new weapon comes with a random skin, the standard look included.
+- **Skins and sights:** every new weapon comes with a random skin, the standard look included, and a random sight from the ones it takes. Handguns keep their iron sights.
+- **The winning stab** becomes one of the finishers done with a knife, picked at random from those that have room there, and the knife in it wears the skin of the winner's knife. A bot wins with one too, and you watch it from the side. The rest of the match stands still, and the win counts when the scene is over. Over the network everybody sees the same scene.
 - **No loadout:** the ladder decides what you carry. The HUD shows your level, the next weapon and who is ahead, and the scoreboard shows everyone's level and weapon.
 - **Unlimited ammo:** the reserve never runs out, so you only ever reload.
 - **Bots** climb the same ladder and come at you with the knife when they get there. It works on all eleven maps, and with your friends over the network.
 
-| Who is ahead, and with what | The last level |
-|---|---|
-| ![The Gun Game scoreboard with level, weapon, kills and deaths for every player](docs/screenshots/gungame-board.jpg) | ![The knife in the Flüssigchrom skin in mid-stab, level 15 of 15](docs/screenshots/gungame-knife.jpg) |
+| Who is ahead, and with what | The last level | The winning stab |
+|---|---|---|
+| ![The Gun Game scoreboard with level, weapon, kills and deaths for every player](docs/screenshots/gungame-board.jpg) | ![The knife in the Flüssigchrom skin in mid-stab, level 15 of 15](docs/screenshots/gungame-knife.jpg) | ![The winning stab of a Gun Game match played out as a finisher, with black bars and the name of the scene](docs/screenshots/gungame-finisher.jpg) |
+
+![Gun Game, level 9 of 15: the AR-77 in the Plasma skin with the TAC-3 sight it drew, aimed at a soldier](docs/screenshots/gungame-sights.jpg)
 
 ### Weapon skins
 
@@ -164,7 +167,7 @@ Every weapon has its own skin in the loadout menu: a row of small buttons under 
 
 ### Finishers
 
-Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end. It works both ways: a bot that gets behind you when you are down or low on health finishes you with the same scenes, and you watch it happen.
+Press `V` next to a hurt enemy for one of 26 staged kills: 14 on enemies who are standing and 12 on enemies who are down. Each one is a short scene with its own camera, and it comes back to first person at the end. It works both ways: a bot that gets behind you when you are down or low on health finishes you with the same scenes, and you watch it happen. Over the local network everybody sees the same scene, and in Gun Game the winning stab plays one of the knife finishers by itself.
 
 - **Bots** can be finished from any side once they are hurt enough, and from any side when they are lying on the ground.
 - **Players** can only be finished from behind, by bots and by other players alike: on their feet when their health is low enough, on the ground as well. A bot walks around someone lying there to get to their back.
@@ -181,7 +184,7 @@ When a bot gets you, you see it from the scene's camera:
 
 ### Fast movement
 
-Sprint, press Shift again for a tactical sprint, and drop straight into a slide, shooting all the way. Jump out of the slide to cancel it and keep your speed. You can also dive, wall-jump up to three times, or hit crouch in mid-air to lay flat and land prone. The only time you can't shoot is while climbing.
+Sprint, press Shift again for a tactical sprint, and drop straight into a slide, shooting all the way. You can reload on the run too: out of a tactical sprint you drop to a plain sprint for it and keep going. Jump out of the slide to cancel it and keep your speed. You can also dive, wall-jump up to three times, or hit crouch in mid-air to lay flat and land prone. The only time you can't shoot is while climbing.
 
 Prone is a real stance too. You can turn a full 360°, and looking behind you rolls the character onto their back with the legs in view. Shift gets you up and running immediately.
 
@@ -202,11 +205,16 @@ Jump at almost any edge. Low cover is vaulted in one motion. For ledges above he
 ![Firefight on Drydock with the in-game HUD: a soldier goes down while the rifle fires](docs/screenshots/firefight-hud.jpg)
 
 - Automatic weapons kill in about 250 to 350 milliseconds at close range, and their recoil follows patterns you can learn.
+- Every round slams the gun back at you and it springs forward again: a light gun a little, a heavy one hard, from the hip harder than when you aim. Aimed, the muzzle hardly rises, so the sights stay on the target. Behind the magnified prism, TAC-3 and thermal sights, which sit close to the eye, it slams back half as far.
 - Damage falloff, headshot and limb multipliers, and bullets that can go through thin cover.
 - Quick aiming that works while crouching, sliding and crawling.
 - Reloads with more going on than "mag out, mag in". The rifle's tactical reload brings in the fresh magazine next to the old one and tosses the old one away. An empty reload flicks the magazine out, slaps it home and racks the bolt.
 - Every reload style is animated separately: magazine, belt-fed box, bolt action, shotgun shells, revolver and pistol.
 - Inspect your weapon with `I`.
+
+| Every round slams the gun back | Mounted lying down on a low wall |
+|---|---|
+| ![Aiming through the open ring sight of the AR-77 while it fires: the muzzle flash beside the sight, the empty case flying out to the right](docs/screenshots/aim-kick.jpg) | ![Lying down behind a low wall with the rifle resting on it, the HUD saying it is mounted](docs/screenshots/prone-mount.jpg) |
 
 | Two magazines in hand | Old magazine tossed away |
 |---|---|
@@ -239,7 +247,7 @@ Fourteen weapons, each with its own stats and handling, plus the knife at the en
 
 Fourteen optics, from iron sights and red dots through 2x to 12x scopes to thermal sights. With iron sights the shot goes where the tip of the front post points, and the rear sight is an open notch or ring, so the target stays in view. Scopes use a picture-in-picture lens. Which ones are available in the loadout menu depends on the weapon.
 
-Aiming against an edge rests the weapon on it for less recoil, and at corners you lean out.
+Aiming against an edge rests the weapon on it for less recoil, and at corners you lean out. Lying down you can rest it on low cover about as high as your eyes, propping yourself up a little, and lean out past the edge of a wall.
 
 ![Loadout menu with weapon stats, the skin buttons and a 3D preview of the selected rifle in the Plasma skin](docs/screenshots/menu-loadout.jpg)
 
@@ -303,9 +311,9 @@ Low-resolution textures painted in code, in the spirit of late-'90s PC shooters,
 
 There are two downloads on the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases). Neither needs anything installed, Node.js included.
 
-**Windows version** (`Black-Warfare-69-0.6.0-Windows.zip`): extract it and double-click `Black Warfare 69.exe`. The game is a program of its own, with its own window, `F11` for full screen, **BEENDEN** in the menu to quit, and the multiplayer server built in. On laptops with two graphics chips it uses the stronger one. The download is about 140 MB because it brings its own browser engine and Node.js along ([Electron](https://www.electronjs.org/)). Windows may warn the first time about an app from an unknown publisher: click "More info", then "Run anyway".
+**Windows version** (`Black-Warfare-69-0.7.0-Windows.zip`): extract it and double-click `Black Warfare 69.exe`. The game is a program of its own, with its own window, `F11` for full screen, **BEENDEN** in the menu to quit, and the multiplayer server built in. On laptops with two graphics chips it uses the stronger one. The download is about 140 MB because it brings its own browser engine and Node.js along ([Electron](https://www.electronjs.org/)). Windows may warn the first time about an app from an unknown publisher: click "More info", then "Run anyway".
 
-**Browser version** (`Black-Warfare-69-0.6.0-Browser.zip`, about 1 MB): extract it and double-click `index.html`. The game runs straight from the disk in Chrome, Edge or Firefox, alone against bots, with no server and no internet connection. For multiplayer the browser needs the game's server: open the address that the lobby of a computer running the Windows version shows, or run `start.bat` in the folder (that one needs [Node.js](https://nodejs.org/)).
+**Browser version** (`Black-Warfare-69-0.7.0-Browser.zip`, about 1 MB): extract it and double-click `index.html`. The game runs straight from the disk in Chrome, Edge or Firefox, alone against bots, with no server and no internet connection. For multiplayer the browser needs the game's server: open the address that the lobby of a computer running the Windows version shows, or run `start.bat` in the folder (that one needs [Node.js](https://nodejs.org/)).
 
 Any browser needs WebGL 2. Chrome or Edge is recommended. On a very weak computer the game picks the Toaster level by itself; in a browser, hardware acceleration has to be on.
 

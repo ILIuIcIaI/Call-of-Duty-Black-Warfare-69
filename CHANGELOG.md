@@ -4,6 +4,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
 ### Changed
 
 - You can shoot at any time now, except while climbing. In a slide the gun stayed down until the slide was over; now it comes up at once and fires. Rolling over while lying down no longer stops you either, and a single press of the trigger while sprinting is no longer lost: the shot goes off as soon as the gun is up.
@@ -303,6 +305,9 @@ The first release.
 - Main menu, pause menu, settings and controls overview (in German).
 - HUD with minimap, score bar, kill feed, ammo counter and hit markers.
 
+[0.7.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.7.0
+[0.6.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.6.0
+[0.5.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.2.0

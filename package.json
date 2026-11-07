@@ -1,6 +1,6 @@
 {
   "name": "black-warfare-69",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Military FPS for Windows and the browser with bots, Warzone, Gun Game and LAN multiplayer. Models, textures, animations and sounds are generated in code, apart from the map file of PoolDay.",
   "scripts": {
