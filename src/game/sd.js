@@ -18,6 +18,7 @@ export const SD = {
   BLAST: 9, BLAST_FAR: 22, SIZES: [4, 5, 6],
 };
 const SITES = ['A', 'B'];
+const SIT_OUT = 'AB DER NÄCHSTEN RUNDE BIST DU DABEI';
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _m4 = new THREE.Matrix4(), UPY = new THREE.Vector3(0, 1, 0);
 // (on a back: the case flat against it, the panel facing out)
@@ -240,7 +241,10 @@ export class SearchDestroy {
   apply(s) {
     if (!s || this.auth) return;
     const g = this.game;
-    if (s.r > this.round || (this.phase === 'wait' && s.r >= 1)) this.followRound(s);
+    if (s.r > this.round || (this.phase === 'wait' && s.r >= 1)) {
+      this.followRound(s);
+      if (s.ph !== 'freeze') this.sitOut(); // (in while a round runs: from the next one)
+    }
     this.attack = s.a; this.score = [s.sc[0], s.sc[1]]; this.final = s.f;
     const car = s.c ? this.byId(s.c) : null;
     if (car !== this.carrier) { this.carrier = car; if (car === g.player && s.ph !== 'post') g.hud.popup('', 'DU HAST DIE BOMBE'); }
@@ -317,9 +321,26 @@ export class SearchDestroy {
     this.carrier = null;
     this.announceRound();
   }
+  // Late into the match (or back from the lobby) while a round runs: nobody comes back to life in a round, you
+  // neither. You watch your side, with no body anywhere (the others never see you up), and are in from the next one.
+  sitOut() {
+    const g = this.game, p = g.player;
+    this.benched = true;
+    if (!p.alive) return;
+    p.alive = false; p.health = 0;
+    g.lastKiller = null; g.deathCamT = 3; // (straight to a teammate)
+    if (g.playerCorpse) g.playerCorpse.setVisible(false);
+    g.weapons.vm.root.visible = false;
+    const ds = document.getElementById('death-screen');
+    ds.classList.remove('hidden'); ds.classList.add('watching');
+    document.getElementById('death-by').textContent = '';
+    document.getElementById('death-timer').textContent = SIT_OUT;
+    g.hud.message('<span style="font-size:26px;letter-spacing:5px">' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNGSRUNDE' : 'RUNDE ' + this.round + ' / ' + SD.ROUNDS) + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">DIE RUNDE LÄUFT SCHON · ' + SIT_OUT + '</div>', 5);
+  }
   resetRound() {
     const g = this.game, m = this.match;
     this.phase = 'freeze'; this.left = SD.FREEZE;
+    this.benched = false;
     this.result = null; this.remoteWork = null; this.pending = null;
     this.used.clear();
     this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1);

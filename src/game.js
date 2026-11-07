@@ -382,7 +382,7 @@ export class Game {
     this.state = 'playing';
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : cfg.mode === 'wing' ? 'WINGMAN' : cfg.mode === 'sd' ? 'SEARCH & DESTROY' : 'TEAM DEATHMATCH';
-    document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' || cfg.mode === 'sd' ? 'none' : '';
+    document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' || cfg.mode === 'sd' || cfg.mode === 'gun' ? 'none' : ''; // (no loadout there)
     if (this.onMatchStart) this.onMatchStart(cfg);
   }
 
@@ -777,7 +777,8 @@ export class Game {
       W.update(dt, held, p);
     } else if (sdm) {
       const dtEl = document.getElementById('death-timer');
-      if (!sdm.spectate && dtEl.textContent !== 'TOT BIS ZUR NÄCHSTEN RUNDE') dtEl.textContent = 'TOT BIS ZUR NÄCHSTEN RUNDE';
+      const line = sdm.benched ? 'AB DER NÄCHSTEN RUNDE BIST DU DABEI' : 'TOT BIS ZUR NÄCHSTEN RUNDE';
+      if (!sdm.spectate && dtEl.textContent !== line) dtEl.textContent = line;
     } else if (!br) {
       this.respawnT -= dt;
       document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
