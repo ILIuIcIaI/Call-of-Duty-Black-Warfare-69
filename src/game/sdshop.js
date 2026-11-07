@@ -170,14 +170,25 @@ export class Shop {
     return p;
   }
   // a gun put down at a spot (bought over, swapped): lying on its side on the floor
-  dropItem(id, pos, yaw = 0) {
-    const g = this.game, y = g.col.floorBelow(pos.x, pos.z, 0.1, pos.y + 1, pos.y - 20);
+  dropItem(id, pos, yaw = 0, nid = null, exact = false) {
+    const g = this.game, x = exact ? pos.x : pos.x - Math.sin(yaw) * 0.6, z = exact ? pos.z : pos.z - Math.cos(yaw) * 0.6, y = g.col.floorBelow(x, z, 0.1, pos.y + 1, pos.y - 20);
     const obj = this.proto(id).clone(true);
-    obj.position.set(pos.x - Math.sin(yaw) * 0.6, (Number.isFinite(y) ? y : pos.y) + 0.04, pos.z - Math.cos(yaw) * 0.6);
+    obj.position.set(x, (Number.isFinite(y) ? y : pos.y) + 0.04, z);
     obj.rotation.set(0, yaw + Math.PI / 2, Math.PI / 2);
     g.scene.add(obj);
-    this.items.push({ id, obj, own: true });
+    const it = { id, obj, own: true, nid: nid || this.nidFor(), yaw };
+    this.items.push(it);
+    if (!nid) this.announce(it);
   }
+  nidFor() { this.nidN = (this.nidN || 0) + 1; return 'w' + this.sd.round + '.' + (this.sd.idOf(this.game.player) || 'me') + '.' + this.nidN; }
+  announce(it) {
+    if (!this.sd.net) return;
+    const P = it.at || it.obj.position;
+    this.sd.send('wdrop', { n: it.nid, id: it.id, p: [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)], y: +(it.yaw || 0).toFixed(2) });
+  }
+  // another PC put one down / somebody took one
+  netDrop(m) { if (!this.items.some((i) => i.nid === m.n)) this.dropItem(m.id, new THREE.Vector3(m.p[0], m.p[1] + 0.3, m.p[2]), m.y || 0, m.n, true); }
+  netTake(nid) { const it = this.items.find((i) => i.nid === nid); if (it) this.takeItem(it, true); }
   // somebody fell: the gun out of his hands is the one to pick up (a player drops his primary if he has one)
   dropFrom(c) {
     const g = this.game;
@@ -186,10 +197,11 @@ export class Shop {
     if (c === g.player) { const w = g.weapons.slots[0] || g.weapons.slots[1]; this.pendingPlayer = w && !w.def.melee ? w.def.id : null; return; }
     const id = c.wdef && c.wdef.id, s = c.soldier && c.soldier.weaponDrop;
     if (!id || WEAPONS[id].melee) return;
-    if (s && s.obj) this.items.push({ id, obj: s.obj, soldier: c.soldier });
+    if (s && s.obj) { const it = { id, obj: s.obj, soldier: c.soldier, nid: this.nidFor(), at: c.pos.clone() }; this.items.push(it); this.announce(it); }
     else this.dropItem(id, c.pos, c.aimYaw || 0);
   }
-  takeItem(it) {
+  takeItem(it, fromNet = false) {
+    if (!fromNet && this.sd.net && it.nid) this.sd.net.send({ t: 'take', nid: it.nid });
     const i = this.items.indexOf(it);
     if (i >= 0) this.items.splice(i, 1);
     if (it.obj && it.obj.parent) it.obj.parent.remove(it.obj);
@@ -213,7 +225,7 @@ export class Shop {
     const g = this.game, sd = this.sd, p = g.player;
     if (sd.phase === 'live') this.buyLeft = Math.max(0, this.buyLeft - dt);
     const corpse = g.playerCorpse;
-    if (this.pendingPlayer && corpse && corpse.weaponDrop && corpse.weaponDrop.obj) { this.items.push({ id: this.pendingPlayer, obj: corpse.weaponDrop.obj, soldier: corpse }); this.pendingPlayer = null; }
+    if (this.pendingPlayer && corpse && corpse.weaponDrop && corpse.weaponDrop.obj) { const it = { id: this.pendingPlayer, obj: corpse.weaponDrop.obj, soldier: corpse, nid: this.nidFor(), at: p.pos.clone() }; this.items.push(it); this.announce(it); this.pendingPlayer = null; }
     // you: over a gun whose slot is empty takes it, F swaps for the one in your hands
     if (p.alive) {
       const it = this.nearest(p, 1.3);

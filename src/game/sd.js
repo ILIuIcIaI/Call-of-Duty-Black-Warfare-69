@@ -181,6 +181,72 @@ export class SearchDestroy {
   }
 
   role(team) { return team === this.attack ? 'attack' : 'defend'; }
+
+  // ---- over the network the PC with the bots decides the rounds and tells the others (snapshot); they follow it,
+  // and what their own player does to the bomb they say as an event (plant, defuse, pick, work)
+  get net() { const n = this.game.net; return n && n.inMatch ? n : null; }
+  get auth() { const n = this.net; return !n || n.isAuth; }
+  idOf(c) { const g = this.game; return !c ? null : c === g.player ? (this.net ? this.net.you : 'me') : c.netId || null; }
+  byId(id) { const g = this.game, n = this.net; return !id || !n ? null : id === n.you ? g.player : n.byId.get(id) || null; }
+  changed() { this.dirty = true; }
+  send(a, extra = {}) { if (this.net) this.net.send({ t: 'ev', k: 'sd', a, ...extra }); }
+  snapshot() {
+    const P = this.planted, W = this.work || this.remoteWork, r2 = (v) => +v.toFixed(2);
+    return { r: this.round, ph: this.phase, l: +this.left.toFixed(1), sc: [this.score[0], this.score[1]], a: this.attack, c: this.idOf(this.carrier),
+      d: this.dropped ? [r2(this.dropped.x), r2(this.dropped.y), r2(this.dropped.z)] : null,
+      p: P ? { s: P.site.id, x: r2(P.pos.x), y: r2(P.pos.y), z: r2(P.pos.z), w: r2(P.yaw), l: +P.left.toFixed(1), ok: !!P.done, by: this.idOf(P.by) } : null,
+      w: W && W.ent ? { i: this.idOf(W.ent), k: W.kind, t: +(W.t || 0).toFixed(1) } : null,
+      res: this.result || null, f: this.final };
+  }
+  // (sent when something changes, and once a second for the clocks; the end with the winner)
+  sync(dt) {
+    const n = this.net;
+    if (!n || !n.isAuth) return;
+    this.syncT = (this.syncT || 0) - dt;
+    if (!this.dirty && this.syncT > 0) return;
+    this.dirty = false; this.syncT = 1;
+    const s = this.snapshot();
+    n.send(this.phase === 'over' && this.final >= 0 ? { t: 'obj', s, win: this.final } : { t: 'obj', s });
+  }
+  // a PC that doesn't run the bots: the round as the one that does sees it
+  apply(s) {
+    if (!s || this.auth) return;
+    const g = this.game;
+    if (s.r > this.round || (this.phase === 'wait' && s.r >= 1)) this.followRound(s);
+    this.attack = s.a; this.score = [s.sc[0], s.sc[1]]; this.final = s.f;
+    const car = s.c ? this.byId(s.c) : null;
+    if (car !== this.carrier) { this.carrier = car; if (car === g.player && s.ph !== 'post') g.hud.popup('', 'DU HAST DIE BOMBE'); }
+    this.dropped = s.d ? new THREE.Vector3(s.d[0], s.d[1], s.d[2]) : null;
+    if (s.p && !this.planted) {
+      const site = this.sites.find((x) => x.id === s.p.s) || this.sites[0], by = this.byId(s.p.by);
+      if (this.work && this.work.ent === g.player) this.stopWork();
+      this.showPlant({ site, pos: new THREE.Vector3(s.p.x, s.p.y, s.p.z), yaw: s.p.w }, by);
+      if (by === g.player) this.shop.pay(g.player, ECON.PLANT, 'BOMBE GELEGT');
+    }
+    if (this.planted && s.p) { this.planted.left = s.p.l; this.planted.done = s.p.ok; }
+    const w = s.w ? this.byId(s.w.i) : null;
+    this.remoteWork = w && w !== g.player ? { ent: w, kind: s.w.k, t: s.w.t } : null;
+    if (s.ph === 'live' && this.phase === 'freeze') g.audio.play('spawn', { vol: 0.6 });
+    if (s.ph === 'post' && s.res && this.resultRound !== s.r) { this.resultRound = s.r; this.roundOver(s.res.team, s.res.how, this.byId(s.res.by)); }
+    this.phase = s.ph; this.left = s.l;
+  }
+  // what the others say their player did; only the PC with the bots decides on it (the rest is to see)
+  onNet(m) {
+    const g = this.game, e = this.byId(m.from);
+    if (m.a === 'wdrop') { this.shop.netDrop(m); return; }
+    if (m.a === 'work') { this.remoteWork = m.on && e ? { ent: e, kind: m.kind, t: 0 } : null; if (this.auth) this.changed(); return; }
+    if (!this.auth || !e) return;
+    if (m.a === 'plant' && this.phase === 'live' && e === this.carrier && m.p) {
+      const site = this.sites.find((x) => x.id === m.s) || this.inSite(e) || this.sites[0];
+      this.plantAt(e, { site, pos: new THREE.Vector3(m.p[0], m.p[1], m.p[2]), yaw: +m.y || 0 });
+    } else if (m.a === 'defuse' && this.phase === 'planted' && !this.planted.done && e.team !== this.attack && flat(e.pos, this.planted.pos) < 2.5) {
+      this.remoteWork = null;
+      this.defuse(e);
+    } else if (m.a === 'pick' && this.phase === 'live' && this.dropped && e.team === this.attack && !this.carrier) {
+      this.carrier = e; this.dropped = null; this.fetcher = null; this.changed();
+      g.audio.play('pouch', { pos: e.pos, vol: 0.9 });
+    }
+  }
   holdsPlayer() { return this.phase === 'freeze' || (!!this.work && this.work.ent === this.game.player); }
   heldInput(inp) { const H = this.held || (this.held = new HeldInput()); H.inp = inp; return H; }
   aliveOf(team) { let n = 0; for (const c of this.game.combatants) if (c.alive && c.team === team) n++; return n; }
@@ -192,6 +258,11 @@ export class SearchDestroy {
   // ---- spawns: each one once per round, the order mixed
   spawnFor(ent) {
     const list = this.spawnList[this.role(ent.team)];
+    if (this.net) {
+      const side = this.game.combatants.filter((c) => c.team === ent.team).map((c) => [c.isBot || (c.remote && this.net.cfg && (this.net.cfg.roster.find((r) => r.id === c.netId) || {}).bot) ? 1 : 0, this.idOf(c) || '']).sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : 1)).map((x) => x[1]);
+      const p = list[Math.max(0, side.indexOf(this.idOf(ent))) % list.length];
+      return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, team: ent.team };
+    }
     const free = list.filter((p) => !this.used.has(p));
     const p = (free.length ? free : list)[(Math.random() * (free.length || list.length)) | 0];
     this.used.add(p);
@@ -200,11 +271,28 @@ export class SearchDestroy {
 
   // ---- rounds
   startRound() {
-    const g = this.game, m = this.match;
+    const g = this.game;
     this.round++;
     if (this.round === SD.HALF + 1) this.attack = 1 - this.attack;
     if (this.round === SD.ROUNDS + 1) this.attack = Math.random() < 0.5 ? 0 : 1; // (3 : 3: the decider, sides by lot)
+    this.resetRound();
+    const att = g.combatants.filter((c) => c.team === this.attack), up = att.filter((c) => c.alive), from = up.length ? up : att;
+    this.carrier = from.length ? from[(Math.random() * from.length) | 0] : null;
+    this.targetSite = this.sites[(Math.random() * this.sites.length) | 0];
+    this.changed();
+    this.announceRound();
+    if (this.carrier === g.player) g.hud.popup('', 'DU HAST DIE BOMBE');
+  }
+  followRound(s) {
+    this.round = s.r; this.attack = s.a;
+    this.resetRound();
+    this.carrier = null;
+    this.announceRound();
+  }
+  resetRound() {
+    const g = this.game, m = this.match;
     this.phase = 'freeze'; this.left = SD.FREEZE;
+    this.result = null; this.remoteWork = null; this.pending = null;
     this.used.clear();
     this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1);
     this.botsBought = false;
@@ -219,19 +307,26 @@ export class SearchDestroy {
       if (c.remote) continue;
       if (c === g.player) { g.spawnPlayer(); g.weapons.vm.root.visible = true; } else { m.spawn(c); this.shop.armBot(c); c.hold = true; c.busy = false; }
     }
-    const att = g.combatants.filter((c) => c.team === this.attack && c.alive);
-    this.carrier = att.length ? att[(Math.random() * att.length) | 0] : null;
-    this.targetSite = this.sites[(Math.random() * this.sites.length) | 0];
-    const mine = this.role(g.player.team) === 'attack';
+  }
+  announceRound() {
+    const g = this.game, mine = this.role(g.player.team) === 'attack';
     const half = this.round === SD.HALF + 1 ? '<div style="font-size:15px;letter-spacing:4px;opacity:.85">SEITENWECHSEL</div>' : '';
     const title = this.round > SD.ROUNDS ? 'ENTSCHEIDUNGSRUNDE' : 'RUNDE ' + this.round + ' / ' + SD.ROUNDS;
     g.hud.message(half + '<span style="font-size:26px;letter-spacing:5px">' + title + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">' + (mine ? 'ANGRIFF · LEGT DIE BOMBE AUF A ODER B' : 'VERTEIDIGUNG · HALTET A UND B') + '</div>', SD.FREEZE - 0.5);
-    if (this.carrier === g.player) g.hud.popup('', 'DU HAST DIE BOMBE');
   }
 
-  endRound(team, how) {
-    const g = this.game;
+  endRound(team, how, by = null) {
     this.score[team]++;
+    this.result = { team, how, by: this.idOf(by) };
+    this.resultRound = this.round;
+    if (this.score[team] > SD.ROUNDS / 2 || this.round > SD.ROUNDS) this.final = team;
+    this.changed();
+    this.roundOver(team, how, by);
+  }
+  roundOver(team, how, by) {
+    const g = this.game;
+    if (!this.auth && how === 'boom' && this.planted) this.explode();
+    if (!this.auth && how === 'defused' && this.planted) { this.bomb.setLed('green'); this.bomb.setCode('-- --', '#7dff6a'); this.planted.done = true; if (by === g.player) this.shop.pay(g.player, ECON.DEFUSE, 'ENTSCHÄRFT'); }
     this.phase = 'post'; this.left = SD.POST;
     this.shop.endRound(team, how, !!this.planted);
     this.stopWork();
@@ -239,7 +334,6 @@ export class SearchDestroy {
     const why = how === 'boom' ? 'DIE BOMBE IST EXPLODIERT' : how === 'defused' ? 'DIE BOMBE WURDE ENTSCHÄRFT' : how === 'time' ? 'DIE ZEIT IST UM' : att ? 'ALLE VERTEIDIGER AUSGESCHALTET' : 'ALLE ANGREIFER AUSGESCHALTET';
     g.hud.message('<span style="font-size:30px;letter-spacing:5px;color:' + (mine ? 'var(--accent)' : 'var(--enemy)') + '">' + (mine ? 'RUNDE GEWONNEN' : 'RUNDE VERLOREN') + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">' + why + ' · ' + this.score[g.player.team] + ' : ' + this.score[1 - g.player.team] + '</div>', SD.POST - 0.3);
     g.audio.play(mine ? 'chargeFwd' : 'magDrop', { vol: 0.8 });
-    if (this.score[team] > SD.ROUNDS / 2 || this.round > SD.ROUNDS) this.final = team;
   }
 
   // ---- the bomb
@@ -248,6 +342,7 @@ export class SearchDestroy {
     const y = g.col.floorBelow(pos.x, pos.z, 0.15, pos.y + 1.2, pos.y - 30);
     this.dropped = new THREE.Vector3(pos.x, Number.isFinite(y) ? y : pos.y, pos.z);
     this.fetcher = null;
+    this.changed();
   }
 
   plantedAt(ent) {
@@ -260,18 +355,23 @@ export class SearchDestroy {
     return { site, pos: ok ? new THREE.Vector3(x, fy, z) : new THREE.Vector3(ent.pos.x, ent.pos.y, ent.pos.z), yaw };
   }
 
-  plant(ent) {
-    const g = this.game, at = this.plantedAt(ent);
+  plant(ent) { this.plantAt(ent, this.plantedAt(ent)); }
+  plantAt(ent, at) {
+    this.showPlant(at, ent);
+    this.shop.pay(ent, ECON.PLANT, 'BOMBE GELEGT');
+    this.changed();
+  }
+  showPlant(at, ent) {
+    const g = this.game;
     this.planted = { site: at.site, pos: at.pos, yaw: at.yaw, left: SD.BOMB, by: ent };
-    this.carrier = null; this.dropped = null;
+    this.carrier = null; this.dropped = null; this.pending = null;
     this.phase = 'planted';
     this.beepT = 0;
     this.bomb.root.position.copy(at.pos); this.bomb.root.rotation.set(0, at.yaw, 0);
     this.bomb.root.visible = true; this.bomb.setLed(true); this.bomb.setCode('ARMED', '#ff5a4a');
     this.defuser = null;
-    this.shop.pay(ent, ECON.PLANT, 'BOMBE GELEGT');
     g.audio.play('chargeFwd', { pos: at.pos, vol: 1.2, rate: 0.7 });
-    const mine = ent.team === g.player.team;
+    const mine = (ent ? ent.team : this.attack) === g.player.team;
     g.hud.message('<span style="font-size:24px;letter-spacing:4px;color:' + (mine ? 'var(--accent)' : 'var(--enemy)') + '">BOMBE GELEGT · ' + at.site.id + '</span>', 2.6);
   }
 
@@ -281,7 +381,7 @@ export class SearchDestroy {
     this.bomb.setLed('green'); this.bomb.setCode('-- --', '#7dff6a');
     g.audio.play('coverOpen', { pos: this.planted.pos, vol: 1.4 });
     this.planted.done = true;
-    this.endRound(1 - this.attack, 'defused');
+    this.endRound(1 - this.attack, 'defused', by);
   }
 
   explode() {
@@ -324,6 +424,7 @@ export class SearchDestroy {
     if (kind === 'plant') { this.bomb.root.position.copy(this.plantedAt(e).pos); this.bomb.root.rotation.set(0, e.isPlayer ? e.yaw : e.aimYaw, 0); this.bomb.setCode(''); }
     g.audio.play('pouch', { pos: e.pos, vol: 0.9 });
     if (kind === 'defuse') this.defuser = e;
+    if (e === g.player) this.send('work', { on: 1, kind }); else this.changed();
   }
 
   stopWork() {
@@ -331,9 +432,10 @@ export class SearchDestroy {
     if (!w) return;
     this.work = null;
     if (w.ent.isBot) w.ent.busy = false;
+    if (w.ent === this.game.player) this.send('work', { on: 0 }); else this.changed();
     if (w.ent === this.game.player && w.stance === 'stand' && w.ent.canStand && w.ent.canStand('stand')) w.ent.stance = 'stand';
     this.bomb.press(-1);
-    if (w.kind === 'plant' && this.phase !== 'planted') { this.bomb.root.visible = false; this.bomb.setCode(''); }
+    if (w.kind === 'plant' && this.phase !== 'planted' && !this.pending) { this.bomb.root.visible = false; this.bomb.setCode(''); }
   }
 
   updateWork(dt) {
@@ -354,13 +456,22 @@ export class SearchDestroy {
       if (w.kind === 'plant') this.bomb.root.visible = true;
       if (w.t >= w.need) {
         const kind = w.kind;
+        if (!this.auth) {
+          // (said, and shown as done until the word comes back)
+          const at = kind === 'plant' ? this.plantedAt(e) : null;
+          this.pending = kind;
+          this.stopWork();
+          if (at) { this.send('plant', { s: at.site.id, p: [+at.pos.x.toFixed(2), +at.pos.y.toFixed(2), +at.pos.z.toFixed(2)], y: +at.yaw.toFixed(2) }); this.bomb.root.visible = true; this.bomb.setLed(true); }
+          else this.send('defuse');
+          return;
+        }
         this.stopWork();
         if (kind === 'plant') this.plant(e); else this.defuse(e);
       }
       return;
     }
     // you: hold F
-    if (p.alive && g.input.down('interact') && !g.paused && !this.shop.focus) { // (F on a gun on the floor picks it up instead)
+    if (p.alive && g.input.down('interact') && !g.paused && !this.shop.focus && !this.pending) { // (F on a gun on the floor picks it up instead)
       const k = this.canWork(p);
       if (k) this.startWork(p, k);
     }
@@ -368,26 +479,27 @@ export class SearchDestroy {
 
   // ---- once per frame
   update(dt) {
-    const g = this.game;
-    if (this.phase === 'wait') { this.startRound(); return; }
+    const g = this.game, auth = this.auth;
+    if (this.phase === 'wait') { if (auth) this.startRound(); this.sync(dt); return; }
     this.left -= dt;
     if (this.phase === 'freeze' && !this.botsBought && this.left < SD.FREEZE - 1.5) { this.botsBought = true; for (const b of g.bots) this.shop.botBuy(b); }
     if (this.phase !== 'post' && this.phase !== 'over') this.shop.update(dt);
     if (this.phase === 'freeze') {
-      if (this.left <= 0) { this.phase = 'live'; this.left = SD.ROUND; for (const b of g.bots) b.hold = false; g.audio.play('spawn', { vol: 0.6 }); }
+      if (this.left <= 0 && auth) { this.changed(); this.phase = 'live'; this.left = SD.ROUND; for (const b of g.bots) b.hold = false; g.audio.play('spawn', { vol: 0.6 }); }
     } else if (this.phase === 'live' || this.phase === 'planted') {
       // a carrier who falls drops it, the first attacker to step on it picks it up
-      if (this.carrier && !this.carrier.alive) { this.dropAt(this.carrier.pos); this.carrier = null; }
+      if (this.carrier && !this.carrier.alive && auth) { this.dropAt(this.carrier.pos); this.carrier = null; }
       if (this.dropped && this.phase === 'live') {
         for (const c of g.combatants) {
           if (!c.alive || c.team !== this.attack || c.remote || flat(c.pos, this.dropped) > 0.9 || Math.abs(c.pos.y - this.dropped.y) > 1.6) continue;
-          this.carrier = c; this.dropped = null; this.fetcher = null;
+          if (!auth) { if (c === g.player && g.time > (this.pickT || 0)) { this.pickT = g.time + 0.6; this.send('pick'); } break; }
+          this.carrier = c; this.dropped = null; this.fetcher = null; this.changed();
           g.audio.play('pouch', { pos: c.pos, vol: 0.9 });
           if (c === g.player) g.hud.popup('', 'DU HAST DIE BOMBE');
           break;
         }
       }
-      this.botWork();
+      if (auth) this.botWork();
       this.updateWork(dt);
       if (this.phase === 'planted') {
         const P = this.planted;
@@ -397,18 +509,19 @@ export class SearchDestroy {
         this.beepT -= dt;
         if (this.beepT <= 0) { this.beepT = every; g.audio.play('dryfire', { pos: P.pos, vol: 1.4, rate: 1.9, maxDist: 60 }); this.bomb.setLed(true); }
         else if (this.beepT < every - 0.06) this.bomb.setLed(false);
-        if (this.phase === 'planted' && P.left <= 0) { this.stopWork(); this.explode(); this.endRound(this.attack, 'boom'); return; }
+        if (this.phase === 'planted' && P.left <= 0 && auth) { this.stopWork(); this.explode(); this.endRound(this.attack, 'boom', P.by); this.sync(dt); return; }
       }
-      if (this.phase === 'post') return;
+      if (this.phase === 'post' || !auth) { this.sync(dt); this.showCarried(); this.lookAtWork(dt); this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera); return; }
       if (this.aliveOf(1 - this.attack) === 0) { this.endRound(this.attack, 'elim'); return; }
       if (this.phase === 'live' && this.aliveOf(this.attack) === 0) { this.endRound(1 - this.attack, 'elim'); return; }
       if (this.phase === 'live' && this.left <= 0) { this.endRound(1 - this.attack, 'time'); return; }
     } else if (this.phase === 'post') {
-      if (this.left <= 0) {
-        if (this.final >= 0) { this.phase = 'over'; this.match.end(this.final, 'rounds'); return; }
+      if (this.left <= 0 && auth) {
+        if (this.final >= 0) { this.phase = 'over'; this.changed(); if (this.net) this.sync(dt); else this.match.end(this.final, 'rounds'); return; }
         this.startRound();
       }
     }
+    this.sync(dt);
     this.showCarried();
     this.lookAtWork(dt);
     this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera);

@@ -194,7 +194,7 @@ export class Match {
   }
 
   onKill(killer, victim, info) {
-    if (this.sd && !this.ended && !this.cfg.net) this.sd.shop.onKill(killer, victim, info); // (S&D: money for the kill, the gun on the floor)
+    if (this.sd && !this.ended) this.sd.shop.onKill(killer, victim, info); // (S&D: money for the kill, the gun on the floor; each PC for its own)
     if (this.ended || this.cfg.net || this.sd) return; // (S&D: the rounds count, see sd.js)
     if (this.gun) { this.gunKill(killer, victim, info); return; }
     if (this.teams && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;

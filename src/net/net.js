@@ -9,7 +9,7 @@ import { SKIN_IDS } from '../weapons/skins.js';
 // a match has to tell the others or hears from them. Everybody owns his own body, one
 // player owns the bots; a hit goes to the owner, and he says when somebody is dead.
 // =============================================================================
-const VERSION = 5, SEND_EVERY = 0.05, BOTS_EVERY = 0.05, PING_MS = 2000, FULL_LINE = 32768;
+const VERSION = 6, SEND_EVERY = 0.05, BOTS_EVERY = 0.05, PING_MS = 2000, FULL_LINE = 32768;
 
 export class Net {
   constructor(game) {
@@ -131,10 +131,10 @@ export class Net {
       case 'hit': this.onHit(m); break;
       case 'died': this.onDied(m); break;
       case 'sc': this.onScore(m); break;
-      case 'obj': if (!this.isAuth && this.game.match && this.game.match.points) this.game.match.points.unpack(m.s); break;
-      case 'take': if (g.br) g.br.loot.netTake(m.nid); break;
+      case 'obj': if (!this.isAuth && g.match && g.match.points) g.match.points.unpack(m.s); else if (!this.isAuth && g.match && g.match.sd) g.match.sd.apply(m.s); break;
+      case 'take': if (g.br) g.br.loot.netTake(m.nid); else if (g.match && g.match.sd) g.match.sd.shop.netTake(m.nid); break;
       case 'lost': if (g.br) g.br.onItemLost(m.nid); break;
-      case 'ev': if (g.br) g.br.onNetEvent(m); else if (m.k === 'gfin') { if (g.finale) g.finale.onNet(m); } else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
+      case 'ev': if (g.br) g.br.onNetEvent(m); else if (m.k === 'gfin') { if (g.finale) g.finale.onNet(m); } else if (m.k === 'sd') { if (g.match && g.match.sd) g.match.sd.onNet(m); } else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
       case 'joined': { this.addEntry(m.entry); const c = this.byId.get(m.entry.id); if (c && m.score) { c.kills = m.score.kills; c.deaths = m.score.deaths; c.score = m.score.points; c.tier = m.score.tier || 0; } this.note(m.entry.name + ' ist dazugekommen'); break; }
       case 'left': this.onLeft(m); break;
       case 'auth': this.setAuth(m.id); break;
@@ -183,6 +183,7 @@ export class Net {
       for (const r of cfg.board || []) { const c = r.id === this.you ? g.player : this.byId.get(r.id); if (c) { c.kills = r.kills; c.deaths = r.deaths; c.score = r.points; if (g.match.gun && r.tier) g.match.setTier(c, r.tier); } }
       if (cfg.team && g.match.teams) g.match.score = [cfg.team[0], cfg.team[1]];
       if (cfg.obj && g.match.points) g.match.points.unpack(cfg.obj); // (Wingman, coming in late: how the points stand)
+      if (cfg.obj && g.match.sd) g.match.sd.apply(cfg.obj); // (S&D: which round, who has the bomb)
       g.showNetWait(g.netWait);
       this.send({ t: 'loaded' });
     }, 60);
@@ -445,10 +446,10 @@ export class Net {
     g.showNetWait(false);
     if (!g.match) { this.changed(); return; }
     let won;
-    if (m.mode === 'tdm' || m.mode === 'wing') won = m.winner === null ? null : m.winner === g.player.team;
+    if (m.mode === 'tdm' || m.mode === 'wing' || m.mode === 'sd') won = m.winner === null ? null : m.winner === g.player.team;
     else won = m.winner === null ? null : m.winner === this.you;
     if (g.br) g.br.netFinish(won, m);
-    else { const sc = g.match; sc.ended = true; if (m.mode === 'wing' && sc.wingNote) sc.endNote = sc.wingNote(m.winner, m.how); g.onMatchEnd(won); }
+    else { const sc = g.match; sc.ended = true; if (m.mode === 'wing' && sc.wingNote) sc.endNote = sc.wingNote(m.winner, m.how); if (sc.sd) sc.endNote = 'RUNDEN ' + sc.sd.score[g.player.team] + ' : ' + sc.sd.score[1 - g.player.team]; g.onMatchEnd(won); }
     this.cfgEnded = true;
   }
 
@@ -463,7 +464,7 @@ export class Net {
 
 // what stays up in the lobby after a match
 function lastBoard(m) {
-  const name = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game', wing: 'Wingman' }[m.mode], teams = m.mode === 'tdm' || m.mode === 'wing';
+  const name = { tdm: 'Team Deathmatch', ffa: 'Free for All', br: 'Warzone', gun: 'Gun Game', wing: 'Wingman', sd: 'Search and Destroy' }[m.mode], teams = m.mode === 'tdm' || m.mode === 'wing' || m.mode === 'sd';
   const won = teams ? null : (m.board.find((r) => r.id === m.winner) || {}).name;
   return { title: 'Letztes Match: ' + name + (teams ? ' ' + m.team[0] + ' : ' + m.team[1] : won ? ', gewonnen von ' + won : ''), rows: m.board };
 }
