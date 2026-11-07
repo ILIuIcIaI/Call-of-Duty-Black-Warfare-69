@@ -527,9 +527,16 @@ export class SearchDestroy {
     this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera);
   }
 
-  // the bomb on the carrier's back, or on the floor where he fell
+  // the bomb on the carrier's back, or on the floor where he fell; somebody on another computer planting: in front of him
   showCarried() {
-    const R = this.packed.root, c = this.carrier;
+    const R = this.packed.root, c = this.carrier, rw = this.remoteWork;
+    if (rw && rw.kind === 'plant' && rw.ent && rw.ent.alive && this.phase === 'live' && !this.work) {
+      const at = this.plantedAt(rw.ent);
+      this.bomb.root.position.copy(at.pos); this.bomb.root.rotation.set(0, at.yaw, 0); this.bomb.root.visible = true;
+      R.visible = false;
+      return;
+    }
+    if (this.phase === 'live' && !this.work && !this.pending && !this.planted) this.bomb.root.visible = false;
     if (c && c.alive && !(this.work && this.work.kind === 'plant')) {
       if (c === this.game.player) { R.visible = false; return; }
       const ch = c.soldier && c.soldier.chest;
