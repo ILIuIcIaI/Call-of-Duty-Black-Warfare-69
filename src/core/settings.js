@@ -13,6 +13,7 @@ export const DEFAULTS = {
   invertY: false,
   loadout: { primary: 'ar', primaryOptic: 'reflex', secondary: 'pistol', secondaryOptic: 'iron' },
   match: { map: 'drydock', mode: 'tdm', bots: 5, difficulty: 'regular' },
+  sd: { map: null, size: 5 },   // Search and Destroy: its own maps, players per team
   skins: {},             // weapon id -> skin; what isn't in here is Standard
 };
 
@@ -21,7 +22,7 @@ export function loadSettings() {
     const s = JSON.parse(localStorage.getItem(KEY) || '{}');
     // up to 0.5.0 everybody got 'medium' saved without choosing it: that becomes Auto (a chosen Niedrig or Hoch stays)
     if (s.quality === 'medium' && !s.qualityPicked) s.quality = 'auto';
-    return { ...DEFAULTS, ...s, loadout: { ...DEFAULTS.loadout, ...(s.loadout || {}) }, match: { ...DEFAULTS.match, ...(s.match || {}) }, skins: { ...(s.skins || {}) } };
+    return { ...DEFAULTS, ...s, loadout: { ...DEFAULTS.loadout, ...(s.loadout || {}) }, match: { ...DEFAULTS.match, ...(s.match || {}) }, sd: { ...DEFAULTS.sd, ...(s.sd || {}) }, skins: { ...(s.skins || {}) } };
   } catch (e) { return structuredClone(DEFAULTS); }
 }
 export function saveSettings(s) {

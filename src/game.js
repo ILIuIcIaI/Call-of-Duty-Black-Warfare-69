@@ -176,7 +176,7 @@ export class Game {
     if (this.dev && this.params.has('manual')) this.debugManual = true; // dev tooling drives the frames from the start
     if (this.dev && this.params.has('mp')) { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
     else if (this.dev && this.params.has('br')) this.startMatch({ mode: 'br', map: 'island', bots: +(this.params.get('bots') ?? 19), difficulty: this.settings.match.difficulty });
-    else if (this.dev) this.startMatch({ ...this.settings.match, mode: this.params.get('mode') || this.settings.match.mode, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots) });
+    else if (this.dev) this.startMatch({ ...this.settings.match, mode: this.params.get('mode') || this.settings.match.mode, map: this.params.get('map') || this.settings.match.map, bots: +(this.params.get('bots') ?? this.settings.match.bots), size: +(this.params.get('size') ?? 5) });
     else { this.loadMenuMap(this.settings.match.map); this.menu.show('play'); }
   }
 
@@ -262,6 +262,7 @@ export class Game {
     if (this.net && this.net.status !== 'off') return this.leaveNetMatch(this.net.status === 'match');
     this.paused = false;
     if (this.br) this.br.dispose();
+    if (this.match && this.match.sd) this.match.sd.dispose();
     if (this.clearBots) this.clearBots();
     this.match = null;
     document.getElementById('death-screen').classList.add('hidden');
@@ -326,6 +327,7 @@ export class Game {
   startMatch(cfg) {
     this.cfg = cfg;
     if (this.match && this.br) this.br.dispose();
+    if (this.match && this.match.sd) this.match.sd.dispose();
     this.match = null;
     const undoMap = cfg.net ? seededRandom(cfg.seed) : null;
     this.loadMap(cfg.map);
@@ -366,8 +368,8 @@ export class Game {
     }
     this.state = 'playing';
     document.getElementById('hud').classList.remove('hidden');
-    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : cfg.mode === 'wing' ? 'WINGMAN' : 'TEAM DEATHMATCH';
-    document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' ? 'none' : '';
+    document.getElementById('sb-mode').textContent = cfg.mode === 'br' ? 'WARZONE' : cfg.mode === 'gun' ? 'GUN GAME' : cfg.mode === 'ffa' ? 'FREE FOR ALL' : cfg.mode === 'wing' ? 'WINGMAN' : cfg.mode === 'sd' ? 'SEARCH & DESTROY' : 'TEAM DEATHMATCH';
+    document.querySelector('#death-screen .death-hint').style.display = cfg.mode === 'br' || cfg.mode === 'sd' ? 'none' : '';
     if (this.onMatchStart) this.onMatchStart(cfg);
   }
 
@@ -741,7 +743,8 @@ export class Game {
 
     // ---- simulate
     if (paused) { this.engine.render(this.scene, this.vmScene); this.renderLoadoutPreview(); return; }
-    const br = this.br, fin = this.finale && this.finale.on;
+    const br = this.br, fin = this.finale && this.finale.on, sdm = this.match && this.match.sd;
+    const held = sdm && p.alive && sdm.holdsPlayer() ? sdm.heldInput(inp) : inp;
     if (fin) this.finale.update(dt); // (a scene plays: nobody does anything themselves)
     else if (p.alive && br && br.controlsPlayer) {
       br.updatePlayer(dt, inp);
@@ -749,11 +752,14 @@ export class Game {
       const steps = Math.ceil(dt / (1 / 120));
       const h = dt / steps;
       for (let i = 0; i < steps; i++) {
-        p.update(h, inp, W);
+        p.update(h, held, W);
         inp.suppress = true; // edge-triggered inputs only count once per frame
       }
       inp.suppress = false;
-      W.update(dt, inp, p);
+      W.update(dt, held, p);
+    } else if (sdm) {
+      const dtEl = document.getElementById('death-timer');
+      if (!sdm.spectate && dtEl.textContent !== 'TOT BIS ZUR NÄCHSTEN RUNDE') dtEl.textContent = 'TOT BIS ZUR NÄCHSTEN RUNDE';
     } else if (!br) {
       this.respawnT -= dt;
       document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
@@ -790,6 +796,7 @@ export class Game {
     else if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
     else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
     else if (br && br.watchOn) br.watchCam(cam, dt);
+    else if (sdm && (this.deathCamT || 0) > 2.4 && sdm.watch(cam, dt)) { /* watching a teammate */ }
     else this.deathCam(dt);
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;

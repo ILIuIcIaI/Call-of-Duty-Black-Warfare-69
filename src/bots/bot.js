@@ -283,7 +283,7 @@ export class Bot {
     // ---- desired movement
     let wish = _u.set(0, 0, 0), speed = 0;
     this.sprinting = false; this.tac = false;
-    const engaging = this.state === 'engage' && this.target && this.targetVisible;
+    const engaging = this.state === 'engage' && this.target && this.targetVisible && !this.hold;
     if (engaging) {
       // strafe around the target, optionally closing/opening distance along a path
       this.strafeT -= dt;
@@ -320,6 +320,8 @@ export class Bot {
       speed = 0;
     }
     if (this.prone) { wish.set(0, 0, 0); speed = 0; this.sprinting = false; this.tac = false; }
+    // Search and Destroy: nobody moves before the round begins, and planting or defusing is done down on one knee
+    if (this.hold || this.busy) { wish.set(0, 0, 0); speed = 0; this.sprinting = false; this.tac = false; if (this.busy) this.crouchT = Math.max(this.crouchT || 0, 0.3); }
     if (wish.lengthSq() > 1e-4) {
       wish.normalize();
       this.moveYaw = Math.atan2(-wish.x, -wish.z);

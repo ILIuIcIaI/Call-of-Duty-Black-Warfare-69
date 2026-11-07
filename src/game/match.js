@@ -4,6 +4,7 @@ import { OUTFITS } from '../characters/soldier.js';
 import { PRIMARIES, GUN_TIERS, WEAPONS, SECONDARIES } from '../weapons/defs.js';
 import { randomSkin } from '../weapons/skins.js';
 import { Points, pointsOf } from './points.js';
+import { SearchDestroy } from './sd.js';
 
 // =============================================================================
 // Match rules: team setup, spawn selection (safe spawns away from enemy sight
@@ -34,13 +35,16 @@ export class Match {
     this.gun = cfg.mode === 'gun';
     // Wingman: 2 against 2 for one flag (points.js), respawns without end, always 8 minutes
     this.wing = cfg.mode === 'wing';
-    this.teams = cfg.mode === 'tdm' || this.wing;
-    this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : this.wing ? Infinity : 50 + cfg.bots * 5;
+    // Search and Destroy: rounds with no respawn, one bomb, two sites (sd.js)
+    this.sdMode = cfg.mode === 'sd';
+    this.teams = cfg.mode === 'tdm' || this.wing || this.sdMode;
+    this.limit = cfg.net ? cfg.limit : this.gun ? GUN_TIERS.length : cfg.mode === 'ffa' ? 25 : this.wing || this.sdMode ? Infinity : 50 + cfg.bots * 5;
     this.timeLeft = cfg.net ? cfg.leftMs / 1000 : this.wing ? 480 : 600;
     this.ended = false;
     this.lastUsed = new Map();
     this.spawnPoints = this.collectSpawns();
     if (this.wing) this.points = new Points(game, pointsOf(game.mapDef) || this.fallbackPoints());
+    if (this.sdMode) this.sd = new SearchDestroy(game, this);
   }
 
   // a map without its own flag: the middle of the map
@@ -82,6 +86,15 @@ export class Match {
     const n = cfg.bots;
     const bots = [];
     const outfitsFFA = ['raven', 'jungle', 'urban', 'desert', 'raven', 'jungle', 'urban', 'desert'];
+    if (this.sdMode) {
+      // as many on each side as were asked for: your side gets one bot less, you are the last of it
+      const size = cfg.size || 5, out = [];
+      for (let i = 0; i < size * 2 - 1; i++) {
+        const team = i < size - 1 ? 0 : 1;
+        out.push(new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit: OUTFITS[team === 0 ? 'vanguard' : 'raven'], weapon: pickWeapon() }));
+      }
+      return out;
+    }
     if (this.wing) {
       // one bot at your side, two against you
       return [0, 1, 1].map((team, i) => new Bot(g, { name: names[i], team, difficulty: cfg.difficulty, outfit: OUTFITS[team === 0 ? 'vanguard' : 'raven'], weapon: pickWeapon() }));
@@ -102,6 +115,7 @@ export class Match {
 
   // pick the safest spawn for an entity
   chooseSpawn(ent) {
+    if (this.sd) return this.sd.spawnFor(ent);
     const g = this.game, t = g.time;
     const enemies = g.combatants.filter((c) => c !== ent && c.alive && !g.isFriendly(c, ent));
     const friends = g.combatants.filter((c) => c !== ent && c.alive && g.isFriendly(c, ent));
@@ -180,7 +194,7 @@ export class Match {
   }
 
   onKill(killer, victim, info) {
-    if (this.ended || this.cfg.net) return;
+    if (this.ended || this.cfg.net || this.sd) return; // (S&D: the rounds count, see sd.js)
     if (this.gun) { this.gunKill(killer, victim, info); return; }
     if (this.teams && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
   }
@@ -188,6 +202,8 @@ export class Match {
   update(dt) {
     if (this.ended) return;
     const g = this.game;
+    // Search and Destroy: no respawn within a round, the rounds decide
+    if (this.sd) { this.sd.update(dt); this.timeLeft = this.sd.clock(); this.sd.hud(dt); return; }
     this.timeLeft -= dt;
     // bot respawns
     for (const b of g.bots) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) this.spawn(b);
@@ -217,12 +233,14 @@ export class Match {
 
   // ---- Wingman: where a bot goes. There is one flag: the two of a team take it, hold it, or go to take it back.
   objectiveFor(b) {
+    if (this.sd) return this.ended ? null : this.sd.objectiveFor(b);
     if (!this.wing || this.ended) return null;
     return this.points.list[0];
   }
 
   scores() {
     const g = this.game;
+    if (this.sd) return { f: this.sd.score[g.player.team], e: this.sd.score[1 - g.player.team] };
     if (this.teams) return { f: this.score[g.player.team], e: this.score[1 - g.player.team] };
     if (this.gun) return { f: (g.player.tier || 0) + 1, e: Math.max(0, ...g.combatants.filter((c) => c !== g.player).map((c) => (c.tier || 0) + 1)) };
     const others = g.combatants.filter((c) => c !== g.player).map((c) => c.kills);
@@ -247,6 +265,7 @@ export class Match {
       if (winner === null) won = this.score[g.player.team] > this.score[1 - g.player.team] ? true : this.score[g.player.team] === this.score[1 - g.player.team] ? null : false;
       else won = winner === g.player.team;
       if (this.wing) this.endNote = this.wingNote(winner, how);
+      if (this.sd) { won = winner === g.player.team; this.endNote = 'RUNDEN ' + this.sd.score[g.player.team] + ' : ' + this.sd.score[1 - g.player.team]; }
     } else if (this.gun) {
       won = (winner || this.gunLeader()) === g.player;
     } else {

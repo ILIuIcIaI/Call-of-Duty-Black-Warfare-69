@@ -369,3 +369,22 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #gun-panel b { font-family: var(--head); font-size: 20px; letter-spacing: 2px; color: var(--accent); }
 #gun-panel span { font-size: 14px; color: var(--text); }
 #gun-panel em { font-style: normal; font-size: 13px; color: var(--enemy); }
+
+/* Search and Destroy: under the score your side and the round, who is still alive, and the bar while the bomb is planted or defused */
+#sd-panel { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#sd-panel .sd-role { padding: 3px 12px 2px; font-family: var(--head); font-size: 17px; letter-spacing: 2px; color: #fff; background: rgba(0,0,0,.5); text-shadow: 0 2px 6px #000; white-space: nowrap; }
+#sd-panel .sd-alive { display: flex; align-items: center; gap: 10px; font-size: 13px; letter-spacing: 2px; text-shadow: 0 1px 3px #000; }
+#sd-panel .sd-alive .f { color: var(--friendly); } #sd-panel .sd-alive .e { color: var(--enemy); }
+#sd-panel .sd-alive b { font-family: var(--head); font-size: 16px; font-weight: 400; color: #fff; }
+#sd-panel .sd-work { position: fixed; left: 50%; top: 71%; transform: translateX(-50%); text-align: center; font-family: var(--head); font-size: 24px; letter-spacing: 3px; color: #fff; text-shadow: 0 2px 8px #000; white-space: nowrap; }
+#sd-panel .sd-work i { display: none; width: 260px; height: 6px; margin: 5px auto 0; background: rgba(255,255,255,.22); }
+#sd-panel .sd-work.bar i { display: block; }
+#sd-panel .sd-work i b { display: block; width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0); background: #ffd04a; }
+#sb-timer.bomb { color: var(--enemy); animation: holdUrgent .5s infinite alternate; }
+.sdmark { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; pointer-events: none; }
+.sdmark b { width: 30px; height: 30px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--head); font-size: 22px; padding-top: 3px; box-sizing: border-box; color: #fff; background: rgba(0,0,0,.55); border: 2px solid #fff; }
+.sdmark.site.att b { color: #ffd04a; border-color: #ffd04a; }
+.sdmark.site.def b { color: var(--friendly); border-color: var(--friendly); }
+.sdmark.bomb b { color: #ffd04a; border-color: #ffd04a; font-size: 18px; }
+.sdmark.bomb.live b { color: var(--enemy); border-color: var(--enemy); animation: holdUrgent .5s infinite alternate; }
+.sdmark span { font-weight: 700; font-size: 12px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; }

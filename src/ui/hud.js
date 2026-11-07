@@ -528,7 +528,7 @@ export class HUD {
       b.innerHTML = `<h3>${g.mapDef.name} — WARZONE · ${alive.length} LEBEN NOCH</h3><table>${head}${rows.slice(0, 12).map(row).join('')}</table>`;
     } else if (m.teams) {
       const f = rows.filter((c) => c.team === g.player.team), e = rows.filter((c) => c.team !== g.player.team);
-      b.innerHTML = `<h3>${g.mapDef.name} — ${m.wing ? 'WINGMAN · FLAGGE: ' + m.points.list.map((P) => (P.owner < 0 ? 'frei' : P.owner === g.player.team ? 'eure' : 'Gegner')).join(' · ') : 'TEAM DEATHMATCH'}</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${m.score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${m.score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
+      b.innerHTML = `<h3>${g.mapDef.name} — ${m.wing ? 'WINGMAN · FLAGGE: ' + m.points.list.map((P) => (P.owner < 0 ? 'frei' : P.owner === g.player.team ? 'eure' : 'Gegner')).join(' · ') : m.sd ? 'SEARCH &amp; DESTROY · RUNDE ' + Math.max(1, m.sd.round) : 'TEAM DEATHMATCH'}</h3><table>${head}<tr><th colspan="${cols}" class="tf">DEIN TEAM · ${(m.sd || m).score[g.player.team]}</th></tr>${f.map(row).join('')}<tr><th colspan="${cols}" class="te">GEGNER · ${(m.sd || m).score[1 - g.player.team]}</th></tr>${e.map(row).join('')}</table>`;
     } else if (m.gun) {
       const by = [...g.combatants].sort((a, c) => (c.tier || 0) - (a.tier || 0) || c.kills - a.kills);
       const line = (c) => `<tr class="${c === g.player ? 'me' : ''}"><td class="${c === g.player ? 'tf' : 'te'}">${esc(c.name)}</td><td>${(c.tier || 0) + 1}</td><td>${esc(WEAPONS[GUN_TIERS[c.tier || 0]].name)}</td><td>${esc(c.kills)}</td><td>${esc(c.deaths)}</td>${ping(c)}</tr>`;

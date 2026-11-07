@@ -15,3 +15,5 @@ import nightline from './nightline.js';
 // (maps with `wingman` capture points are the ones made for the 2 vs 2 mode)
 export const MAPS = { drydock, citadel, blacksite, poolday, backrooms, sirocco, atrium, dynamo, millrace, cornice, nightline, island };
 export const MAP_LIST = [drydock, citadel, blacksite, poolday, backrooms, sirocco, atrium, dynamo, millrace, cornice, nightline];
+// Search and Destroy has maps of its own (with `sd`: the two bomb sites and the spawns of both sides); they are in MAPS too, never in MAP_LIST
+export const SD_MAP_LIST = [];
