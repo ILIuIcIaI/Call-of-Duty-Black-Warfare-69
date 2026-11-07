@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WEAPONS, PRIMARIES, SECONDARIES, OPTICS, opticFits } from '../weapons/defs.js';
-import { MAP_LIST } from '../world/maps/index.js';
+import { MAP_LIST, SD_MAP_LIST } from '../world/maps/index.js';
 import { QUALITY } from '../core/engine.js';
 import { weaponMaterials } from '../weapons/models.js';
 import { SKINS, SKIN_IDS, skinOf, buildSkinned } from '../weapons/skins.js';
@@ -29,10 +29,11 @@ export class Menu {
     const g = this.game, S = g.settings;
     const tabs = mode === 'pause'
       ? (g.br || (g.match && g.match.gun) ? [['resume', 'FORTSETZEN'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']] : [['resume', 'FORTSETZEN'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ['quit', 'MATCH VERLASSEN']])
-      : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['multi', 'MULTIPLAYER'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ...(window.desktop ? [['exit', 'BEENDEN']] : [])];
+      : [['play', 'SPIELEN'], ['warzone', 'WARZONE'], ['sd', 'SEARCH &amp; DESTROY'], ['multi', 'MULTIPLAYER'], ['loadout', 'LOADOUT'], ['settings', 'EINSTELLUNGEN'], ['controls', 'STEUERUNG'], ...(window.desktop ? [['exit', 'BEENDEN']] : [])];
     let body = '';
     if (tab === 'play') body = this.playTab();
     else if (tab === 'warzone') body = this.warzoneTab();
+    else if (tab === 'sd') body = this.sdTab();
     else if (tab === 'loadout') body = this.loadoutTab();
     else if (tab === 'settings') body = this.settingsTab();
     else if (tab === 'controls') body = this.controlsTab();
@@ -72,6 +73,21 @@ export class Menu {
       ${wing ? '' : `<div class="opt"><label>Anzahl Bots</label><input type="range" min="1" max="8" step="1" value="${m.bots}" data-range="bots"><span class="val" id="v-bots">${m.bots}</span></div>`}
       <div class="opt"><label>Schwierigkeit</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
       <div style="margin-top:22px"><button class="btn" id="start-btn">MATCH STARTEN</button></div>`;
+  }
+
+  // Search and Destroy: one of its two maps, the size of the teams, how good the bots are. Bots always fill both teams.
+  sdTab() {
+    const S = this.game.settings, sd = S.sd, m = S.match, list = SD_MAP_LIST;
+    if (list.length && !list.some((d) => d.id === sd.map)) sd.map = list[0].id;
+    const maps = list.length
+      ? list.map((d) => `<div class="card map-card ${sd.map === d.id ? 'sel' : ''}" data-sdmap="${d.id}"><canvas data-mapprev="${d.id}" width="260" height="130"></canvas><h4>${d.name}</h4><span class="tag">${d.size}</span><p>${d.desc}</p></div>`).join('')
+      : '<div class="hint">Die beiden Karten für Search and Destroy entstehen gerade.</div>';
+    return `<div class="section-title">KARTE</div><div class="row">${maps}</div>
+      <div class="section-title">TEAMS</div>
+      <div class="seg" data-sdsize>${[4, 5, 6].map((n) => `<button data-v="${n}" class="${sd.size === n ? 'on' : ''}">${n} GEGEN ${n}</button>`).join('')}</div>
+      <div class="hint">Zwei Teams, eine Bombe. Die Angreifer legen sie auf Platz A oder B, die Verteidiger halten die Plätze und entschärfen sie. Kein Respawn innerhalb einer Runde. Wer zuerst 6 Runden gewinnt, gewinnt das Match; nach 5 Runden werden die Seiten getauscht. Bots füllen beide Teams auf. Bombe legen und entschärfen: F gedrückt halten.</div>
+      <div class="opt"><label>Schwierigkeit der Bots</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+      <div style="margin-top:22px"><button class="btn" id="sd-start"${list.length ? '' : ' disabled'}>MATCH STARTEN</button></div>`;
   }
 
   warzoneTab() {
@@ -217,6 +233,11 @@ export class Menu {
     if (start) start.addEventListener('click', () => { this.sfx(); g.beginMatch(); });
     const wz = el.querySelector('#wz-start');
     if (wz) wz.addEventListener('click', () => { this.sfx(); g.beginWarzone(); });
+    // Search and Destroy: its maps, the team size, and the start (bots fill both teams)
+    el.querySelectorAll('[data-sdmap]').forEach((c) => c.addEventListener('click', () => { S.sd.map = c.dataset.sdmap; this.sfx(); g.saveSettings(); g.loadMenuMap(S.sd.map); this.show('sd'); }));
+    el.querySelectorAll('[data-sdsize] button').forEach((b) => b.addEventListener('click', () => { S.sd.size = +b.dataset.v; this.sfx(); g.saveSettings(); this.show('sd'); }));
+    const sdGo = el.querySelector('#sd-start');
+    if (sdGo && SD_MAP_LIST.length) sdGo.addEventListener('click', () => { this.sfx(); g.beginSD(); });
     el.querySelectorAll('[data-mapprev]').forEach((c) => this.drawMapPreview(c, c.dataset.mapprev));
   }
 

@@ -258,6 +258,15 @@ export class Game {
     if (el) el.style.display = on ? '' : 'none';
   }
 
+  // the menu's Search and Destroy tab: its map, its team size, bots on both sides
+  beginSD() {
+    const S = this.settings, size = [4, 5, 6].includes(S.sd.size) ? S.sd.size : 5;
+    this.audio.unlock();
+    this.menu.hide();
+    this.startMatch({ mode: 'sd', map: S.sd.map, size, bots: size * 2 - 1, difficulty: S.match.difficulty });
+    this.input.lock();
+  }
+
   quitToMenu() {
     if (this.net && this.net.status !== 'off') return this.leaveNetMatch(this.net.status === 'match');
     this.paused = false;
