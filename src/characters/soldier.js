@@ -712,13 +712,9 @@ export class Soldier {
     if (opts.staged) return; // the scene still has hold of this body, and leaves it where it ends
     const d = dir.clone(); d.y = Math.max(d.y, -0.2) + 0.12; d.normalize();
     this.ragdoll = new Ragdoll(this, this.game.col, { dir: d, part: opts.part, point: opts.point, strength: opts.strength || 3.2, vel: opts.vel });
-    // the body comes down with a heavy, dull thud, the harder the louder
-    const g = this.game;
-    this.ragdoll.onLand = (v, at) => { if (g.audio && v > 0.6) g.audio.play('bodyfall', { pos: at, vol: Math.min(1, 0.3 + v * 0.14), rate: 0.92 + Math.random() * 0.12 }); };
   }
 
-  // The gun falls out of the hands: they let go, and it drops with a little of the body's way and turn (it doesn't fly up
-  // out of them), comes down with a knock, maybe a small hop, and tips over onto its side instead of snapping flat.
+  // the gun falls out of the hands
   dropWeapon(dir) {
     if (!this.weapon) return;
     const w = this.weapon.root;
@@ -726,38 +722,17 @@ export class Soldier {
     const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
     w.matrixWorld.decompose(wp, wq, ws);
     this.game.scene.add(w); w.position.copy(wp); w.quaternion.copy(wq);
-    const dv = dir.clone().multiplyScalar(0.6), r = () => Math.random() - 0.5;
-    this.weaponDrop = { obj: w, vel: new THREE.Vector3(r() * 0.8 + dv.x, 0.4 + Math.random() * 0.3, r() * 0.8 + dv.z), spin: new THREE.Vector3(r() * 4, r() * 2.5, r() * 4), floor: this.root.position.y + 0.05, hits: 0 };
+    const dv = dir.clone().multiplyScalar(1.5);
+    this.weaponDrop = { obj: w, vel: new THREE.Vector3((Math.random() - 0.5) * 2 + dv.x, 1.5, (Math.random() - 0.5) * 2 + dv.z), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 4 - 2, Math.random() * 6 - 3), floor: this.root.position.y + 0.05 };
   }
 
   updateWeaponDrop(dt) {
     const d = this.weaponDrop;
-    if (!d || d.rest) return;
-    const o = d.obj;
-    if (d.lay) {
-      // down: it tips over onto its side and slides to a stop
-      d.lay.t = Math.min(1, d.lay.t + dt / 0.16);
-      const e = d.lay.t * d.lay.t * (3 - 2 * d.lay.t);
-      o.quaternion.slerpQuaternions(d.lay.from, d.lay.to, e);
-      d.vel.multiplyScalar(Math.max(0, 1 - 9 * dt));
-      o.position.x += d.vel.x * dt; o.position.z += d.vel.z * dt;
-      if (d.lay.t >= 1 && d.vel.lengthSq() < 1e-4) d.rest = true;
-      return;
-    }
+    if (!d || d.obj.position.y <= d.floor) return;
     d.vel.y -= 9.8 * dt;
-    o.position.addScaledVector(d.vel, dt);
-    o.rotation.x += d.spin.x * dt; o.rotation.y += d.spin.y * dt; o.rotation.z += d.spin.z * dt;
-    if (o.position.y > d.floor) return;
-    o.position.y = d.floor;
-    const hard = -d.vel.y;
-    if (d.hits++ === 0 && this.game.audio) this.game.audio.play('magDrop', { pos: o.position, vol: Math.min(0.8, 0.3 + hard * 0.12), rate: 0.62 + Math.random() * 0.1 });
-    if (d.hits === 1 && hard > 2.2) {
-      // a small hop off the floor, most of its speed gone
-      d.vel.set(d.vel.x * 0.35, hard * 0.16, d.vel.z * 0.35); d.spin.multiplyScalar(0.35);
-      return;
-    }
-    d.vel.y = 0;
-    d.lay = { t: 0, from: o.quaternion.clone(), to: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, o.rotation.y, Math.PI / 2)) };
+    d.obj.position.addScaledVector(d.vel, dt);
+    d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
+    if (d.obj.position.y <= d.floor) { d.obj.position.y = d.floor; d.obj.rotation.x = 0; d.obj.rotation.z = Math.PI / 2; }
   }
 
   updateDeath(dt) {
@@ -770,8 +745,8 @@ export class Soldier {
       for (const m of this.skinned) m.boundingSphere.center.copy(c); // root sits at the origin while ragdolling
       this.blob.scale.set(1.3, 2.2, 1);
     }
-    // after a while (it has bled out and lain there a moment), sink into the ground
-    if (t > 14) { this.root.position.y -= dt * 0.3; }
+    // after a while, sink into the ground
+    if (t > 6) { this.root.position.y -= dt * 0.3; }
     this.updateWeaponDrop(dt);
   }
 

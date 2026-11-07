@@ -139,13 +139,6 @@ export class Puppet {
   }
 
   reborn(s) {
-    // the old body stays where it fell, bleeding out and then lying there (the game keeps it); the player comes back in a fresh one
-    if (this.soldier.dead && this.soldier.ragdoll && this.game.keepCorpse) {
-      const old = this.soldier;
-      this.soldier = this.game.freshSoldier(old.outfit);
-      this.game.keepCorpse(old);
-      this.hbFrame = -1;
-    }
     const so = this.soldier;
     so.resetPose();
     if (so.weaponDrop) { this.game.scene.remove(so.weaponDrop.obj); so.weaponDrop = null; }

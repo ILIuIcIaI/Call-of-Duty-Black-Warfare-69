@@ -302,12 +302,6 @@ export class Audio {
     add('pinpull', concat(sr, [[clk([3400, 5400], 0.014, 0.3, 324), 0, 1], [clk([2600, 4200], 0.03, 0.2, 325), 0.07, 0.75]]));
     add('boom', concat(sr, [[synthNoiseHit(sr, 1.9, 520, 0.42, 0.7, 'lp', 326, 1.2, 36), 0, 1], [synthNoiseHit(sr, 0.5, 2300, 0.08, 0.8, 'bp', 327), 0, 0.65], [synthNoiseHit(sr, 1.2, 220, 0.5, 0.7, 'lp', 329), 0.08, 0.6]]));
     add('sting', synthNoiseHit(sr, 0.8, 130, 0.24, 0.7, 'lp', 328, 1.2, 40));
-    // a body coming down: a heavy, dull thump (most of it below 150 Hz), and cloth and gear on the floor with it
-    for (let v = 0; v < 2; v++) {
-      add('bodyfall', concat(sr, [[synthNoiseHit(sr, 0.42, 130 + v * 20, 0.085, 0.8, 'lp', 330 + v, 1.3, 48 + v * 6), 0, 1],
-        [synthNoiseHit(sr, 0.18, 650 + v * 120, 0.04, 0.9, 'bp', 332 + v), 0.008, 0.35],
-        [sweepNoise(sr, 0.22, 1300, 700, (t) => (1 - t) * (1 - t), 334 + v, 0.9), 0.02, 0.22]]));
-    }
   }
 
   startAmbience() {

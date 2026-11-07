@@ -280,7 +280,6 @@ export class Game {
     if (this.mapDef && this.mapDef.unload) this.mapDef.unload(this);
     this.scene.clear();
     this.playerCorpse = null; // its meshes went away with the old scene
-    this.corpses = []; this.corpsePool = new Map(); // (and so did the bodies left lying, and the spare ones)
     Soldier.live.clear();
     this.mapDef = def;
     const b = new MapBuilder(this.engine, this.tex);
@@ -596,41 +595,6 @@ export class Game {
     if (victim === this.player) this.onPlayerKilled(killer, info);
   }
 
-  // A body that dies stays where it fell for a while, even once the bot or player it was is back in the fight: at the respawn the
-  // old body is kept here (it still bleeds out, then lies there) and the soldier comes back in a fresh one. A few lie about at most
-  // (fewer on a toaster); some 16 s after the death they have sunk into the ground, and the bodies are used again.
-  keepCorpse(sol) {
-    this.corpses = this.corpses || [];
-    this.corpses.push(sol);
-    const max = this.engine.qid === 'toaster' ? 3 : 6;
-    while (this.corpses.length > max) this.dropCorpse(this.corpses.shift());
-  }
-
-  dropCorpse(sol) {
-    sol.setVisible(false);
-    if (sol.weaponDrop) { this.scene.remove(sol.weaponDrop.obj); sol.weaponDrop = null; }
-    sol.resetPose();
-    this.corpsePool = this.corpsePool || new Map();
-    const list = this.corpsePool.get(sol.outfit) || [];
-    list.push(sol);
-    this.corpsePool.set(sol.outfit, list);
-  }
-
-  freshSoldier(outfit) {
-    const list = this.corpsePool && this.corpsePool.get(outfit);
-    return list && list.length ? list.pop() : new Soldier(this, outfit);
-  }
-
-  updateCorpses(dt) {
-    const C = this.corpses;
-    if (!C) return;
-    for (let i = C.length - 1; i >= 0; i--) {
-      const c = C[i];
-      c.update(dt, null, null);
-      if (c.deathT > 16.5) { C.splice(i, 1); this.dropCorpse(c); }
-    }
-  }
-
   spawnPlayerCorpse(info) {
     const p = this.player;
     if (!this.playerCorpse) this.playerCorpse = new Soldier(this, OUTFITS.vanguard);
@@ -798,7 +762,6 @@ export class Game {
     for (const b of this.bots) if (!(fin && this.finale.holds(b, dt))) b.update(dt);
     if (this.mapDef.update) this.mapDef.update(this, dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
-    this.updateCorpses(dt);
     if (inp.pressed('loadout') && !br && !(this.match && this.match.gun)) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.net) this.net.tick(dt);
     if (this.match) {
