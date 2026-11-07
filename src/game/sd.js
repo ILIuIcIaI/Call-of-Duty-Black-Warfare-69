@@ -53,7 +53,7 @@ class HandsAtWork {
       add(new THREE.CapsuleGeometry(0.0105, 0.03, 4, 8), M.glove, 0.048 * mirror, -0.006, -0.012, Math.PI / 2).rotation.z = 0.6 * mirror;
       const arm = new THREE.Group(); arm.position.set(0, 0.004, 0.046); g.add(arm);
       const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.045, 12), M.glove); cuff.position.y = 0.02; arm.add(cuff);
-      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.053, 0.36, 12), M.sleeve); sleeve.position.y = 0.22; arm.add(sleeve);
+      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.64, 12), M.sleeve); sleeve.position.y = 0.36; arm.add(sleeve); // (long enough to run out of the picture)
       return { g, arm };
     };
     const hl = hand(1), hr = hand(-1);
