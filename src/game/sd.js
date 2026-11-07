@@ -205,6 +205,18 @@ export class SearchDestroy {
   idOf(c) { const g = this.game; return !c ? null : c === g.player ? (this.net ? this.net.you : 'me') : c.netId || null; }
   byId(id) { const g = this.game, n = this.net; return !id || !n ? null : id === n.you ? g.player : n.byId.get(id) || null; }
   changed() { this.dirty = true; }
+  // the bots changed hands (the PC that ran them left, or this one gave them up): the same people in new objects;
+  // whatever a bot was doing stops, and this PC may be the one that decides from now on
+  reresolve() {
+    const re = (c) => (c && c.netId ? this.byId(c.netId) || c : c);
+    this.carrier = re(this.carrier); this.defuser = re(this.defuser); this.fetcher = re(this.fetcher);
+    if (this.planted) this.planted.by = re(this.planted.by);
+    if (this.work && this.work.ent !== this.game.player) this.stopWork();
+    this.remoteWork = null;
+    if (!this.targetSite) this.targetSite = this.sites[(Math.random() * this.sites.length) | 0];
+    for (const b of this.game.bots) if (!b.remote) b.hold = this.phase === 'freeze';
+    this.changed();
+  }
   send(a, extra = {}) { if (this.net) this.net.send({ t: 'ev', k: 'sd', a, ...extra }); }
   snapshot() {
     const P = this.planted, W = this.work || this.remoteWork, r2 = (v) => +v.toFixed(2);
@@ -585,7 +597,7 @@ export class SearchDestroy {
         if (!this.fetcher || !this.fetcher.alive) this.fetcher = this.closest(this.attack, this.dropped);
         if (b === this.fetcher) return { x: this.dropped.x, y: this.dropped.y, z: this.dropped.z, r: 0.9 };
       }
-      const s = this.targetSite;
+      const s = this.targetSite || (this.targetSite = this.sites[0]);
       return b === this.carrier ? { x: s.x, y: s.y, z: s.z, r: Math.max(1.4, s.r * 0.5) } : { x: s.x, y: s.y, z: s.z, r: s.r + 3 };
     }
     // defenders: half on each site (by where they stand in the list), all to the bomb once it is down

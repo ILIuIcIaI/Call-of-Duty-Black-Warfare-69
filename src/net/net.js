@@ -249,6 +249,7 @@ export class Net {
       if (j >= 0) g.combatants[j] = pu;
       this.byId.set(e.id, pu);
     }
+    if (g.match && g.match.sd) g.match.sd.reresolve(); // (S&D: who has the bomb, in the new objects)
   }
 
   // whoever ran them is gone: they carry on here from where they were last seen
@@ -270,6 +271,7 @@ export class Net {
       if (j >= 0) g.combatants[j] = b;
       this.byId.set(e.id, b);
     }
+    if (g.match && g.match.sd) g.match.sd.reresolve(); // (S&D: who has the bomb, and this PC decides now)
   }
 
   onLeft(m) {
