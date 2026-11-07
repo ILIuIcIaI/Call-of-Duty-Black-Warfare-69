@@ -471,10 +471,13 @@ export class Viewmodel {
     // aimed the sight picture stays calmer. The muzzle rises only a touch, from the hip a little more; aimed it hardly
     // rises, so the sights stay on the target instead of the barrel coming up over it. The small ones jerk back harder on
     // top of that (snap). (Only the gun moves here: where the shot goes is the camera's business, untouched.)
-    const lift = r.vis * (ads ? 0.2 : 0.7) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.85);
+    // A magnified optic (prism, TAC-3, thermal) sits only some 10 cm before the eye: aimed through one, the full slam back took
+    // the eyepiece into your face. Behind one it slams back half as far (you hardly see the gun there anyway).
+    const o = this.model && this.model.optic, near = ads && o && o.pipZoom ? 0.5 : 1;
+    const lift = r.vis * (ads ? 0.2 : 0.7) * (1 - snap * 0.6), back = Math.pow(r.vis, 0.85) * near;
     this.recoilPos.impulse(rand(-0.05, 0.05) * lift, rand(0, 0.06) * lift, (1.2 + Math.random() * 0.3) * back * (ads ? 1.35 : 2));
     this.recoilRot.impulse((1.6 + Math.random() * 0.7) * lift, rand(-0.45, 0.45) * lift, rand(-1.0, 1.0) * lift);
-    this.jerk.impulse(((3.2 + Math.random() * 0.8) * back + (4 + Math.random() * 1.2) * snap) * (ads ? 1.275 : 2));
+    this.jerk.impulse(((3.2 + Math.random() * 0.8) * back + (4 + Math.random() * 1.2) * snap * near) * (ads ? 1.275 : 2));
     this.drive = Math.min(1, this.drive + (def.fire === 'auto' || def.fire === 'burst' ? 0.17 : 0.5));
     this.vib = Math.min(1, this.vib + 0.45);
     this.shotKick = 1;
@@ -712,7 +715,11 @@ export class Viewmodel {
 
     pos.x += this.clipPos.vx + this.joltPos.vx + this.swayPos.vx + this.recoilPos.vx + (Math.random() - 0.5) * 0.0035 * vb;
     pos.y += this.clipPos.vy + this.joltPos.vy + this.swayPos.vy + this.recoilPos.vy + this.land.x * 0.055 + (Math.random() - 0.5) * 0.0035 * vb;
-    pos.z += this.clipPos.vz + this.joltPos.vz + this.recoilPos.vz + this.jerk.x;
+    // (and however the shots pile up, a magnified optic's eyepiece stops softly some 4.5 cm before the eye)
+    let slam = this.recoilPos.vz + this.jerk.x;
+    const glass = w.optic;
+    if (slam > 0 && glass && glass.pipZoom && adsE > 0) { const room = lerp(1, glass.lensDist - 0.045, adsE); slam = room * Math.tanh(slam / room); }
+    pos.z += this.clipPos.vz + this.joltPos.vz + slam;
     rx += this.clipRot.vx + this.joltRot.vx + this.swayRot.vx + this.moveRot.vx + this.recoilRot.vx + this.land.x * 0.14 + (Math.random() - 0.5) * 0.008 * vb;
     ry += this.clipRot.vy + this.joltRot.vy + this.swayRot.vy + this.recoilRot.vy + (Math.random() - 0.5) * 0.006 * vb;
     rz += this.clipRot.vz + this.joltRot.vz + this.swayRot.vz + this.moveRot.vz + this.recoilRot.vz + (Math.random() - 0.5) * 0.016 * vb;

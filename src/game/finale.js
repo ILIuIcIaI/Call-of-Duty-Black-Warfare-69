@@ -45,12 +45,15 @@ export class GunFinale {
   get on() { return !!this.S; }
 
   // The killing stab, just before it kills: true if it gets played out instead.
+  // Over the network the computer that runs the victim decides (his death is its to tell): it picks the scene, plays it,
+  // and tells everybody, who play the same one with the bodies they have (see onNet). His death goes out when it is over.
   take(victim, killer, info) {
-    const g = this.game, M = g.match, p = g.player;
-    if (this.S || !M || !M.gun || M.ended || (g.net && g.net.inMatch)) return false;
-    if (!killer || killer === victim || !(info && info.weapon && info.weapon.name === 'MESSER')) return false;
+    const g = this.game, M = g.match, p = g.player, net = g.net && g.net.inMatch ? g.net : null;
+    if (this.S || !M || !M.gun || M.ended) return false;
+    if (!killer || killer === victim || !(info && info.weapon && info.weapon.name === 'MESSER') || info.fromNet) return false;
     if ((killer.tier || 0) < GUN_TIERS.length - 1) return false;
-    const body = (c) => (c === p ? c.alive : !!(c.isBot && !c.remote && c.alive && c.soldier));
+    if (victim !== p && !(victim.isBot && !victim.remote)) return false;
+    const body = (c) => (c === p ? c.alive : !!(c.soldier && c.alive));
     if (!body(killer) || !body(victim) || (killer === p && p.mantle)) return false;
     // from behind the scene stands the way he faces, from the front the way you look at him (and he gets turned into it)
     const vyaw = victim === p ? p.yaw : victim.aimYaw, dx = victim.pos.x - killer.pos.x, dz = victim.pos.z - killer.pos.z, d = Math.hypot(dx, dz);
@@ -62,8 +65,23 @@ export class GunFinale {
     if (!F) return false;
     let t0 = 0, turn = 0;
     if (!behind) { t0 = F.front || 0; const inScene = victimYaw(F, t0); turn = inScene + angleDiff(inScene, vyaw - yaw); }
-    this.start(killer, victim, info, F, floor, yaw, t0, turn);
+    this.start(killer, victim, info, F, floor, yaw, t0, turn, { decider: true });
+    if (net) {
+      const st = this.S.stage, T = this.finTilt || new THREE.Quaternion(), id = (c) => (c === p ? net.you : c.netId);
+      net.send({ t: 'ev', k: 'gfin', a: id(killer), v: id(victim), f: FINISHERS.indexOf(F), o: [+st.o.x.toFixed(3), +st.o.y.toFixed(3), +st.o.z.toFixed(3)], yaw: +yaw.toFixed(4), t0, turn: +turn.toFixed(4), tilt: [T.x, T.y, T.z, T.w].map((v) => +v.toFixed(5)), skin: this.S.skin });
+    }
     return true;
+  }
+
+  // Somebody else's computer decided on a scene: the same one here, with the bodies there are here (you, if you are in it, as
+  // your own body). His death comes in from that computer afterwards.
+  onNet(m) {
+    const g = this.game, net = g.net, ent = (id) => (id === net.you ? g.player : net.byId.get(id));
+    const killer = ent(m.a), victim = ent(m.v), F = FINISHERS[m.f];
+    if (!F || !killer || !victim || killer === victim || !victim.alive || !killer.alive) return;
+    if ((killer !== g.player && !killer.soldier) || (victim !== g.player && !victim.soldier)) return;
+    if (this.S) this.end();
+    this.start(killer, victim, null, F, m.o[1], m.yaw, m.t0, m.turn, { origin: new THREE.Vector3(m.o[0], m.o[1], m.o[2]), tilt: new THREE.Quaternion(m.tilt[0], m.tilt[1], m.tilt[2], m.tilt[3]), skin: m.skin });
   }
 
   // the next one from a shuffled deck that has room here (flat enough ground, space for both and for the camera)
@@ -77,10 +95,12 @@ export class GunFinale {
     return KNIFE.find(fits) || null;
   }
 
-  // you, as a body for the scene: never two men in the same clothes in one shot
+  // you, as a body for the scene: over the network in your own clothes (the ones the others see you in), alone never two men
+  // in the same clothes in one shot
   bodyOfYou(other) {
-    const O = other && other.soldier && other.soldier.outfit, dark = O === OUTFITS.vanguard || O === OUTFITS.desert, k = dark ? 'raven' : 'vanguard';
-    const g = this.game;
+    const g = this.game, cfg = g.match && g.match.cfg, me = g.net && g.net.inMatch && cfg && cfg.roster ? cfg.roster.find((r) => r.id === g.net.you) : null;
+    const O = other && other.soldier && other.soldier.outfit, dark = O === OUTFITS.vanguard || O === OUTFITS.desert;
+    const k = me && OUTFITS[me.outfit] ? me.outfit : dark ? 'raven' : 'vanguard';
     let av = this.bodies[k];
     if (!av || av.root.parent !== g.scene) { av = this.bodies[k] = new Soldier(g, OUTFITS[k]); }
     const p = g.player, W = g.weapons;
@@ -92,31 +112,33 @@ export class GunFinale {
 
   hold(c) {
     const g = this.game, p = g.player, W = g.weapons;
-    c.health = Math.max(c.health, 1);
     if (c === p) {
+      c.health = Math.max(c.health, 1);
       W.cancelReload(); W.vm.stop(); W.state = 'idle'; W.adsAmount = 0; W.wantsAds = false; W.lunge = null; W.firingRecently = false;
       p.sprinting = false; p.tac = false; p.mount = null; p.vel.set(0, 0, 0);
-    } else {
+    } else if (c.remote) c.scripted = true; // (somebody else's: his computer holds him, here his body only waits for the scene)
+    else {
+      c.health = Math.max(c.health, 1);
       c.scripted = true; c.vel.set(0, 0, 0); c.path = null; c.mantling = null; c.crouching = false; c.sliding = 0; c.prone = false; c.target = null;
     }
   }
 
-  start(killer, victim, info, F, y, yaw, t0, turn) {
+  start(killer, victim, info, F, y, yaw, t0, turn, opt = {}) {
     const g = this.game, p = g.player, W = g.weapons;
     const other = killer === p ? victim : victim === p ? killer : null, av = other ? this.bodyOfYou(other) : null;
     this.hold(killer); this.hold(victim);
     const A = killer === p ? av : killer.soldier, V = victim === p ? av : victim.soldier;
-    const stage = new Stage(g, F, A, V, new THREE.Vector3(victim.pos.x, y, victim.pos.z), yaw, this.finTilt, t0, turn);
+    const stage = new Stage(g, F, A, V, opt.origin || new THREE.Vector3(victim.pos.x, y, victim.pos.z), yaw, opt.tilt || this.finTilt, t0, turn);
     // (unless it is you doing it, the camera doesn't end up in anybody's head)
     if (killer !== p) stage.staysOut = true;
-    const skin = killer === p ? (W.w && W.w.def.melee ? W.w.skin : p.gunSkin) : killer.skin;
-    const prop = knifeProp(g, skin || 'standard');
+    const skin = opt.skin || (killer === p ? (W.w && W.w.def.melee ? W.w.skin : p.gunSkin) : killer.skin) || 'standard';
+    const prop = knifeProp(g, skin);
     g.scene.add(prop);
     stage.prop = prop;
     stage.startFrom(killer.pos);
     stage.pose(0);
     const cam = g.engine.camera;
-    this.S = { F, stage, A, V, av, killer, victim, info, prop, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false };
+    this.S = { F, stage, A, V, av, killer, victim, info, prop, skin, decider: !!opt.decider, fired: 0, from: { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov }, spurt: 0, spurtT: 0, killed: false };
     // what the skipped part of the scene had done already
     const S = this.S;
     while (S.fired < F.events.length && F.events[S.fired][0] < t0) { const E = F.events[S.fired++]; if (E[1] === 'prop' || E[1] === 'drop') this.event(E, S); }
@@ -203,18 +225,28 @@ export class GunFinale {
     this.cine(false);
     if (S.prop.parent) S.prop.parent.remove(S.prop);
     const k = S.killer;
-    st.endGround(k.pos);
-    const f = g.col.floorBelow(k.pos.x, k.pos.z, 0.2, st.o.y + 0.5, st.o.y - 1);
-    if (isFinite(f)) k.pos.y = f;
+    if (k.remote) k.scripted = false; // (where he goes on from is his own computer's business)
+    else {
+      st.endGround(k.pos);
+      const f = g.col.floorBelow(k.pos.x, k.pos.z, 0.2, st.o.y + 0.5, st.o.y - 1);
+      if (isFinite(f)) k.pos.y = f;
+    }
     if (k === p) {
       p.yaw = st.endYaw(); p.pitch = 0; p.mode = 'normal'; p.onGround = true;
       S.av.resetPose(); S.av.setVisible(false);
       W.equip(false);
-    } else {
+    } else if (!k.remote) {
       k.aimYaw = st.endYaw(); k.scripted = false; k.onGround = true; k.path = null;
       k.soldier.resetPose(); k.soldier.setVisible(true); k.soldier.setWeapon(k.wdef, k.optic, k.skin);
     }
     const v = S.victim;
+    // told by somebody else: his death comes from there (you were watching, or it was you doing it)
+    if (!S.decider) {
+      if (v !== p) v.scripted = false;
+      const ds = document.getElementById('death-screen');
+      if (ds && !p.alive) ds.classList.remove('hidden');
+      return;
+    }
     if (v === p) {
       // you lie where the scene left you (that body is you now), and the camera looks on from where it stood
       const cam = g.engine.camera.position;

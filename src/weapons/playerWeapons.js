@@ -79,8 +79,8 @@ export class PlayerWeapons {
   }
 
   // Gun Game: one weapon at a time, the one of your level, full and ready
-  setGunWeapon(id, skin) {
-    const def = WEAPONS[id], optic = def.optics.includes('reflex') ? 'reflex' : def.optics[0];
+  setGunWeapon(id, skin, sight) {
+    const def = WEAPONS[id], optic = sight && def.optics.includes(sight) ? sight : def.optics.includes('reflex') ? 'reflex' : def.optics[0];
     clearTimeout(this._boltDelay);
     this.slots = [{ def, optic, skin, mag: def.mag, reserve: def.reserve, chambered: true }, null];
     this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0; this.lunge = null; this.lockSlot = -1;

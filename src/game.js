@@ -337,7 +337,7 @@ export class Game {
     this.match = cfg.mode === 'br' ? new BRMatch(this, cfg) : new Match(this, cfg);
     if (undoMatch) undoMatch();
     // Gun Game: the winning stab is played out as a finisher (and nothing of the last one carries over)
-    this.finale = cfg.mode === 'gun' && !cfg.net ? new GunFinale(this) : null;
+    this.finale = cfg.mode === 'gun' ? new GunFinale(this) : null;
     this.slowmo = 0; this.engine.film = 0;
     this.player.team = cfg.mode === 'ffa' || cfg.mode === 'gun' ? 1 : 0;
     this.player.kills = 0; this.player.deaths = 0; this.player.score = 0; this.player.tier = 0; this.player.gunSkin = null;

@@ -41,9 +41,9 @@ export class Bot {
     this.footPhase = 0;
   }
 
-  setWeapon(id, skin) {
+  setWeapon(id, skin, sight) {
     this.wdef = WEAPONS[id];
-    const optic = this.wdef.optics.includes('reflex') ? 'reflex' : this.wdef.optics[0];
+    const optic = sight && this.wdef.optics.includes(sight) ? sight : this.wdef.optics.includes('reflex') ? 'reflex' : this.wdef.optics[0];
     if (skin !== undefined) this.skin = skin;
     this.optic = optic;
     this.soldier.setWeapon(this.wdef, optic, this.skin || 'standard');

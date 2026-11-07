@@ -134,7 +134,7 @@ export class Net {
       case 'obj': if (!this.isAuth && this.game.match && this.game.match.points) this.game.match.points.unpack(m.s); break;
       case 'take': if (g.br) g.br.loot.netTake(m.nid); break;
       case 'lost': if (g.br) g.br.onItemLost(m.nid); break;
-      case 'ev': if (g.br) g.br.onNetEvent(m); else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
+      case 'ev': if (g.br) g.br.onNetEvent(m); else if (m.k === 'gfin') { if (g.finale) g.finale.onNet(m); } else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
       case 'joined': { this.addEntry(m.entry); const c = this.byId.get(m.entry.id); if (c && m.score) { c.kills = m.score.kills; c.deaths = m.score.deaths; c.score = m.score.points; c.tier = m.score.tier || 0; } this.note(m.entry.name + ' ist dazugekommen'); break; }
       case 'left': this.onLeft(m); break;
       case 'auth': this.setAuth(m.id); break;

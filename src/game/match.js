@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Bot } from '../bots/bot.js';
 import { OUTFITS } from '../characters/soldier.js';
-import { PRIMARIES, GUN_TIERS, WEAPONS } from '../weapons/defs.js';
+import { PRIMARIES, GUN_TIERS, WEAPONS, SECONDARIES } from '../weapons/defs.js';
 import { randomSkin } from '../weapons/skins.js';
 import { Points, pointsOf } from './points.js';
 
@@ -11,6 +11,12 @@ import { Points, pointsOf } from './points.js';
 // =============================================================================
 const NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };
+// Gun Game: each new weapon comes with a sight picked at random from the ones it takes; handguns always have their iron sights
+const gunOptic = (id) => {
+  const d = WEAPONS[id];
+  if (d.melee || SECONDARIES.includes(id) || !d.optics.length) return 'iron';
+  return d.optics[(Math.random() * d.optics.length) | 0];
+};
 
 function pickWeapon() {
   const total = PRIMARIES.reduce((s, id) => s + (WEAPON_WEIGHTS[id] || 5), 0);
@@ -63,7 +69,7 @@ export class Match {
   // ---- in a network match the room has decided who is who
   makeNetBot(e) {
     const b = new Bot(this.game, { name: e.name, team: e.team, difficulty: this.cfg.difficulty, outfit: OUTFITS[e.outfit], weapon: e.weapon || pickWeapon() });
-    if (this.gun) { b.tier = 0; b.setWeapon(GUN_TIERS[0], randomSkin()); }
+    if (this.gun) { b.tier = 0; b.setWeapon(GUN_TIERS[0], randomSkin(), gunOptic(GUN_TIERS[0])); }
     return b;
   }
   adoptAt(b, was) { b.spawn(was.pos.x, was.pos.y, was.pos.z, was.aimYaw); b.health = Math.max(1, was.health); }
@@ -88,7 +94,7 @@ export class Match {
         outfit = OUTFITS[team === 0 ? 'vanguard' : 'raven'];
       } else { team = 2 + i; outfit = OUTFITS[outfitsFFA[i % outfitsFFA.length]]; }
       const bot = new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit, weapon: this.gun ? GUN_TIERS[0] : pickWeapon() });
-      if (this.gun) { bot.tier = 0; bot.setWeapon(GUN_TIERS[0], randomSkin()); }
+      if (this.gun) { bot.tier = 0; bot.setWeapon(GUN_TIERS[0], randomSkin(), gunOptic(GUN_TIERS[0])); }
       bots.push(bot);
     }
     return bots;
@@ -131,33 +137,33 @@ export class Match {
     let x = p.x + (Math.random() - 0.5) * 0.6, z = p.z + (Math.random() - 0.5) * 0.6;
     if (this.game.col.overlaps(x - 0.25, p.y + 0.05, z - 0.25, x + 0.25, p.y + 1.78, z + 0.25)) { x = p.x; z = p.z; }
     ent.spawn(x, p.y, z, p.yaw);
-    if (ent.pendingGun) { ent.setWeapon(ent.pendingGun[0], ent.pendingGun[1]); ent.pendingGun = null; }
+    if (ent.pendingGun) { ent.setWeapon(ent.pendingGun[0], ent.pendingGun[1], ent.pendingGun[2]); ent.pendingGun = null; }
     return p;
   }
 
   // ---- Gun Game. Who has reached which weapon. Over the network the room decides this and everybody is told.
-  // Each new weapon comes with a random skin, the plain one among them.
+  // Each new weapon comes with a random skin, the plain one among them, and a random sight (handguns: iron sights).
   setTier(c, tier) {
     const g = this.game, t = Math.max(0, Math.min(GUN_TIERS.length - 1, tier)), was = c.tier || 0;
     if (t === was) return;
     c.tier = t;
-    const id = GUN_TIERS[t], skin = randomSkin();
+    const id = GUN_TIERS[t], skin = randomSkin(), optic = gunOptic(id);
     if (c === g.player) {
-      c.gunSkin = skin;
-      if (c.alive) g.weapons.setGunWeapon(id, skin);
+      c.gunSkin = skin; c.gunOptic = optic;
+      if (c.alive) g.weapons.setGunWeapon(id, skin, optic);
       if (t > was) { g.hud.popup('STUFE ' + (t + 1), WEAPONS[id].name, t === GUN_TIERS.length - 1); g.audio.play('chargeFwd', { vol: 0.7 }); }
       else { g.hud.popup('STUFE ' + (t + 1), 'ZURÜCKGESTUFT'); g.audio.play('magDrop', { vol: 0.7 }); }
     } else if (!c.remote) {
-      if (c.alive) c.setWeapon(id, skin); else c.pendingGun = [id, skin];
+      if (c.alive) c.setWeapon(id, skin, optic); else c.pendingGun = [id, skin, optic];
     }
     if (t === GUN_TIERS.length - 1 && t > was && c !== g.player) g.hud.message('<span style="font-size:22px">' + c.name.replace(/[<>&]/g, '') + ' HAT DAS MESSER</span>', 2.5);
   }
 
   // (re)spawning, or the match has just begun
   armPlayer() {
-    const p = this.game.player;
-    if (!p.gunSkin) p.gunSkin = randomSkin();
-    this.game.weapons.setGunWeapon(GUN_TIERS[p.tier || 0], p.gunSkin);
+    const p = this.game.player, id = GUN_TIERS[p.tier || 0];
+    if (!p.gunSkin) { p.gunSkin = randomSkin(); p.gunOptic = gunOptic(id); }
+    this.game.weapons.setGunWeapon(id, p.gunSkin, p.gunOptic);
   }
 
   gunLeader() { return [...this.game.combatants].sort((a, b) => (b.tier || 0) - (a.tier || 0) || b.kills - a.kills)[0]; }

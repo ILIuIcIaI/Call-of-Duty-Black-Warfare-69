@@ -354,20 +354,23 @@ export class Player {
   // What is right in front of us? A ledge to rest the gun on, or a corner to lean out of. side: preferred side (-1, 0, 1).
   probeMount(side = 0) {
     const col = this.game.col, f = this.forwardVec(_v1), r = this.rightVec(_v2), x = this.pos.x, z = this.pos.z;
-    const eye = this.pos.y + this.eyeH, reach = 0.85, h = _mh;
+    const prone = this.stance === 'prone', eye = this.pos.y + this.eyeH, reach = prone ? 0.95 : 0.85, h = _mh;
     const ahead = (ox, oz, y) => col.raycast(ox, y, oz, f.x, 0, f.z, reach, h);
-    const chest = ahead(x, z, eye - 0.32) || ahead(x, z, eye - 0.72), atEye = ahead(x, z, eye + 0.04);
+    // Lying down the gun only rests on what is about as high as your eyes (sandbags, a low wall, a step): you prop yourself up
+    // on your elbows a little and no more. What stands higher is a wall, and there you can only lean out past its edge.
+    const above = prone ? 0.08 : 0.04;
+    const chest = prone ? ahead(x, z, eye - 0.08) : ahead(x, z, eye - 0.32) || ahead(x, z, eye - 0.72), atEye = ahead(x, z, eye + above);
     if (chest && !atEye) {
       // something to rest the gun on: find its top
-      const top = col.floorBelow(x + f.x * (chest.t + 0.12), z + f.z * (chest.t + 0.12), 0.05, eye + 0.04, eye - 0.9);
+      const d = chest.t + (prone ? 0.1 : 0.12), top = col.floorBelow(x + f.x * d, z + f.z * d, 0.05, eye + above, eye - (prone ? 0.25 : 0.9));
       return isFinite(top) ? { kind: 'top', side: 0, top } : null;
     }
     if (!atEye) return null;
-    // a wall right in front: only a corner with free space beside it is worth anything
-    const order = side ? [side, -side] : [1, -1];
+    // a wall right in front: only a corner with free space beside it is worth anything (lying down, closer beside you)
+    const order = side ? [side, -side] : [1, -1], wide = prone ? 0.45 : 0.62;
     for (const s of order) {
-      const sx = x + r.x * s * 0.62, sz = z + r.z * s * 0.62;
-      if (col.raycast(x, eye, z, r.x * s, 0, r.z * s, 0.62, h)) continue;
+      const sx = x + r.x * s * wide, sz = z + r.z * s * wide;
+      if (col.raycast(x, eye, z, r.x * s, 0, r.z * s, wide, h)) continue;
       if (!ahead(sx, sz, eye)) return { kind: s < 0 ? 'left' : 'right', side: s };
     }
     return null;
@@ -375,12 +378,13 @@ export class Player {
 
   updateMount(dt, input, weapon) {
     const aimHeld = input.ads, aiming = weapon && weapon.adsAmount > 0.3, toggle = input.pressed('mount');
-    const free = this.mode === 'normal' && this.onGround && !this.sprinting && this.stance !== 'prone' && !this.gliding;
+    // (lying down only once you are all the way down: on the way the eyes aren't where the gun will rest)
+    const prone = this.stance === 'prone', free = this.mode === 'normal' && this.onGround && !this.sprinting && !this.gliding && (!prone || Math.abs(this.eyeH - EYE.prone) < 0.05);
     const sideWish = input.down('left') ? -1 : input.down('right') ? 1 : 0;
     let m = this.mount;
     if (m) {
       m.t += dt;
-      let off = (!aimHeld && !m.held) || !free || input.down('back') || input.pressed('sprint') || input.pressed('jump') || Math.abs(angleDiff(this.yaw, m.yaw)) > 1.35 || (toggle && m.t > 0.15);
+      let off = (!aimHeld && !m.held) || !free || m.stance !== this.stance || input.down('back') || input.pressed('sprint') || input.pressed('jump') || Math.abs(angleDiff(this.yaw, m.yaw)) > 1.35 || (toggle && m.t > 0.15);
       if (!off && (this.mountProbeT -= dt) <= 0) {
         this.mountProbeT = 0.08;
         const k = this.probeMount(m.side || sideWish);
@@ -391,7 +395,7 @@ export class Player {
     } else if (free && (toggle || (aiming && aimHeld && input.down('forward')))) {
       const k = this.probeMount(sideWish);
       if (k) {
-        this.mount = m = { ...k, t: 0, yaw: this.yaw, held: toggle };
+        this.mount = m = { ...k, t: 0, yaw: this.yaw, held: toggle, stance: this.stance };
         this.mountProbeT = 0.08;
         this.game.audio.play('magKnock', { vol: 0.45, rate: 0.75 });
         if (weapon) weapon.vm.jolt(0, -0.05, 0.05, -0.5, 0, 0.1 * (k.side || 0));
@@ -399,14 +403,15 @@ export class Player {
     }
     // ---- lean out, limited by what is beside us
     let leanT = 0, upT = 0;
+    // (lying down you shift over a little and prop yourself up a hand's breadth, that is all a body does down there)
     if (m && m.side) {
-      const r = this.rightVec(_v2), hit = this.game.col.raycast(this.pos.x, this.pos.y + this.eyeH, this.pos.z, r.x * m.side, 0, r.z * m.side, 0.62, _mh);
-      leanT = m.side * Math.min(0.46, hit ? Math.max(0, hit.t - 0.16) : 0.46);
+      const r = this.rightVec(_v2), far = prone ? 0.3 : 0.46, hit = this.game.col.raycast(this.pos.x, this.pos.y + this.eyeH, this.pos.z, r.x * m.side, 0, r.z * m.side, prone ? 0.45 : 0.62, _mh);
+      leanT = m.side * Math.min(far, hit ? Math.max(0, hit.t - 0.16) : far);
     }
-    if (m && m.kind === 'top') upT = clamp(m.top + 0.24 - (this.pos.y + this.eyeH), 0, 0.42);
+    if (m && m.kind === 'top') upT = prone ? clamp(m.top + 0.07 - (this.pos.y + this.eyeH), 0, 0.14) : clamp(m.top + 0.24 - (this.pos.y + this.eyeH), 0, 0.42);
     this.lean = damp(this.lean, leanT, 13, dt);
     this.peekUp = damp(this.peekUp, upT, 13, dt);
-    this.leanRoll = damp(this.leanRoll, m && m.side ? -m.side * 0.13 : 0, 11, dt);
+    this.leanRoll = damp(this.leanRoll, m && m.side ? -m.side * (prone ? 0.07 : 0.13) : 0, 11, dt);
     const r = this.rightVec(_v2);
     this.peek.set(r.x * this.lean, this.peekUp, r.z * this.lean);
   }
