@@ -23,6 +23,7 @@ import { NavGraph } from './bots/nav.js';
 import { IslandNav } from './bots/islandNav.js';
 import { Match } from './game/match.js';
 import { BRMatch } from './game/br.js';
+import { GunFinale } from './game/finale.js';
 import { Autopilot } from './dev/autopilot.js';
 import { Net } from './net/net.js';
 import { Lobby } from './ui/lobby.js';
@@ -335,6 +336,9 @@ export class Game {
     const undoMatch = cfg.net ? seededRandom(cfg.seed + 1) : null;
     this.match = cfg.mode === 'br' ? new BRMatch(this, cfg) : new Match(this, cfg);
     if (undoMatch) undoMatch();
+    // Gun Game: the winning stab is played out as a finisher (and nothing of the last one carries over)
+    this.finale = cfg.mode === 'gun' && !cfg.net ? new GunFinale(this) : null;
+    this.slowmo = 0; this.engine.film = 0;
     this.player.team = cfg.mode === 'ffa' || cfg.mode === 'gun' ? 1 : 0;
     this.player.kills = 0; this.player.deaths = 0; this.player.score = 0; this.player.tier = 0; this.player.gunSkin = null;
     this.combatants = [this.player];
@@ -571,6 +575,7 @@ export class Game {
   }
 
   kill(victim, killer, info) {
+    if (this.finale && !(info && info.finale) && this.finale.take(victim, killer, info)) return; // (it dies at the end of the scene)
     const net = this.net && this.net.inMatch;
     if (net && !(info && info.fromNet) && (!victim.remote || (info && info.staged))) this.net.sendDied(victim, killer, info);
     victim.alive = false;
@@ -772,8 +777,9 @@ export class Game {
 
     // ---- simulate
     if (paused) { this.engine.render(this.scene, this.vmScene); this.renderLoadoutPreview(); return; }
-    const br = this.br;
-    if (p.alive && br && br.controlsPlayer) {
+    const br = this.br, fin = this.finale && this.finale.on;
+    if (fin) this.finale.update(dt); // (a scene plays: nobody does anything themselves)
+    else if (p.alive && br && br.controlsPlayer) {
       br.updatePlayer(dt, inp);
     } else if (p.alive) {
       const steps = Math.ceil(dt / (1 / 120));
@@ -789,14 +795,14 @@ export class Game {
       document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
       if (this.respawnT <= 0 && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
     }
-    for (const b of this.bots) b.update(dt);
+    for (const b of this.bots) if (!(fin && this.finale.holds(b, dt))) b.update(dt);
     if (this.mapDef.update) this.mapDef.update(this, dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
     this.updateCorpses(dt);
     if (inp.pressed('loadout') && !br && !(this.match && this.match.gun)) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.net) this.net.tick(dt);
     if (this.match) {
-      this.match.update(dt);
+      if (!fin) this.match.update(dt);
       const sc = this.match.scores();
       this.hud.setScores(sc.f, sc.e, this.match.mode, sc.f, sc.e);
       this.hud.setTimer(Math.max(0, this.match.timeLeft));
@@ -817,14 +823,15 @@ export class Game {
     cam.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / targetZoom) / DEG + W.fovPunch.x;
     cam.updateProjectionMatrix();
     const punch = W.punch;
-    if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
+    if (this.finale && this.finale.on) this.finale.camera(cam);
+    else if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
     else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
     else if (br && br.watchOn) br.watchCam(cam, dt);
     else this.deathCam(dt);
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
     this.hud.setScope(scoped ? optic.overlay : null);
-    W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel);
+    W.vm.root.visible = p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on);
     W.vm.smoke.points.visible = W.vm.root.visible;
     if (!W.vm.root.visible) W.vm.smoke.update(dt); // (the smoke of the last shots goes on without the gun, out of sight)
     if (scoped) {

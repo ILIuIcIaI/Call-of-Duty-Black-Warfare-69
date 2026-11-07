@@ -212,7 +212,11 @@ export class PlayerWeapons {
     if (t - this.lastShotT > 0.22) this.recoilIndex = 0;
 
     // ---- reload / inspect input
-    if (input.pressed('reload')) this.tryReload();
+    if (input.pressed('reload')) {
+      // reloading out of a tac sprint: you drop to a plain sprint and run on while the hands change the magazine
+      if (player.tac && this.state === 'idle' && w.mag < def.mag && w.reserve > 0) player.tac = false;
+      this.tryReload();
+    }
     if (input.pressed('inspect') && this.state === 'idle' && this.adsAmount < 0.1) { this.state = 'inspect'; this.vm.play(inspectClip(3.0)); }
     if (this.state === 'inspect' && (triggerHeld || sprinting)) { this.vm.stop(); this.state = 'idle'; }
     // tac sprint cancels an unfinished reload
