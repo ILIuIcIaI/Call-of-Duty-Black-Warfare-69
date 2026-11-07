@@ -19,6 +19,7 @@ export const SD = {
 };
 const SITES = ['A', 'B'];
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _m4 = new THREE.Matrix4(), UPY = new THREE.Vector3(0, 1, 0);
 // (on a back: the case flat against it, the panel facing out)
 const ON_BACK = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
 
@@ -47,18 +48,22 @@ class HandsAtWork {
   constructor(game) {
     // a gloved hand, fingers along -Z, and a forearm from the wrist that is turned toward its shoulder every frame
     const M = game.weapons.vm.mats;
-    const hand = (mirror) => {
+    // (the typing hand points its index finger, the others curled in; the other hand lies flat on the case)
+    const hand = (mirror, point) => {
       const g = new THREE.Group();
       const add = (geo, mat, x, y, z, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m; };
       add(new THREE.BoxGeometry(0.082, 0.03, 0.088), M.glove, 0, 0, 0);
-      for (const [x, L] of [[-0.028, 0.05], [-0.0095, 0.06], [0.0095, 0.058], [0.028, 0.048]]) add(new THREE.CapsuleGeometry(0.0095, L * 0.7, 4, 8), M.glove, x, -0.006, -0.044 - L * 0.42, Math.PI / 2 + 0.3);
+      for (const [x, L, i] of [[-0.028, 0.05, 0], [-0.0095, 0.06, 1], [0.0095, 0.058, 2], [0.028, 0.048, 3]]) {
+        if (point && i > 0) add(new THREE.CapsuleGeometry(0.0098, 0.022, 4, 8), M.glove, x, -0.014, -0.05, Math.PI / 2 + 1.25);
+        else add(new THREE.CapsuleGeometry(0.0095, L * (point ? 0.95 : 0.7), 4, 8), M.glove, x, -0.006, -0.044 - L * (point ? 0.55 : 0.42), Math.PI / 2 + (point ? 0.12 : 0.3));
+      }
       add(new THREE.CapsuleGeometry(0.0105, 0.03, 4, 8), M.glove, 0.048 * mirror, -0.006, -0.012, Math.PI / 2).rotation.z = 0.6 * mirror;
       const arm = new THREE.Group(); arm.position.set(0, 0.004, 0.046); g.add(arm);
       const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.045, 12), M.glove); cuff.position.y = 0.02; arm.add(cuff);
       const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.64, 12), M.sleeve); sleeve.position.y = 0.36; arm.add(sleeve); // (long enough to run out of the picture)
       return { g, arm };
     };
-    const hl = hand(1), hr = hand(-1);
+    const hl = hand(1, false), hr = hand(-1, true);
     this.left = hl.g; this.right = hr.g;
     this.arms = [{ open: hl.g, arm: hl.arm }, { open: hr.g, arm: hr.arm }];
     void buildHands;
@@ -161,6 +166,16 @@ export class SearchDestroy {
 
   // while you plant or defuse: no gun in your hands, and your eyes on the bomb
   hidesGun() { return this.hands.root.visible; }
+  // kneeling at it: the eyes go down closer to the bomb and onto it
+  workCam(cam) {
+    const k = this.hands.k, e = k * k * (3 - 2 * k), B = this.bomb.root.position;
+    if (e <= 0.001) return;
+    _v.set(B.x - cam.position.x, 0, B.z - cam.position.z).normalize();
+    cam.position.x += _v.x * 0.16 * e; cam.position.z += _v.z * 0.16 * e; cam.position.y -= 0.3 * e;
+    _m4.lookAt(cam.position, _w.set(B.x, B.y + 0.07, B.z), UPY);
+    _q.setFromRotationMatrix(_m4);
+    cam.quaternion.slerp(_q, e);
+  }
   lookAtWork(dt) {
     const g = this.game, p = g.player, w = this.work;
     if (!w || w.ent !== p) return;
@@ -174,6 +189,7 @@ export class SearchDestroy {
   dispose() {
     this.bomb.dispose(); this.packed.dispose(); this.hands.dispose(); this.shop.dispose();
     document.getElementById('sb-timer').classList.remove('bomb');
+    document.getElementById('hud').classList.remove('sd-working');
     document.getElementById('death-screen').classList.remove('watching');
     if (this.el) { this.el.remove(); this.el = null; }
     if (this.marks) for (const m of this.marks) m.remove();
@@ -349,7 +365,7 @@ export class SearchDestroy {
     const g = this.game, site = this.inSite(ent) || this.sites[0];
     // in front of his feet, on the floor
     const yaw = ent.isPlayer ? ent.yaw : ent.aimYaw;
-    const x = ent.pos.x - Math.sin(yaw) * 0.8, z = ent.pos.z - Math.cos(yaw) * 0.8; // (in front of the knees)
+    const x = ent.pos.x - Math.sin(yaw) * 0.52, z = ent.pos.z - Math.cos(yaw) * 0.52;
     const fy = g.col.floorBelow(x, z, 0.12, ent.pos.y + 0.6, ent.pos.y - 2);
     const ok = Number.isFinite(fy) && Math.abs(fy - ent.pos.y) < 0.6 && g.col.lineClear(ent.pos.x, ent.pos.y + 0.3, ent.pos.z, x, fy + 0.1, z);
     return { site, pos: ok ? new THREE.Vector3(x, fy, z) : new THREE.Vector3(ent.pos.x, ent.pos.y, ent.pos.z), yaw };
@@ -604,6 +620,8 @@ export class SearchDestroy {
       this.roleEl = this.el.children[0]; this.aliveEl = this.el.children[1]; this.workEl = this.el.children[2];
     }
     const mine = this.role(p.team);
+    const working = this.hidesGun();
+    if (this.workingCss !== working) { this.workingCss = working; document.getElementById('hud').classList.toggle('sd-working', working); } // (no crosshair over the bomb)
     const live = this.phase === 'planted' && !this.planted.done;
     if (this.timerLive !== live) { this.timerLive = live; document.getElementById('sb-timer').classList.toggle('bomb', live); }
     const role = (mine === 'attack' ? 'ANGRIFF' : 'VERTEIDIGUNG') + ' · ' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNG' : 'RUNDE ' + Math.max(1, this.round) + '/' + SD.ROUNDS) + (this.carrier === p ? ' · DU HAST DIE BOMBE' : '');

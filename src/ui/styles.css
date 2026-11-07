@@ -415,3 +415,4 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #killcam .kc-tag span { font-size: 13px; letter-spacing: 3px; font-weight: 700; color: #fff; }
 #death-screen.kc { display: none; }
 #hud.kc-on #scorebar, #hud.kc-on #minimap-wrap, #hud.kc-on #ammo, #hud.kc-on #crosshair, #hud.kc-on #sd-panel, #hud.kc-on #sd-money, #hud.kc-on #sb-points, #hud.kc-on #gun-panel, #hud.kc-on #nametags { visibility: hidden; }
+#hud.sd-working #crosshair { visibility: hidden; }

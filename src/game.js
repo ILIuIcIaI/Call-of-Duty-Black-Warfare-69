@@ -813,7 +813,7 @@ export class Game {
     const punch = W.punch;
     if (this.finale && this.finale.on) this.finale.camera(cam);
     else if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
-    else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; }
+    else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; if (sdm && sdm.hidesGun()) sdm.workCam(cam); }
     else if (this.killcam && this.killcam.on && this.killcam.camera(cam, dt)) { /* the killcam has the camera */ }
     else if (br && br.watchOn) br.watchCam(cam, dt);
     else if (sdm && (this.deathCamT || 0) > 2.4 && sdm.watch(cam, dt)) { /* watching a teammate */ }
@@ -848,7 +848,7 @@ export class Game {
     // ---- first person body
     if (this.playerBody) {
       const fb = this.playerBody;
-      fb.setVisible(p.alive && !(br && br.hideBody));
+      fb.setVisible(p.alive && !(br && br.hideBody) && !(this.match && this.match.sd && this.match.sd.hidesGun())); // (S&D: kneeling at the bomb, the knees would be in the way)
       const pw = p.proneW * (0.58 - 0.13 * fb.anim.supine), by = p.bodyYaw; // (on the back: chest just under the view)
       const back = p.mode === 'slide' ? 0.05 : 0.16 * (1 - p.proneW);
       // slide / on the back: body slightly left so the legs show beside the gun
