@@ -399,6 +399,7 @@ export class Game {
     p.yaw = sp.yaw; p.pitch = 0;
     p.alive = true;
     if (this.match.gun) this.match.armPlayer();
+    else if (this.match.sd) this.match.sd.shop.armPlayer();
     else {
       this.weapons.applyLoadout(this.settings.loadout);
       this.weapons.refillAll();
@@ -613,7 +614,7 @@ export class Game {
     c.resetPose();
     c.setVisible(true);
     if (c.weaponDrop) { this.scene.remove(c.weaponDrop.obj); c.weaponDrop = null; }
-    const w = this.weapons.w;
+    const w = (this.match && this.match.sd && this.weapons.slots[0]) || this.weapons.w;
     c.setWeapon(w.def, w.optic, w.skin);
     // pose it like the player was standing / crouching / sliding right now
     const st = {
@@ -777,7 +778,7 @@ export class Game {
     for (const b of this.bots) if (!(fin && this.finale.holds(b, dt))) b.update(dt);
     if (this.mapDef.update) this.mapDef.update(this, dt);
     if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
-    if (inp.pressed('loadout') && !br && !(this.match && this.match.gun)) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
+    if (inp.pressed('loadout') && !br && !(this.match && (this.match.gun || this.match.sd))) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.net) this.net.tick(dt);
     if (this.match) {
       if (!fin) this.match.update(dt);

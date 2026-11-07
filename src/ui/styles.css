@@ -390,3 +390,18 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 .sdmark span { font-weight: 700; font-size: 12px; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
 /* S&D: watching a teammate until the next round, only the line saying whom */
 #death-screen.watching .death-title, #death-screen.watching #death-by { display: none; }
+/* S&D: your money (and the buy and pick-up hints) under the minimap, and the shop */
+#sd-money { position: absolute; left: 22px; top: 252px; font-family: var(--head); font-size: 20px; letter-spacing: 1px; color: #7dff6a; text-shadow: 0 2px 6px #000; white-space: nowrap; pointer-events: none; }
+#sd-buy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(980px, 92vw); padding: 16px 18px 12px; background: rgba(8,10,10,.92); border: 1px solid rgba(255,255,255,.14); color: #fff; pointer-events: auto; z-index: 30; }
+#sd-buy .sdb-head { display: flex; align-items: baseline; gap: 18px; margin-bottom: 12px; font-family: var(--head); letter-spacing: 3px; }
+#sd-buy .sdb-head b { font-size: 26px; font-weight: 400; }
+#sd-buy .sdb-head span { font-size: 22px; color: #7dff6a; }
+#sd-buy .sdb-head button { margin-left: auto; background: none; border: 1px solid rgba(255,255,255,.3); color: #fff; padding: 4px 10px; font-family: var(--head); letter-spacing: 2px; cursor: pointer; }
+#sd-buy .sdb-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+#sd-buy h4 { margin: 0 0 6px; font-family: var(--head); font-weight: 400; font-size: 15px; letter-spacing: 3px; color: rgba(255,255,255,.6); }
+#sd-buy .sdb-col button { display: flex; justify-content: space-between; width: 100%; margin-bottom: 6px; padding: 8px 10px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); color: #fff; font-size: 13px; letter-spacing: 1px; cursor: pointer; text-align: left; }
+#sd-buy .sdb-col button:hover { background: rgba(255,208,74,.18); border-color: #ffd04a; }
+#sd-buy .sdb-col button span { color: #7dff6a; }
+#sd-buy .sdb-col button.cant { opacity: .4; } #sd-buy .sdb-col button.cant span { color: var(--enemy); }
+#sd-buy .sdb-col button.own { opacity: .55; } #sd-buy .sdb-col button.own span { color: #fff; }
+#sd-buy .sdb-hint { margin-top: 6px; font-size: 12px; color: rgba(255,255,255,.55); letter-spacing: 1px; }

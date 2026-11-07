@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BombModel } from './bomb.js';
 import { buildHands } from '../weapons/models.js';
+import { Shop, ECON } from './sdshop.js';
 
 // =============================================================================
 // Search and Destroy. Two teams, one bomb, no respawn within a round:
@@ -8,11 +9,12 @@ import { buildHands } from '../weapons/models.js';
 //   - attackers win a round by killing all defenders or when the planted bomb goes off
 //   - defenders win by killing all attackers before the bomb is down, by defusing it, or when the round
 //     time runs out with nothing planted (a planted bomb keeps the round going even with no attacker left)
-//   - first team to WIN rounds; after HALF rounds the sides switch
+//   - ROUNDS rounds; after HALF of them the sides switch; whoever has more than half has won (4 of 6, so it can end early);
+//     at 3 : 3 one more round decides, with the attackers drawn by lot
 // Alone it all runs here; over the network the computer with the bots runs it and tells the others (see Net).
 // =============================================================================
 export const SD = {
-  FREEZE: 5, ROUND: 105, BOMB: 40, PLANT: 3.2, DEFUSE: 7, POST: 5, WIN: 6, HALF: 5,
+  FREEZE: 8, ROUND: 105, BOMB: 40, PLANT: 3.2, DEFUSE: 7, POST: 5, ROUNDS: 6, HALF: 3,
   BLAST: 9, BLAST_FAR: 22, SIZES: [4, 5, 6],
 };
 const SITES = ['A', 'B'];
@@ -154,6 +156,7 @@ export class SearchDestroy {
     this.spectate = null; this.specT = 0;
     this.el = null;
     this.hands = new HandsAtWork(game);
+    this.shop = new Shop(this);
   }
 
   // while you plant or defuse: no gun in your hands, and your eyes on the bomb
@@ -169,7 +172,7 @@ export class SearchDestroy {
   }
 
   dispose() {
-    this.bomb.dispose(); this.packed.dispose(); this.hands.dispose();
+    this.bomb.dispose(); this.packed.dispose(); this.hands.dispose(); this.shop.dispose();
     document.getElementById('sb-timer').classList.remove('bomb');
     document.getElementById('death-screen').classList.remove('watching');
     if (this.el) { this.el.remove(); this.el = null; }
@@ -200,8 +203,11 @@ export class SearchDestroy {
     const g = this.game, m = this.match;
     this.round++;
     if (this.round === SD.HALF + 1) this.attack = 1 - this.attack;
+    if (this.round === SD.ROUNDS + 1) this.attack = Math.random() < 0.5 ? 0 : 1; // (3 : 3: the decider, sides by lot)
     this.phase = 'freeze'; this.left = SD.FREEZE;
     this.used.clear();
+    this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1);
+    this.botsBought = false;
     this.planted = null; this.dropped = null; this.work = null; this.defuser = null; this.fetcher = null;
     this.bomb.root.visible = false; this.bomb.setLed(false); this.bomb.setCode('');
     this.bomb.wires[0].visible = true; this.bomb.wires[0].position.set(0, 0, 0);
@@ -211,14 +217,15 @@ export class SearchDestroy {
     // everybody up again, at his side's spawns
     for (const c of g.combatants) {
       if (c.remote) continue;
-      if (c === g.player) { g.spawnPlayer(); g.weapons.vm.root.visible = true; } else { m.spawn(c); c.hold = true; c.busy = false; }
+      if (c === g.player) { g.spawnPlayer(); g.weapons.vm.root.visible = true; } else { m.spawn(c); this.shop.armBot(c); c.hold = true; c.busy = false; }
     }
     const att = g.combatants.filter((c) => c.team === this.attack && c.alive);
     this.carrier = att.length ? att[(Math.random() * att.length) | 0] : null;
     this.targetSite = this.sites[(Math.random() * this.sites.length) | 0];
     const mine = this.role(g.player.team) === 'attack';
     const half = this.round === SD.HALF + 1 ? '<div style="font-size:15px;letter-spacing:4px;opacity:.85">SEITENWECHSEL</div>' : '';
-    g.hud.message(half + '<span style="font-size:26px;letter-spacing:5px">RUNDE ' + this.round + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">' + (mine ? 'ANGRIFF · LEGT DIE BOMBE AUF A ODER B' : 'VERTEIDIGUNG · HALTET A UND B') + '</div>', SD.FREEZE - 0.5);
+    const title = this.round > SD.ROUNDS ? 'ENTSCHEIDUNGSRUNDE' : 'RUNDE ' + this.round + ' / ' + SD.ROUNDS;
+    g.hud.message(half + '<span style="font-size:26px;letter-spacing:5px">' + title + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">' + (mine ? 'ANGRIFF · LEGT DIE BOMBE AUF A ODER B' : 'VERTEIDIGUNG · HALTET A UND B') + '</div>', SD.FREEZE - 0.5);
     if (this.carrier === g.player) g.hud.popup('', 'DU HAST DIE BOMBE');
   }
 
@@ -226,12 +233,13 @@ export class SearchDestroy {
     const g = this.game;
     this.score[team]++;
     this.phase = 'post'; this.left = SD.POST;
+    this.shop.endRound(team, how, !!this.planted);
     this.stopWork();
     const mine = team === g.player.team, att = team === this.attack;
     const why = how === 'boom' ? 'DIE BOMBE IST EXPLODIERT' : how === 'defused' ? 'DIE BOMBE WURDE ENTSCHÄRFT' : how === 'time' ? 'DIE ZEIT IST UM' : att ? 'ALLE VERTEIDIGER AUSGESCHALTET' : 'ALLE ANGREIFER AUSGESCHALTET';
     g.hud.message('<span style="font-size:30px;letter-spacing:5px;color:' + (mine ? 'var(--accent)' : 'var(--enemy)') + '">' + (mine ? 'RUNDE GEWONNEN' : 'RUNDE VERLOREN') + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">' + why + ' · ' + this.score[g.player.team] + ' : ' + this.score[1 - g.player.team] + '</div>', SD.POST - 0.3);
     g.audio.play(mine ? 'chargeFwd' : 'magDrop', { vol: 0.8 });
-    if (this.score[team] >= SD.WIN) this.final = team;
+    if (this.score[team] > SD.ROUNDS / 2 || this.round > SD.ROUNDS) this.final = team;
   }
 
   // ---- the bomb
@@ -261,13 +269,15 @@ export class SearchDestroy {
     this.bomb.root.position.copy(at.pos); this.bomb.root.rotation.set(0, at.yaw, 0);
     this.bomb.root.visible = true; this.bomb.setLed(true); this.bomb.setCode('ARMED', '#ff5a4a');
     this.defuser = null;
+    this.shop.pay(ent, ECON.PLANT, 'BOMBE GELEGT');
     g.audio.play('chargeFwd', { pos: at.pos, vol: 1.2, rate: 0.7 });
     const mine = ent.team === g.player.team;
     g.hud.message('<span style="font-size:24px;letter-spacing:4px;color:' + (mine ? 'var(--accent)' : 'var(--enemy)') + '">BOMBE GELEGT · ' + at.site.id + '</span>', 2.6);
   }
 
-  defuse() {
+  defuse(by) {
     const g = this.game;
+    this.shop.pay(by, ECON.DEFUSE, 'ENTSCHÄRFT');
     this.bomb.setLed('green'); this.bomb.setCode('-- --', '#7dff6a');
     g.audio.play('coverOpen', { pos: this.planted.pos, vol: 1.4 });
     this.planted.done = true;
@@ -345,12 +355,12 @@ export class SearchDestroy {
       if (w.t >= w.need) {
         const kind = w.kind;
         this.stopWork();
-        if (kind === 'plant') this.plant(e); else this.defuse();
+        if (kind === 'plant') this.plant(e); else this.defuse(e);
       }
       return;
     }
     // you: hold F
-    if (p.alive && g.input.down('interact') && !g.paused) {
+    if (p.alive && g.input.down('interact') && !g.paused && !this.shop.focus) { // (F on a gun on the floor picks it up instead)
       const k = this.canWork(p);
       if (k) this.startWork(p, k);
     }
@@ -361,6 +371,8 @@ export class SearchDestroy {
     const g = this.game;
     if (this.phase === 'wait') { this.startRound(); return; }
     this.left -= dt;
+    if (this.phase === 'freeze' && !this.botsBought && this.left < SD.FREEZE - 1.5) { this.botsBought = true; for (const b of g.bots) this.shop.botBuy(b); }
+    if (this.phase !== 'post' && this.phase !== 'over') this.shop.update(dt);
     if (this.phase === 'freeze') {
       if (this.left <= 0) { this.phase = 'live'; this.left = SD.ROUND; for (const b of g.bots) b.hold = false; g.audio.play('spawn', { vol: 0.6 }); }
     } else if (this.phase === 'live' || this.phase === 'planted') {
@@ -430,6 +442,8 @@ export class SearchDestroy {
       if (!this.defuser || !this.defuser.alive || this.defuser.team === this.attack) this.defuser = this.closest(1 - this.attack, P);
       return b === this.defuser ? { x: P.x, y: P.y, z: P.z, r: 1.2 } : { x: P.x, y: P.y, z: P.z, r: 6 };
     }
+    const gun = b !== this.carrier ? this.shop.wantFor(b) : null;
+    if (gun) return { x: gun.obj.position.x, y: gun.obj.position.y, z: gun.obj.position.z, r: 0.7 };
     if (att) {
       if (this.dropped) {
         if (!this.fetcher || !this.fetcher.alive) this.fetcher = this.closest(this.attack, this.dropped);
@@ -472,7 +486,7 @@ export class SearchDestroy {
     const mine = this.role(p.team);
     const live = this.phase === 'planted' && !this.planted.done;
     if (this.timerLive !== live) { this.timerLive = live; document.getElementById('sb-timer').classList.toggle('bomb', live); }
-    const role = (mine === 'attack' ? 'ANGRIFF' : 'VERTEIDIGUNG') + ' · RUNDE ' + Math.max(1, this.round) + (this.carrier === p ? ' · DU HAST DIE BOMBE' : '');
+    const role = (mine === 'attack' ? 'ANGRIFF' : 'VERTEIDIGUNG') + ' · ' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNG' : 'RUNDE ' + Math.max(1, this.round) + '/' + SD.ROUNDS) + (this.carrier === p ? ' · DU HAST DIE BOMBE' : '');
     if (this.roleEl.textContent !== role) this.roleEl.textContent = role;
     const dots = (n) => '&#9679;'.repeat(n);
     const af = this.aliveOf(p.team), ae = this.aliveOf(1 - p.team), ak = af + '|' + ae;

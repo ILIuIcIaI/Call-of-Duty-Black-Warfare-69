@@ -18,6 +18,7 @@ export const BINDINGS = {
   scoreboard: ['Tab'],
   loadout: ['KeyL'],
   interact: ['KeyF'],
+  buy: ['KeyB'],
   plate: ['KeyG'],
   map: ['KeyM'],
   camera: ['KeyV'],

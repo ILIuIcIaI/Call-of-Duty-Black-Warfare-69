@@ -91,7 +91,7 @@ export class Match {
       const size = cfg.size || 5, out = [];
       for (let i = 0; i < size * 2 - 1; i++) {
         const team = i < size - 1 ? 0 : 1;
-        out.push(new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit: OUTFITS[team === 0 ? 'vanguard' : 'raven'], weapon: pickWeapon() }));
+        out.push(new Bot(g, { name: names[i % names.length], team, difficulty: cfg.difficulty, outfit: OUTFITS[team === 0 ? 'vanguard' : 'raven'], weapon: 'pistol' }));
       }
       return out;
     }
@@ -194,6 +194,7 @@ export class Match {
   }
 
   onKill(killer, victim, info) {
+    if (this.sd && !this.ended && !this.cfg.net) this.sd.shop.onKill(killer, victim, info); // (S&D: money for the kill, the gun on the floor)
     if (this.ended || this.cfg.net || this.sd) return; // (S&D: the rounds count, see sd.js)
     if (this.gun) { this.gunKill(killer, victim, info); return; }
     if (this.teams && killer && killer !== victim && this.score[killer.team] !== undefined) this.score[killer.team]++;
