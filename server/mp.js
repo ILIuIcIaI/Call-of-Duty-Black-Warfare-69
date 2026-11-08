@@ -24,8 +24,9 @@ const MATCH_MS = 600000, WING_MS = 480000; // (Wingman: always 8 minutes)
 const MAPS = ['drydock', 'citadel', 'blacksite', 'poolday', 'backrooms', 'sirocco', 'atrium', 'dynamo', 'millrace', 'cornice', 'nightline'];
 // the maps that have the flag of Wingman (src/game/points.js, or the map's own wingman list)
 const WING_MAPS = ['millrace', 'cornice', 'nightline', 'sirocco', 'atrium', 'dynamo', 'blacksite', 'citadel', 'backrooms', 'drydock', 'poolday'];
-// Search and Destroy has maps of its own (src/world/maps/index.js, SD_MAP_LIST); BW69_SD_MAPS adds some to try it out on
-const SD_MAPS = [...(process.env.BW69_SD_MAPS || '').split(',').filter(Boolean)];
+// Search and Destroy has maps of its own, the same as SD_MAP_LIST in src/world/maps/index.js; BW69_SD_MAPS adds some
+// to try it out on
+const SD_MAPS = ['qanat', 'lindenhof', ...(process.env.BW69_SD_MAPS || '').split(',').filter(Boolean)];
 const SD_SIZES = ['4', '5', '6'];
 const TEAMS = (mode) => mode === 'tdm' || mode === 'wing' || mode === 'sd';
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];

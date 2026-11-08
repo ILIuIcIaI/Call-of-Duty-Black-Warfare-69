@@ -242,7 +242,8 @@ export class Menu {
   }
 
   drawMapPreview(canvas, id) {
-    const d = MAP_LIST.find((m) => m.id === id);
+    const d = [...MAP_LIST, ...SD_MAP_LIST].find((m) => m.id === id); // (the S&D tab shows its own maps)
+    if (!d) return;
     const x = canvas.getContext('2d');
     const grd = x.createLinearGradient(0, 0, 0, 130);
     const env = d.env;

@@ -7,12 +7,16 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Added
 
 - Search and Destroy, a mode of its own with a tab in the main menu: two teams, one bomb, two sites. The attackers carry the bomb to site A or B and plant it there (hold F, 3.2 s); the defenders hold the sites and defuse it (hold F, 7 s); it goes off 40 seconds after it is down. A round is won by killing the other team, by the bomb going off or being defused, or (for the defenders) by the round time of 1:45 running out with nothing planted. Nobody respawns within a round: whoever falls, or comes into the match while a round runs, watches a teammate until the next one (click for the next).
+- Two maps made for Search and Destroy, played only there:
+  - Qanat, an oasis town in the morning: A in the dyers' yard, B in the potters' yard, the souk and the well square in the middle, and an old water tunnel under the town that comes up in B.
+  - Lindenhof, a half-timbered village in summer: A in the brewery yard, B in the nursery with its glasshouses (the glass breaks), the square under the old linden tree in the middle, the orchard and the barn with its hay loft round the sides.
+  - Every house on both maps can be walked through and is furnished.
 - A match is six rounds. The sides switch after three; whoever wins four has won, and at 3 : 3 a seventh round decides, with the sides drawn by lot.
 - Money and a shop, as in Counter-Strike: everybody starts with $800 and a pistol. A round won pays $3000 ($3250 for the bomb or a defuse), a round lost $1400 and $500 more for every loss in a row (at most $2900); a kill pays by the gun that made it ($300, SMGs $600, shotguns $900, sniper rifles $100, the knife $1500); planting and defusing pay $300, and attackers who planted and still lost get $600 each. In your own spawn, before a round starts and for 15 seconds after, B opens the shop with every gun of the game, the plain model only (iron sights, or the scope a sniper rifle comes with; no skin).
 - Who survives a round keeps his guns; who falls drops his gun, and anybody can pick it up: walking over a gun whose slot is empty takes it, F swaps it for the one in your hands. Bots buy by their money and fetch a rifle lying close by.
 - The bomb is built for the game: a case with two charges, a display, a keypad, a lamp and three wires. Planting, you kneel down over it, steady it with one hand and type the code with the other; defusing, you type it back out and tear out the red wire. Others see the bomb on the carrier's back, on the floor where he fell, and beeping faster and faster once it is planted.
 - Bots plant, guard the planted bomb, hold both sites, rotate to the bomb and defuse it; they hold still while the round has not begun and while they work.
-- In multiplayer the room offers Search and Destroy once its maps are in: the mode, then one of its maps, then the team size (4, 5 or 6 a side), then bots. Both computers need this version.
+- In multiplayer the room offers Search and Destroy: the mode, then one of its two maps, then the team size (4, 5 or 6 a side), then bots. Both computers need this version.
 - Killcam in Free for All, Team Deathmatch, Gun Game and Search and Destroy: after you fall, the last three seconds again through the eyes of whoever got you, his gun in the hands and his shots, you as he saw you. A click skips it.
 
 ### Changed
