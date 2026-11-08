@@ -14,7 +14,8 @@ import { Shop, ECON } from './sdshop.js';
 // Alone it all runs here; over the network the computer with the bots runs it and tells the others (see Net).
 // =============================================================================
 export const SD = {
-  FREEZE: 8, ROUND: 105, BOMB: 40, PLANT: 3.2, DEFUSE: 7, POST: 5, ROUNDS: 6, HALF: 3,
+  // (the user's times: 5 s to plant, 20 s on the clock once it is down, 5 s to defuse)
+  FREEZE: 8, ROUND: 105, BOMB: 20, PLANT: 5, DEFUSE: 5, POST: 5, ROUNDS: 6, HALF: 3,
   BLAST: 9, BLAST_FAR: 22, SIZES: [4, 5, 6],
 };
 const SITES = ['A', 'B'];
@@ -41,8 +42,8 @@ class HeldInput {
   set suppress(v) { this.inp.suppress = v; }
 }
 
-// ---- Planting and defusing, one sequence for everybody who sees it (seconds for a 3.2 s plant and a 7 s defuse;
-// a longer plant holds the trigger longer, a shorter one runs all of it faster).
+// ---- Planting and defusing, one sequence for everybody who sees it (its steps in seconds from the start; the trigger
+// is held for the rest of the time, SD.PLANT and SD.DEFUSE; a plant shorter than 3.2 s would run all of it faster).
 // Plant: the case comes down in the right hand, the left flicks the latches and throws the lid open, the screen in
 // the lid starts up, the right index finger flips the three arming switches, then holds the trigger down while the
 // device arms (a skull, a bar). Defuse: the switches back off, the trigger held, the first detonator pulled out.

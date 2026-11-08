@@ -6,7 +6,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Added
 
-- Search and Destroy, a mode of its own with a tab in the main menu: two teams, one bomb, two sites. The attackers carry the bomb to site A or B and plant it there (hold F, 3.2 s); the defenders hold the sites and defuse it (hold F, 7 s); it goes off 40 seconds after it is down. A round is won by killing the other team, by the bomb going off or being defused, or (for the defenders) by the round time of 1:45 running out with nothing planted. Nobody respawns within a round: whoever falls, or comes into the match while a round runs, watches a teammate until the next one (click for the next).
+- Search and Destroy, a mode of its own with a tab in the main menu: two teams, one bomb, two sites. The attackers carry the bomb to site A or B and plant it there (hold F, 5 s); the defenders hold the sites and defuse it (hold F, 5 s); it goes off 20 seconds after it is down. A round is won by killing the other team, by the bomb going off or being defused, or (for the defenders) by the round time of 1:45 running out with nothing planted. Nobody respawns within a round: whoever falls, or comes into the match while a round runs, watches a teammate until the next one (click for the next).
 - Two maps made for Search and Destroy, played only there:
   - Qanat, an oasis town in the morning: A in the dyers' yard, B in the potters' yard, the souk and the well square in the middle, and an old water tunnel under the town that comes up in B.
   - Lindenhof, a half-timbered village in summer: A in the brewery yard, B in the nursery with its glasshouses (the glass breaks), the square under the old linden tree in the middle, the orchard and the barn with its hay loft round the sides.
