@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BombModel } from './bomb.js';
-import { buildHands, box as vmBox } from '../weapons/models.js';
+import { box as vmBox } from '../weapons/models.js';
 import { Shop, ECON } from './sdshop.js';
 
 // =============================================================================
@@ -21,7 +21,7 @@ export const SD = {
 const SITES = ['A', 'B'];
 const SIT_OUT = 'AB DER NÄCHSTEN RUNDE BIST DU DABEI';
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion();
-const _m4 = new THREE.Matrix4(), UPY = new THREE.Vector3(0, 1, 0);
+const _m4 = new THREE.Matrix4(), UPY = new THREE.Vector3(0, 1, 0), _cf = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cd = new THREE.Vector3(), _ct = new THREE.Vector3(), _cc = new THREE.Vector3(), _cs = new THREE.Vector3();
 // (on a back: the case flat against it, the panel facing out)
 const ON_BACK = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
 
@@ -44,127 +44,134 @@ class HeldInput {
 
 // ---- Planting and defusing, one sequence for everybody who sees it. Its steps in seconds for the 5 s plant and
 // the 5 s defuse (a shorter one runs all of it faster; the last pose holds when it is longer).
-// Plant: the case comes down in the right hand; the left flicks a latch and throws the lid open; the screen starts
-// up; the right index finger flips the three arming switches, runs over the detonators (each lamp comes on), types
-// the code on the trigger box while the left hand confirms it on the tablet, then holds the red button down while
-// the device arms. Defuse: the switches back off, a code typed, the button held, the first detonator pulled out.
-// The hands go from pose to pose on arcs; each press has its own little movement (the finger bends, the wrist
-// follows it down and springs back) and the hands are never quite still.
+// Plant, five calm things one after the other: the case comes down in the right hand; both hands flick the latches
+// open together and the left lifts the lid and lets it fall open (the screen starts up); the right index takes the
+// three arming switches over toward you, one after the other in one run (the detonators' lamps come on by
+// themselves); the code, four keys at an even pace, the finger onto each and on to the next; the red button, held
+// down while it arms. Defuse: the switches pushed back off in one run, a three-key code, the button held, the first
+// detonator pulled out.
+// Every move is in the poses (over a key, onto it, a moment on it, on to the next), and the hands go through them on
+// arcs that slow into a pose and stop only where they stay; they are never quite still.
 // [time, spot on the case, offset from it, [pitch, yaw, roll] of the hand, finger bends, the part of the hand on it]
-const HOVER = [-0.85, 0.25, -0.2], PRESS_C = [0.55, 0.16, 0.82, 0.88, 0.9];
-const KEYC = [0.55, 0.14, 0.8, 0.85, 0.88], KEYR = [-0.8, 0.2, -0.15];
+// (finger bends: thumb, index, middle, ring, little; 0 straight .. 1 in a fist)
+const GRIP = [0.62, 0.8, 0.86, 0.9, 0.93], RELAX = [0.24, 0.2, 0.28, 0.35, 0.42], POINT = [0.38, 0.1, 0.5, 0.62, 0.7];
+const HOOK = [0.3, 0.42, 0.55, 0.62, 0.68], LIFT = [0.42, 0.42, 0.48, 0.54, 0.6], PUSH = [0.42, 0.22, 0.58, 0.68, 0.75];
+const PINCH = [0.55, 0.5, 0.66, 0.74, 0.8];
+// (on a key or a lever: the index bent a little more, the others a very little, the wrist a little lower)
+const bend = (c, k) => c.map((v, i) => (i === 1 ? v + k : i > 1 ? v + k * 0.25 : v - k * 0.2));
+const tilt = (r, k) => [r[0] - k, r[1], r[2]];
+// a key pressed at time t: over it, onto it, a moment on it
+const KEYH = [0, 0.018, -0.004], KEY_AT = [0, 0.004, 0];
+const press = (t, spot, rot) => [[t - 0.13, spot, KEYH, rot, POINT, 'index'], [t, spot, KEY_AT, tilt(rot, 0.06), bend(POINT, 0.12), 'index'], [t + 0.05, spot, KEY_AT, tilt(rot, 0.06), bend(POINT, 0.13), 'index']];
+// a lever or a latch taken over at time t: over it and behind, onto it, over with it ([from, to]: where the fingertip
+// goes on it)
+const flick = (t, spot, [a, b], rot, c) => [
+  [t - 0.14, spot, [a[0] - (b[0] - a[0]) * 0.3, a[1] + 0.016, a[2] - (b[2] - a[2]) * 0.3], rot, c, 'index'],
+  [t - 0.05, spot, a, tilt(rot, 0.05), bend(c, 0.1), 'index'],
+  [t + 0.06, spot, b, tilt(rot, 0.02), bend(c, 0.16), 'index'],
+];
+// where the finger takes a lever: behind it and over toward you (on), or in front and back (off); a latch by its top
+const SW_ON = [[0, -0.004, -0.019], [0, -0.004, 0.009]], SW_OFF = [[0, -0.004, 0.019], [0, -0.004, -0.009]];
+const LATCH_AT = [[0, 0.011, -0.003], [0, -0.005, 0.026]];
+const SWR = [[-0.74, 0.2, -0.16], [-0.72, 0.18, -0.15], [-0.7, 0.17, -0.14]];
 const SEQ = {
   plant: {
-    // (calm and a little uneven, as hands are: the switches a third of a second apart, the detonators checked one by
-    // one, the code typed with small pauses, the wrist a little different on every key)
     R: [
-      [0, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], [0.75, 0.92, 0.95, 0.95, 0.95], 'grip'],
-      [0.6, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], [0.75, 0.92, 0.95, 0.95, 0.95], 'grip'],
-      [0.98, 'switch0', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
-      [1.37, 'switch1', [0.001, 0.03, 0.017], [-0.82, 0.22, -0.17], PRESS_C, 'index'],
-      [1.74, 'switch2', [0, 0.031, 0.018], [-0.87, 0.27, -0.22], PRESS_C, 'index'],
-      [2.04, 'switch2', [0.004, 0.04, 0.024], [-0.78, 0.25, -0.18], [0.5, 0.2, 0.7, 0.8, 0.85], 'index'],
-      [2.2, 'det0', [-0.004, 0.027, 0.018], [-0.64, 0.14, -0.1], [0.42, 0.24, 0.52, 0.62, 0.68], 'index'],
-      [2.39, 'det1', [-0.003, 0.026, 0.019], [-0.6, 0.1, -0.06], [0.42, 0.24, 0.55, 0.64, 0.7], 'index'],
-      [2.57, 'det2', [-0.005, 0.027, 0.017], [-0.58, 0.07, -0.09], [0.44, 0.26, 0.55, 0.65, 0.7], 'index'],
-      [2.76, 'det3', [-0.004, 0.026, 0.018], [-0.62, 0.05, -0.12], [0.42, 0.24, 0.53, 0.63, 0.69], 'index'],
-      [3.0, 'key4', [0, 0.032, 0.022], KEYR, KEYC, 'index'],
-      [3.12, 'key3', [0, 0.026, 0.018], [-0.78, 0.22, -0.14], KEYC, 'index'],
-      [3.4, 'key6', [0.001, 0.026, 0.018], [-0.82, 0.18, -0.17], KEYC, 'index'],
-      [3.63, 'key0', [0, 0.027, 0.019], [-0.79, 0.23, -0.13], KEYC, 'index'],
-      [3.93, 'key8', [0, 0.026, 0.018], [-0.83, 0.17, -0.16], KEYC, 'index'],
-      [4.16, 'button', [0, 0.03, 0.01], [-0.7, 0.15, -0.12], [0.5, 0.2, 0.75, 0.8, 0.85], 'index'],
-      [4.32, 'button', [0, 0.007, 0.0], [-0.62, 0.15, -0.12], [0.45, 0.34, 0.74, 0.8, 0.85], 'index'],
-      [5, 'button', [0, 0.006, 0.0], [-0.6, 0.15, -0.1], [0.45, 0.36, 0.72, 0.78, 0.84], 'index'],
+      [0, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], GRIP, 'grip'],
+      [0.62, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], GRIP, 'grip'],
+      ...flick(1.02, 'latchR', LATCH_AT, [-0.5, -0.12, 0.1], HOOK),
+      // (out of the lid's way while it goes up, then under it to the switches)
+      [1.34, 'handle', [0.03, 0.065, 0.045], [-0.35, -0.05, 0.12], RELAX, 'index'],
+      ...flick(2.12, 'switch0', SW_ON, SWR[0], POINT), ...flick(2.38, 'switch1', SW_ON, SWR[1], POINT), ...flick(2.64, 'switch2', SW_ON, SWR[2], POINT),
+      ...press(3.2, 'key3', [-0.78, 0.2, -0.14]), ...press(3.48, 'key6', [-0.79, 0.19, -0.15]), ...press(3.76, 'key0', [-0.77, 0.21, -0.13]), ...press(4.04, 'key8', [-0.8, 0.19, -0.15]),
+      [4.26, 'button', [0, 0.028, 0.006], [-0.7, 0.15, -0.12], PUSH, 'index'],
+      [4.4, 'button', [0, 0.006, 0.002], [-0.66, 0.15, -0.12], PUSH, 'index'],
+      [5, 'button', [0, 0.005, 0.002], [-0.64, 0.15, -0.11], PUSH, 'index'],
     ],
     L: [
-      [0, 'latchL', [0, 0.05, 0.035], [-0.6, 0.2, 0.2], [0.4, 0.4, 0.55, 0.6, 0.65], 'index'],
-      [0.3, 'latchL', [0, 0.016, 0.012], [-0.8, 0.2, 0.2], [0.4, 0.35, 0.6, 0.65, 0.7], 'index'],
-      [0.44, 'latchL', [0, 0.022, 0.012], [-0.8, 0.2, 0.2], [0.4, 0.35, 0.6, 0.65, 0.7], 'index'],
-      [0.5, 'lidEdge', [0, -0.006, 0.012], [-0.35, 0.15, 0.15], [0.6, 0.6, 0.62, 0.64, 0.66], 'grip'],
-      [0.74, 'lidEdge', [0, -0.006, 0.012], [-1.2, 0.15, 0.15], [0.6, 0.6, 0.62, 0.64, 0.66], 'grip'],
-      [1.04, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
-      [3.1, 'rimL', [0.03, 0.024, 0.004], [0.06, -0.33, 0.1], [0.32, 0.27, 0.3, 0.32, 0.34], 'palm'],
-      [3.3, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
-      [3.6, 'tablet', [0.002, 0.034, 0.018], [-0.72, -0.22, 0.17], [0.5, 0.18, 0.72, 0.8, 0.85], 'index'],
-      [3.92, 'rimL', [0.035, 0.022, -0.01], [0.08, -0.38, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
-      [5, 'rimL', [0.035, 0.022, -0.012], [0.07, -0.36, 0.1], [0.3, 0.26, 0.29, 0.31, 0.33], 'palm'],
+      [0, 'latchL', [-0.03, 0.09, 0.08], [-0.3, 0.1, 0.2], RELAX, 'index'],
+      [0.58, 'latchL', [0, 0.04, 0.012], [-0.5, 0.12, -0.1], HOOK, 'index'],
+      ...flick(1.0, 'latchL', LATCH_AT, [-0.5, 0.12, -0.1], HOOK),
+      // (the lid lifted at its edge to a little under half way, held a moment, and let go: it falls open)
+      [1.22, 'lidEdge', [0, -0.008, 0.016], [-0.35, 0.15, 0.15], LIFT, 'grip'],
+      [1.3, 'lidEdge', [0, -0.008, 0.012], [-0.38, 0.15, 0.15], LIFT, 'grip'],
+      [1.72, 'lidEdge', [0, -0.008, 0.012], [-0.62, 0.15, 0.15], LIFT, 'grip'],
+      [1.9, 'lidEdge@0.42', [0, -0.03, 0.045], [-0.5, 0.15, 0.15], RELAX, 'grip'],
+      [2.4, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], RELAX, 'palm'],
+      [5, 'rimL', [0.034, 0.022, -0.008], [0.07, -0.37, 0.1], RELAX, 'palm'],
     ],
-    // [time, length, hand, how deep, what it presses]
-    taps: [[0.34, 0.12, 'L', 0.012, 'latch'], [1.06, 0.26, 'R', 0.022, 'sw0'], [1.44, 0.25, 'R', 0.022, 'sw1'], [1.8, 0.26, 'R', 0.022, 'sw2'],
-      [2.24, 0.14, 'R', 0.018, 'det0'], [2.43, 0.13, 'R', 0.018, 'det1'], [2.61, 0.14, 'R', 0.018, 'det2'], [2.8, 0.13, 'R', 0.018, 'det3'],
-      [3.17, 0.19, 'R', 0.02, 'key3'], [3.45, 0.18, 'R', 0.02, 'key6'], [3.68, 0.19, 'R', 0.02, 'key0'], [3.98, 0.18, 'R', 0.02, 'key8'],
-      [3.38, 0.17, 'L', 0.02, 'tab'], [4.24, 0.15, 'R', 0.014, 'btn']],
-    held: 4.32,
+    // [from, how long, hand, the spot]: a latch or a lever going over with the finger, a key down
+    taps: [[0.95, 0.11, 'L', 'latchL'], [0.97, 0.11, 'R', 'latchR'], [2.07, 0.11, 'R', 'switch0'], [2.33, 0.11, 'R', 'switch1'], [2.59, 0.11, 'R', 'switch2'],
+      [3.17, 0.1, 'R', 'key3'], [3.45, 0.1, 'R', 'key6'], [3.73, 0.1, 'R', 'key0'], [4.01, 0.1, 'R', 'key8']],
+    held: 4.4,
   },
   defuse: {
     R: [
-      [0, 'switch2', [0, 0.034, 0.02], HOVER, PRESS_C, 'index'],
-      [0.28, 'switch2', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
-      [0.62, 'switch1', [0.001, 0.03, 0.017], [-0.82, 0.22, -0.17], PRESS_C, 'index'],
-      [0.96, 'switch0', [0, 0.031, 0.018], [-0.87, 0.27, -0.22], PRESS_C, 'index'],
-      [1.24, 'switch0', [0.004, 0.04, 0.024], [-0.78, 0.25, -0.18], [0.5, 0.2, 0.7, 0.8, 0.85], 'index'],
-      [1.44, 'key1', [0, 0.026, 0.018], [-0.78, 0.22, -0.14], KEYC, 'index'],
-      [1.7, 'key5', [0.001, 0.026, 0.018], [-0.82, 0.18, -0.17], KEYC, 'index'],
-      [1.95, 'key7', [0, 0.027, 0.019], [-0.79, 0.23, -0.13], KEYC, 'index'],
-      [2.22, 'button', [0, 0.03, 0.01], [-0.7, 0.15, -0.12], [0.5, 0.2, 0.75, 0.8, 0.85], 'index'],
-      [2.4, 'button', [0, 0.007, 0.0], [-0.62, 0.15, -0.12], [0.45, 0.34, 0.74, 0.8, 0.85], 'index'],
-      [3.65, 'button', [0, 0.006, 0.0], [-0.6, 0.15, -0.1], [0.45, 0.36, 0.72, 0.78, 0.84], 'index'],
-      [4.15, 'det', [0, 0.006, 0.004], [-0.7, 0.3, -0.3], [0.45, 0.5, 0.8, 0.9, 0.9], 'pinch'],
-      [5, 'det', [0, 0.006, 0.004], [-0.75, 0.3, -0.32], [0.55, 0.55, 0.82, 0.9, 0.9], 'pinch'],
+      [0, 'switch2', [0.014, 0.05, 0.05], [-0.58, 0.12, -0.1], RELAX, 'index'],
+      ...flick(0.62, 'switch2', SW_OFF, SWR[2], POINT), ...flick(0.9, 'switch1', SW_OFF, SWR[1], POINT), ...flick(1.18, 'switch0', SW_OFF, SWR[0], POINT),
+      ...press(1.84, 'key1', [-0.78, 0.2, -0.14]), ...press(2.12, 'key5', [-0.79, 0.19, -0.15]), ...press(2.4, 'key7', [-0.77, 0.21, -0.13]),
+      [2.6, 'button', [0, 0.028, 0.006], [-0.7, 0.15, -0.12], PUSH, 'index'],
+      [2.74, 'button', [0, 0.006, 0.002], [-0.66, 0.15, -0.12], PUSH, 'index'],
+      [3.6, 'button', [0, 0.005, 0.002], [-0.64, 0.15, -0.11], PUSH, 'index'],
+      [4.05, 'det', [0, 0.006, 0.004], [-0.7, 0.3, -0.3], PINCH, 'pinch'],
+      [5, 'det', [0, 0.006, 0.004], [-0.75, 0.3, -0.32], PINCH, 'pinch'],
     ],
     L: [
-      [0, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
-      [1.05, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
-      [1.25, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
-      [1.55, 'tablet', [0.002, 0.034, 0.018], [-0.72, -0.22, 0.17], [0.5, 0.18, 0.72, 0.8, 0.85], 'index'],
-      [1.85, 'rimL', [0.035, 0.022, -0.01], [0.08, -0.38, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
-      [5, 'rimL', [0.035, 0.022, -0.012], [0.07, -0.36, 0.1], [0.3, 0.26, 0.29, 0.31, 0.33], 'palm'],
+      [0, 'rimL', [0.03, 0.045, 0.03], [0.08, -0.35, 0.1], RELAX, 'palm'],
+      [0.6, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], RELAX, 'palm'],
+      [5, 'rimL', [0.034, 0.022, -0.008], [0.07, -0.37, 0.1], RELAX, 'palm'],
     ],
-    taps: [[0.34, 0.25, 'R', 0.022, 'sw2'], [0.68, 0.25, 'R', 0.022, 'sw1'], [1.02, 0.25, 'R', 0.022, 'sw0'],
-      [1.49, 0.18, 'R', 0.02, 'key1'], [1.75, 0.18, 'R', 0.02, 'key5'], [2.0, 0.18, 'R', 0.02, 'key7'],
-      [1.33, 0.17, 'L', 0.02, 'tab'], [2.31, 0.15, 'R', 0.014, 'btn']],
-    held: 2.4,
+    taps: [[0.57, 0.11, 'R', 'switch2'], [0.85, 0.11, 'R', 'switch1'], [1.13, 0.11, 'R', 'switch0'], [1.81, 0.1, 'R', 'key1'], [2.09, 0.1, 'R', 'key5'], [2.37, 0.1, 'R', 'key7']],
+    held: 2.74,
   },
 };
+// (plant: the detonators' lamps one after another once the switches are on, [first, gap]; the tablet's OK once the
+// code is in)
+const DET_ON = [2.8, 0.11], TAB_OK = 4.14;
+// the lid: lifted with the hand to a little under half way, a moment still, then it falls open by itself and stops
+// with a little bounce
+const LID = [1.28, 0.44, 0.4, 0.36];
+const lidAt = (t, T) => { const a = T(LID[0]), b = a + T(LID[1]), c = b + T(LID[3]); return t < b ? LID[2] * sm((t - a) / T(LID[1])) : t < c ? LID[2] + (1.03 - LID[2]) * ((t - b) / T(LID[3])) ** 2 : 1.03 - 0.03 * sm((t - c) / T(0.12)); };
 const sm = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
-// a press: a little lift first, quick down, a moment on it, back up slower
-const pressCurve = (v) => (v < 0.12 ? -0.25 * Math.sin((v / 0.12) * Math.PI) : v < 0.42 ? sm((v - 0.12) / 0.3) : v < 0.56 ? 1 : 1 - sm((v - 0.56) / 0.44));
-// the lid's way open: quick, a little past, back
-const lidK = (u) => { u = Math.max(0, Math.min(1, u)); return u < 0.75 ? sm(u / 0.75) * 1.05 : 1.05 - 0.05 * sm((u - 0.75) / 0.25); };
 const seqScale = (need) => Math.min(1, need / 5);
 // what the bomb shows at time t of a piece of work (for its model, its sounds and the hands)
 function workState(kind, t, need) {
   const S = SEQ[kind], s = seqScale(need), T = (x) => x * s;
-  const tap = (what) => S.taps.find((p) => p[4] === what);
-  const after = (what, k = 0.5) => { const p = tap(what); return p ? t > T(p[0] + p[1] * k) : false; };
+  const tap = (spot) => S.taps.find((p) => p[3] === spot);
+  // (how far over a lever or a latch is: with the finger)
+  const over = (spot) => { const p = tap(spot); return p ? sm((t - T(p[0])) / T(p[1])) : 0; };
   let key = -1, digits = 0;
   for (const p of S.taps) {
-    if (!p[4].startsWith('key')) continue;
-    if (t >= T(p[0] + p[1] * 0.3) && t < T(p[0] + p[1] * 0.75)) key = +p[4].slice(3);
+    if (!p[3].startsWith('key')) continue;
+    if (t >= T(p[0] + p[1] * 0.3) && t < T(p[0] + p[1] * 0.7)) key = +p[3].slice(3);
     if (t > T(p[0] + p[1] * 0.5)) digits++;
   }
   if (kind === 'plant') {
-    const st = { bring: Math.min(1, t / T(0.3)), lid: lidK((t - T(0.46)) / T(0.24)), sw: [0, 1, 2].map((i) => after('sw' + i, 0.55)), det: [0, 1, 2, 3].map((i) => after('det' + i, 0.4)), key, tab: after('tab', 0.5), trig: t > T(S.held) };
-    st.screen = t < T(0.72) ? ['off'] : t < T(1.0) ? ['boot', (t - T(0.72)) / T(0.28)] : ['arm', (t - T(1.0)) / Math.max(0.1, need - T(1.0)), digits];
+    const st = {
+      bring: Math.min(1, t / T(0.5)), handle: t > T(0.7), latch: [over('latchL'), over('latchR')], lid: lidAt(t, T),
+      sw: [0, 1, 2].map((i) => over('switch' + i)), det: [0, 1, 2, 3].map((i) => t > T(DET_ON[0] + i * DET_ON[1])), key, tab: t > T(TAB_OK), trig: t > T(S.held),
+    };
+    st.screen = t < T(1.9) ? ['off'] : t < T(2.26) ? ['boot', (t - T(1.9)) / T(0.36)] : ['arm', (t - T(2.26)) / Math.max(0.1, need - T(2.26)), digits];
     return st;
   }
-  return { bring: 1, lid: 1, sw: [0, 1, 2].map((i) => !after('sw' + i, 0.55)), det: [!(t > need - 0.6), true, true, true], key, tab: true, trig: t > T(S.held) && t < need - 1.35, pull: sm((t - (need - 0.75)) / 0.65) };
+  return { bring: 1, handle: true, latch: [1, 1], lid: 1, sw: [0, 1, 2].map((i) => 1 - over('switch' + i)), det: [!(t > need - 0.6), true, true, true], key, tab: true, trig: t > T(S.held) && t < need - 1.35, pull: sm((t - (need - 0.75)) / 0.65) };
 }
 // the sounds of it, each once when its moment is passed
 function workSounds(g, w, t0, t1, pos) {
   const S = SEQ[w.kind], s = seqScale(w.need), T = (x) => x * s;
   const at = (x, name, vol, rate) => { if (T(x) > t0 && T(x) <= t1) g.audio.play(name, { pos, vol, rate }); };
-  if (w.kind === 'plant') { at(0.3, 'caseDown', 1, 1); at(0.46, 'lidOpen', 1, 1); at(0.76, 'bootBeep', 0.6, 1); at(0.86, 'bootBeep', 0.6, 1.12); at(0.96, 'bootBeep', 0.6, 1.25); }
-  for (const p of S.taps) {
-    const hit = p[0] + p[1] * 0.45, w4 = p[4];
-    if (w4 === 'latch') at(hit, 'latch', 0.9, 1);
-    else if (w4.startsWith('sw')) at(hit, 'toggle', 1, 1 + (+w4[2]) * 0.05);
-    else if (w4.startsWith('det')) at(hit, 'uiClick', 0.55, 2.3 + (+w4[3]) * 0.1);
-    else if (w4.startsWith('key')) at(hit, 'bootBeep', 0.5, 1.45 + (+w4[3] % 3) * 0.08);
-    else if (w4 === 'tab') at(hit, 'uiClick', 0.6, 1.7);
-    else if (w4 === 'btn') at(hit, 'toggle', 0.9, 0.7);
+  if (w.kind === 'plant') {
+    at(0.48, 'caseDown', 1, 1); at(1.3, 'lidOpen', 1, 1); at(1.94, 'bootBeep', 0.6, 1); at(2.05, 'bootBeep', 0.6, 1.12); at(2.16, 'bootBeep', 0.6, 1.25);
+    for (let i = 0; i < 4; i++) at(DET_ON[0] + i * DET_ON[1], 'uiClick', 0.45, 2.3 + i * 0.1);
+    at(TAB_OK, 'uiClick', 0.6, 1.7);
   }
+  for (const p of S.taps) {
+    const hit = p[0] + p[1] * 0.46, sp = p[3];
+    if (sp.startsWith('latch')) at(hit, 'latch', 0.9, sp === 'latchR' ? 1.07 : 1);
+    else if (sp.startsWith('switch')) at(hit, 'toggle', 1, 1 + (+sp[6]) * 0.05);
+    else if (sp.startsWith('key')) at(hit, 'bootBeep', 0.5, 1.45 + (+sp[3] % 3) * 0.08);
+  }
+  at(S.held - 0.03, 'toggle', 0.9, 0.7);
   // (the button held: a soft beep every half second, rising while it arms; pulling the detonator out)
   const from = T(S.held), until = w.kind === 'plant' ? w.need : w.need - 1.35;
   if (t1 > from && t1 < until && Math.floor((t1 - from) / 0.45) !== Math.floor((t0 - from) / 0.45)) g.audio.play('holdBeep', { pos, vol: 0.5, rate: w.kind === 'plant' ? 1 + Math.min(0.5, (t1 - from) * 0.3) : 0.85 });
@@ -176,12 +183,13 @@ function poseBomb(bomb, st, from, at, yaw) {
   const R = bomb.root;
   if (st.bring < 1 && from) {
     const u = sm(st.bring);
-    R.position.lerpVectors(from, at, u); R.position.y += Math.sin(u * Math.PI) * 0.06;
-    R.quaternion.setFromEuler(_be.set(0.4 * (1 - u), yaw, -0.3 * (1 - u), 'YXZ'));
+    R.position.lerpVectors(from, at, u); R.position.y += Math.sin(u * Math.PI) * 0.05;
+    R.quaternion.setFromEuler(_be.set(0.35 * (1 - u), yaw, -0.25 * (1 - u), 'YXZ'));
   } else { R.position.copy(at); R.quaternion.setFromEuler(_be.set(0, yaw, 0, 'YXZ')); }
-  bomb.handle.rotation.x = st.bring < 1 || st.lid < 0.2 ? 0 : -1.2;
+  bomb.handle.rotation.x = st.handle ? -1.2 : 0;
+  if (st.latch) { bomb.latch(0, st.latch[0]); bomb.latch(1, st.latch[1]); }
   bomb.lid(st.lid);
-  st.sw.forEach((on, i) => bomb.flip(i, on));
+  st.sw.forEach((k, i) => bomb.flip(i, k));
   if (st.det) st.det.forEach((on, i) => bomb.detLed(i, on));
   bomb.key(st.key ?? -1);
   if (st.tab !== undefined) bomb.tablet(st.tab);
@@ -189,76 +197,199 @@ function poseBomb(bomb, st, from, at, yaw) {
   if (st.pull !== undefined) bomb.pull(st.pull);
 }
 
-// The hands you see while you plant or defuse: gloves with jointed fingers, the forearms turned toward the
-// shoulders every frame (long sleeves that run out of the picture). In the world, next to the bomb everybody sees.
-const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+// The hands you see while you plant or defuse. Each arm is one skin over bones, as the soldiers are: the glove over
+// the hand, bending at every joint of the fingers rather than tubes put together, and the sleeve over the forearm and
+// the upper arm, bending at the elbow. Each frame the hand is posed first (the sequence), then the arm behind it: the
+// elbow where an arm of that length has to be, low and a little out, the forearm turned with the hand.
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ'), _hq = new THREE.Quaternion(), _hx = new THREE.Vector3(1, 0, 0), _fw = new THREE.Vector3();
-const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3();
+const _h1 = new THREE.Vector3(), _h2 = new THREE.Vector3(), _h3 = new THREE.Vector3(), _hm = new THREE.Matrix4();
+// the wrist (the hand turns about it), the forearm from it to the elbow, the upper arm
+const ARM = { wrist: new THREE.Vector3(0, 0.003, 0.05), fore: 0.27, upper: 0.29 };
+// the fingers: the knuckle (x across the hand, thumb side -, y, z), the three bones' lengths, half the width at the
+// knuckle, how far the finger points out toward the thumb side straight and bent
+const FING = [
+  [-0.0285, -0.001, -0.046, [0.043, 0.026, 0.021], 0.0107, 0.04, 0.02],
+  [-0.0095, 0.0005, -0.05, [0.047, 0.029, 0.022], 0.011, 0.0, 0.01],
+  [0.0095, -0.0005, -0.048, [0.044, 0.028, 0.021], 0.0104, -0.03, 0.03],
+  [0.0275, -0.003, -0.041, [0.035, 0.022, 0.019], 0.0094, -0.07, 0.06],
+];
+// the thumb: from the ball of the hand by the wrist, out and down toward the palm, turned to face the fingers
+const THUMB = { at: [-0.027, -0.006, 0.016], L: [0.032, 0.028, 0.023], r: 0.0148, pitch: -0.25, yaw: 0.5, roll: 0.8 };
+// A skin under construction: rings round a centre line, each ring's points on the bones it follows.
+class Skin {
+  constructor() { this.p = []; this.uv = []; this.si = []; this.sw = []; this.ix = []; }
+  v(x, y, z, u, w, sk) {
+    const n = this.p.length / 3;
+    this.p.push(x, y, z); this.uv.push(u, w);
+    for (let k = 0; k < 4; k++) { const e = sk[k]; this.si.push(e ? e[0] : 0); this.sw.push(e ? e[1] : 0); }
+    return n;
+  }
+  // a tube through rings { c: centre, X, Y: across it (X x Y along the tube), w: half width, h, hd: half height up and
+  // down, n: how square (2 round), arch: the top raised in the middle, fold: [size, turn] a crease in the cloth, sk: [[bone,
+  // weight]] }, closed with a point at the start or the end when asked (how far beyond)
+  tube(R, seg, tile, cap0, cap1) {
+    const base = [];
+    let s = 0;
+    R.forEach((r, i) => {
+      if (i) s += r.c.distanceTo(R[i - 1].c);
+      base.push(this.p.length / 3);
+      const per = Math.PI * (r.w + (r.h + r.hd) / 2), e = 2 / (r.n || 2);
+      for (let j = 0; j <= seg; j++) {
+        const a = (j / seg) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), f = r.fold ? 1 + r.fold[0] * Math.sin(2 * a + r.fold[1]) : 1;
+        const x = r.w * f * Math.sign(ca) * Math.abs(ca) ** e;
+        const y = (sa >= 0 ? r.h : r.hd) * f * Math.sign(sa) * Math.abs(sa) ** e + (r.arch && sa > 0 ? r.arch * Math.max(0, 1 - (x / r.w) ** 2) : 0);
+        this.v(r.c.x + r.X.x * x + r.Y.x * y, r.c.y + r.X.y * x + r.Y.y * y, r.c.z + r.X.z * x + r.Y.z * y, (j / seg) * per / tile, s / tile, r.sk);
+      }
+    });
+    for (let i = 0; i + 1 < R.length; i++) for (let j = 0; j < seg; j++) { const a = base[i] + j, c = base[i + 1] + j; this.ix.push(a, a + 1, c, a + 1, c + 1, c); }
+    const dir = (i, j, out) => out.subVectors(R[j].c, R[i].c).normalize();
+    if (cap0) { const r = R[0], d = dir(0, 1, _h1), q = this.v(r.c.x - d.x * cap0, r.c.y - d.y * cap0, r.c.z - d.z * cap0, 0, -cap0 / tile, r.sk); for (let j = 0; j < seg; j++) this.ix.push(q, base[0] + j + 1, base[0] + j); }
+    if (cap1) { const L = R.length - 1, r = R[L], d = dir(L - 1, L, _h1), q = this.v(r.c.x + d.x * cap1, r.c.y + d.y * cap1, r.c.z + d.z * cap1, 0, (s + cap1) / tile, r.sk); for (let j = 0; j < seg; j++) this.ix.push(base[L] + j, base[L] + j + 1, q); }
+  }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(this.si, 4));
+    g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(this.sw, 4));
+    g.setIndex(this.ix);
+    g.computeVertexNormals();
+    // (where a ring closes on itself its two copies of the point get one normal, so no seam shows)
+    const n = g.attributes.normal, p = g.attributes.position, seen = new Map();
+    for (let i = 0; i < p.count; i++) {
+      const k = Math.round(p.getX(i) * 1e5) + ',' + Math.round(p.getY(i) * 1e5) + ',' + Math.round(p.getZ(i) * 1e5), o = seen.get(k);
+      if (o === undefined) { seen.set(k, i); continue; }
+      const x = n.getX(i) + n.getX(o), y = n.getY(i) + n.getY(o), z = n.getZ(i) + n.getZ(o), l = Math.hypot(x, y, z) || 1;
+      n.setXYZ(i, x / l, y / l, z / l); n.setXYZ(o, x / l, y / l, z / l);
+    }
+    return g;
+  }
+}
+// (between two bones: how far along from the first to the second, round a joint at j, over 2*hw)
+const across = (s, j, hw) => sm((s - (j - hw)) / (2 * hw));
+const skinOf = (pairs) => pairs.filter((p) => p[1] > 1e-4);
+
 class HandsAtWork {
   constructor(game) {
     const M = game.weapons.vm.mats;
-    // A hand as the ones on the guns: a rounded palm with a pad over the knuckles and the ball of the thumb, four
-    // fingers of three joints each, thinner toward the tip, a pad on each knuckle, the thumb of three joints; fingers
-    // along -Z, the palm facing down. Then the wrist, the sleeve's cuff and the forearm, a watch on the left.
-    const hand = (mirror) => {
-      const g = new THREE.Group(), fingers = [];
-      const cap = (r, L, mat = M.glove) => { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 10), mat); m.rotation.x = Math.PI / 2; m.position.z = -L / 2; return m; };
-      vmBox(g, M.glove, 0.08, 0.028, 0.088, 0, 0, -0.004, 0, 0, 0, 0.011);
-      vmBox(g, M.glovePad || M.glove, 0.066, 0.007, 0.044, 0, 0.0145, -0.017, 0, 0, 0, 0.003);
-      vmBox(g, M.glove, 0.032, 0.022, 0.042, 0.025 * -mirror, -0.005, 0.012, 0, 0, 0, 0.009);
-      // [x across the palm, length, radius]
-      for (const [x, L, r] of [[-0.0275, 0.064, 0.0088], [-0.0092, 0.076, 0.0093], [0.0092, 0.073, 0.0091], [0.0275, 0.059, 0.0083]]) {
-        const xm = x * mirror, L1 = L * 0.45, L2 = L * 0.31, L3 = L * 0.24;
-        vmBox(g, M.glovePad || M.glove, 0.015, 0.007, 0.016, xm, 0.0105, -0.045, 0, 0, 0, 0.003);
-        const k1 = new THREE.Group(); k1.position.set(xm, -0.003, -0.045); g.add(k1);
-        k1.add(cap(r, L1));
-        const k2 = new THREE.Group(); k2.position.z = -L1 - r * 0.45; k1.add(k2);
-        k2.add(cap(r * 0.94, L2));
-        const k3 = new THREE.Group(); k3.position.z = -L2 - r * 0.42; k2.add(k3);
-        k3.add(cap(r * 0.87, L3));
-        const tip = new THREE.Object3D(); tip.position.z = -L3 - r * 0.85; k3.add(tip);
-        fingers.push({ k1, k2, k3, tip });
-      }
-      // the thumb from the ball of the hand, angled in
-      const t0 = new THREE.Group(); t0.position.set(0.033 * -mirror, -0.007, 0.004); t0.rotation.set(0.15, 0.8 * mirror, 0); g.add(t0);
-      t0.add(cap(0.0112, 0.028));
-      const t1 = new THREE.Group(); t1.position.z = -0.034; t0.add(t1);
-      t1.add(cap(0.0102, 0.022));
-      const t2 = new THREE.Group(); t2.position.z = -0.028; t1.add(t2);
-      t2.add(cap(0.0094, 0.015));
-      const ttip = new THREE.Object3D(); ttip.position.z = -0.024; t2.add(ttip);
-      fingers.unshift({ k1: t0, k2: t1, k3: t2, tip: ttip, thumb: true });
-      // the wrist (the glove's), the sleeve's cuff and the forearm, as on the guns
-      const arm = new THREE.Group(); arm.position.set(0, 0.002, 0.04); g.add(arm);
-      const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.033, 0.06, 12), M.glove); wrist.position.y = 0.02; arm.add(wrist);
-      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.041, 0.041, 0.04, 14), M.sleeve); cuff.position.y = 0.07; arm.add(cuff);
-      const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.052, 0.56, 14), M.sleeve); fore.position.y = 0.36; arm.add(fore);
-      if (mirror < 0 && M.watch) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.0335, 0.0335, 0.02, 14), M.watch); w.position.y = 0.035; arm.add(w);
-        vmBox(arm, M.watch, 0.022, 0.012, 0.024, 0, 0.035, -0.033);
-        const face = new THREE.Mesh(new THREE.CircleGeometry(0.009, 12), new THREE.MeshBasicMaterial({ color: 0x40ff90 })); face.position.set(0, 0.035, -0.0395); face.rotation.y = Math.PI; arm.add(face);
-      }
-      return { g, arm, fingers, mirror };
-    };
-    this.L = hand(-1); this.R = hand(1);
-    this.arms = [this.L, this.R];
-    void buildHands;
-    this.inv = new THREE.Matrix4();
+    this.geos = [];
     this.root = new THREE.Group();
-    this.root.add(this.L.g, this.R.g);
+    this.L = this.arm(M, -1); this.R = this.arm(M, 1);
     this.root.visible = false;
     game.scene.add(this.root);
     this.k = 0;
     this.tgt = new THREE.Vector3();
   }
-  dispose() { if (this.root.parent) this.root.parent.remove(this.root); }
+  dispose() { if (this.root.parent) this.root.parent.remove(this.root); for (const g of this.geos) g.dispose(); }
 
-  // the fingers bent: [thumb, index, middle, ring, little], 0 straight .. 1 in a fist
-  curl(H, c) {
-    H.fingers.forEach((f, i) => {
-      const v = c[i] ?? 0.5;
-      if (f.thumb) { f.k1.rotation.x = 0.15 - v * 0.45; f.k2.rotation.x = -v * 0.7; f.k3.rotation.x = -v * 0.6; } else { f.k1.rotation.x = -v * 1.15; f.k2.rotation.x = -v * 1.35; f.k3.rotation.x = -v * 1.05; }
+  // one arm (m: 1 the right, -1 the left): the bones, the glove and the sleeve over them, the pads and the watch
+  arm(M, m) {
+    const root = this.root, g = new THREE.Group(); root.add(g);
+    const bone = (parent, x, y, z) => { const b = new THREE.Bone(); b.position.set(x, y, z); b.rotation.order = 'YXZ'; parent.add(b); return b; };
+    const hb = bone(g, 0, 0, 0), fingers = [], bones = [hb];
+    for (const [x, y, z, L, , sp] of FING) {
+      const k1 = bone(hb, x * m, y, z), k2 = bone(k1, 0, 0, -L[0]), k3 = bone(k2, 0, 0, -L[1]);
+      k1.rotation.y = sp * m;
+      const tip = new THREE.Object3D(); tip.position.set(0, -0.003, -L[2] + 0.004); k3.add(tip);
+      fingers.push({ k1, k2, k3, tip }); bones.push(k1, k2, k3);
+    }
+    const t0 = bone(hb, THUMB.at[0] * m, THUMB.at[1], THUMB.at[2]), t1 = bone(t0, 0, 0, -THUMB.L[0]), t2 = bone(t1, 0, 0, -THUMB.L[1]);
+    t0.rotation.set(THUMB.pitch, THUMB.yaw * m, THUMB.roll * m);
+    const ttip = new THREE.Object3D(); ttip.position.set(0, -0.003, -THUMB.L[2] + 0.004); t2.add(ttip);
+    fingers.unshift({ k1: t0, k2: t1, k3: t2, tip: ttip, thumb: true }); bones.push(t0, t1, t2);
+    // (the forearm and the upper arm: in the world, set each frame; bound lying straight back from the wrist)
+    const fb = bone(root, ARM.wrist.x, ARM.wrist.y, ARM.wrist.z), ub = bone(root, ARM.wrist.x, ARM.wrist.y, ARM.wrist.z + ARM.fore);
+    fb.quaternion.setFromUnitVectors(_h1.set(0, 1, 0), _h2.set(0, 0, 1)); ub.quaternion.copy(fb.quaternion);
+    bones.push(fb, ub);
+    const FB = 16, UB = 17;
+    root.updateMatrixWorld(true);
+
+    // ---- the glove: the palm and the wrist as one tube from the knuckles back into the sleeve, then each finger and
+    // the thumb, each over its three bones
+    const G = new Skin(), X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
+    const palm = [
+      // [z, half width, up, down, arch, squareness]
+      [-0.056, 0.036, 0.0095, 0.009, 0, 3], [-0.048, 0.0428, 0.0142, 0.0125, 0.003, 3], [-0.03, 0.0438, 0.0165, 0.015, 0.004, 3],
+      [-0.005, 0.0425, 0.017, 0.0165, 0.004, 3], [0.02, 0.039, 0.0165, 0.0172, 0.003, 2.8], [0.036, 0.034, 0.0155, 0.0165, 0.001, 2.5],
+      [0.05, 0.0298, 0.0158, 0.0162, 0, 2.3], [0.062, 0.0292, 0.0172, 0.0172, 0, 2.1], [0.074, 0.031, 0.0195, 0.0195, 0, 2],
+      [0.09, 0.0335, 0.022, 0.022, 0, 2], [0.11, 0.0345, 0.0235, 0.0235, 0, 2], [0.14, 0.035, 0.024, 0.024, 0, 2],
+    ];
+    G.tube(palm.map(([z, w, h, hd, arch, n]) => {
+      const k = across(z, 0.05, 0.02);
+      return { c: new THREE.Vector3(0, 0, z), X, Y, w, h, hd, arch, n, sk: skinOf([[0, 1 - k], [FB, k]]) };
+    }), 18, 0.25, 0.006, 0);
+    const P = new THREE.Vector3(), PX = new THREE.Vector3(), PY = new THREE.Vector3(), Q = new THREE.Quaternion();
+    // (a finger or the thumb: its profile [distance along, width, height up, down] over the bones b0 (the hand), b1..b3)
+    const digit = (b1, prof, joints, ids, end) => {
+      b1.matrixWorld.decompose(P, Q, _h3);
+      PX.set(-1, 0, 0).applyQuaternion(Q); PY.set(0, 1, 0).applyQuaternion(Q);
+      const F = _h2.set(0, 0, -1).applyQuaternion(Q);
+      G.tube(prof.map(([s, w, h, hd]) => {
+        const k1 = across(s, joints[0][0], joints[0][1]), k2 = across(s, joints[1][0], joints[1][1]), k3 = across(s, joints[2][0], joints[2][1]);
+        return { c: P.clone().addScaledVector(F, s), X: PX.clone(), Y: PY.clone(), w, h, hd, n: 2.1, sk: skinOf([[ids[0], 1 - k1], [ids[1], k1 * (1 - k2)], [ids[2], k1 * k2 * (1 - k3)], [ids[3], k1 * k2 * k3]]) };
+      }), 12, 0.25, 0, end);
+    };
+    FING.forEach(([, , , L, r], i) => {
+      const a = L[0], b = L[0] + L[1], e = b + L[2];
+      digit(fingers[i + 1].k1, [
+        [-0.013, r * 1.08, r * 0.95, r * 0.9], [-0.004, r * 1.06, r * 0.93, r * 0.88], [0.005, r, r * 0.88, r * 0.84], [a * 0.5, r * 0.93, r * 0.8, r * 0.82],
+        [a - 0.003, r * 0.94, r * 0.82, r * 0.82], [a + 0.002, r * 0.95, r * 0.83, r * 0.82], [a + L[1] * 0.5, r * 0.89, r * 0.76, r * 0.8],
+        [b - 0.002, r * 0.88, r * 0.75, r * 0.78], [b + 0.002, r * 0.88, r * 0.74, r * 0.79], [b + L[2] * 0.45, r * 0.86, r * 0.7, r * 0.8],
+        [e - r * 0.55, r * 0.8, r * 0.62, r * 0.74], [e - r * 0.22, r * 0.56, r * 0.42, r * 0.5],
+      ], [[0, 0.009], [a, 0.006], [b, 0.005]], [0, 1 + i * 3, 2 + i * 3, 3 + i * 3], r * 0.22);
     });
+    {
+      const [a0, a1, a2] = THUMB.L, r = THUMB.r, a = a0, b = a0 + a1, e = b + a2;
+      digit(fingers[0].k1, [
+        [-0.018, r * 0.9, r * 0.75, r * 0.8], [-0.006, r * 1.08, r * 0.85, r * 0.95], [0.01, r * 1.12, r * 0.88, r * 0.98], [a * 0.55, r * 1.04, r * 0.84, r * 0.9],
+        [a - 0.004, r * 0.92, r * 0.78, r * 0.82], [a + 0.003, r * 0.88, r * 0.74, r * 0.8], [a + a1 * 0.5, r * 0.84, r * 0.7, r * 0.78],
+        [b - 0.002, r * 0.8, r * 0.66, r * 0.76], [b + 0.002, r * 0.8, r * 0.66, r * 0.76], [b + a2 * 0.45, r * 0.78, r * 0.6, r * 0.76],
+        [e - r * 0.5, r * 0.72, r * 0.55, r * 0.68], [e - r * 0.2, r * 0.5, r * 0.38, r * 0.48],
+      ], [[0, 0.014], [a, 0.007], [b, 0.005]], [0, 13, 14, 15], r * 0.2);
+    }
+    const glove = new THREE.SkinnedMesh(G.geometry(), M.glove);
+
+    // ---- the sleeve: from its cuff over the glove's, along the forearm with a few creases, over the elbow, up the arm
+    const S = new Skin(), Z = ARM.wrist.z, E = Z + ARM.fore;
+    const sleeve = [
+      // [z, half width, up, down, crease]
+      [0.087, 0.031, 0.0225, 0.0225, 0], [0.09, 0.039, 0.033, 0.034, 0], [0.098, 0.0415, 0.0355, 0.0365, 0], [0.12, 0.042, 0.036, 0.037, 0.02],
+      [0.132, 0.0405, 0.035, 0.036, 0], [0.155, 0.0425, 0.036, 0.037, 0.03], [0.18, 0.0418, 0.0365, 0.037, -0.025], [0.205, 0.0452, 0.039, 0.04, 0.03],
+      [0.228, 0.0445, 0.039, 0.0405, -0.02], [0.252, 0.048, 0.042, 0.043, 0.025], [0.276, 0.0478, 0.0425, 0.044, -0.02], [0.298, 0.0505, 0.045, 0.046, 0.02],
+      [E, 0.052, 0.048, 0.048, 0.03], [E + 0.018, 0.053, 0.05, 0.05, -0.03], [E + 0.04, 0.054, 0.052, 0.052, 0.02], [E + 0.09, 0.056, 0.054, 0.054, 0],
+      [E + 0.16, 0.058, 0.056, 0.056, 0.015], [E + 0.24, 0.06, 0.058, 0.058, 0],
+    ];
+    S.tube(sleeve.map(([z, w, h, hd, f], i) => {
+      const k = across(z, E, 0.032);
+      return { c: new THREE.Vector3(0, ARM.wrist.y, z), X, Y, w, h, hd, n: 2, fold: f ? [f, i * 1.7] : null, sk: skinOf([[FB, 1 - k], [UB, k]]) };
+    }), 16, 0.6, 0, 0);
+    const sl = new THREE.SkinnedMesh(S.geometry(), M.sleeve);
+    const skel = new THREE.Skeleton(bones);
+    for (const mesh of [glove, sl]) { mesh.frustumCulled = false; root.add(mesh); mesh.bind(skel); this.geos.push(mesh.geometry); }
+
+    // ---- hard parts on the bones: the knuckle guard, a pad on each finger, the watch on the left wrist
+    const pad = M.glovePad || M.glove;
+    FING.forEach(([x, y, z, L, r]) => vmBox(hb, pad, r * 1.55, 0.006, 0.013, x * m, y + 0.0128, z + 0.003, 0.15, 0, 0, 0.0028));
+    FING.forEach(([, , , L, r], i) => vmBox(fingers[i + 1].k1, pad, r * 1.2, 0.003, L[0] * 0.36, 0, r * 0.8 + 0.0011, -L[0] * 0.52, 0, 0, 0, 0.0014));
+    if (m < 0 && M.watch) {
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.012, 16, 1, true), M.watch); band.scale.set(0.0345, 1, 0.0218); band.position.y = 0.026; fb.add(band);
+      vmBox(fb, M.watch, 0.024, 0.022, 0.009, 0, 0.026, -0.024, 0, 0, 0, 0.003);
+      const face = new THREE.Mesh(new THREE.CircleGeometry(0.0085, 14), new THREE.MeshBasicMaterial({ color: 0x40ff90 })); face.position.set(0, 0.026, -0.0287); face.rotation.y = Math.PI; fb.add(face);
+    }
+    return { g, hb, fb, ub, fingers, mirror: m };
+  }
+
+  // the fingers bent: [thumb, index, middle, ring, little], 0 straight .. 1 in a fist (bent, they come together a little)
+  curl(H, c) {
+    const F = H.fingers, m = H.mirror;
+    for (let i = 1; i < 5; i++) {
+      const v = c[i] ?? 0.4, f = F[i], d = FING[i - 1];
+      f.k1.rotation.set(-v * 1.2, (d[5] + (d[6] - d[5]) * Math.min(1, Math.max(0, v))) * m, 0); f.k2.rotation.x = -v * 1.4; f.k3.rotation.x = -v * 1.0;
+    }
+    const v = c[0] ?? 0.4, T = F[0];
+    T.k1.rotation.set(THUMB.pitch - v * 0.25, (THUMB.yaw - v * 0.35) * m, THUMB.roll * m); T.k2.rotation.x = -v * 0.7; T.k3.rotation.x = -v * 0.8;
   }
   // where a part of the hand is with the hand at the origin turned as it is: 'palm', 'index' (its tip), 'thumb' (its
   // tip), 'grip' (inside the bent fingers), 'pinch' (between thumb and index)
@@ -290,7 +421,7 @@ class HandsAtWork {
   }
   // The hand at time t: on one flowing path through the poses (it slows into a pose and stops only where it stays:
   // the same place before or after), turning on the way with the wrist first and the fingers last, leaning a little
-  // into where it goes, the fingers loosening while it travels; a press if one is on; and a little life in it.
+  // into where it goes, the fingers loosening while it travels; and a little life in it.
   pose(H, keys, taps, hand, t, s, bomb, yaw, M, seed) {
     const N = keys.length, K = (j) => keys[Math.max(0, Math.min(N - 1, j))], T = (j) => K(j)[0] * s;
     let i = keys.findIndex((k) => k[0] * s > t);
@@ -300,45 +431,57 @@ class HandsAtWork {
     const Pm = i0 > 0 ? this.solve(H, K(i0 - 1), bomb, yaw, M) : A, Pn = i1 < N - 1 ? this.solve(H, K(i1 + 1), bomb, yaw, M) : B;
     const t0 = T(i0), t1 = T(i1), dur = Math.max(1e-3, t1 - t0), raw = t1 > t0 ? Math.max(0, Math.min(1, (t - t0) / dur)) : 1;
     // (the speed through a pose: on toward the next one, a little gentler than a spline would, none where it stays)
-    const tan = (P0, P1, P2, ta, tb, out) => (P0.p.distanceTo(P1.p) < 0.004 || P2.p.distanceTo(P1.p) < 0.004 || tb - ta < 1e-3 ? out.set(0, 0, 0) : out.subVectors(P2.p, P0.p).multiplyScalar(0.75 / (tb - ta)));
+    const tan = (P0, P1, P2, ta, tb, out) => (P0.p.distanceTo(P1.p) < 0.004 || P2.p.distanceTo(P1.p) < 0.004 || tb - ta < 1e-3 ? out.set(0, 0, 0) : out.subVectors(P2.p, P0.p).multiplyScalar(0.7 / (tb - ta)));
     const mA = tan(Pm, A, B, T(i0 - 1), t1, _v1), mB = tan(A, B, Pn, t0, T(i1 + 1), _v2);
     const u = raw, u2 = u * u, u3 = u2 * u;
     H.g.position.set(0, 0, 0).addScaledVector(A.p, 2 * u3 - 3 * u2 + 1).addScaledVector(mA, (u3 - 2 * u2 + u) * dur).addScaledVector(B.p, -2 * u3 + 3 * u2).addScaledVector(mB, (u3 - u2) * dur);
-    const dist = A.p.distanceTo(B.p);
-    H.g.position.y += Math.sin(u * Math.PI) * Math.min(0.035, dist * 0.35);
+    // (a longer way goes up in an arc and the hand leans into it; a short step from one key to the next does neither)
+    const dist = A.p.distanceTo(B.p), far = sm((dur - 0.12) / 0.25);
+    H.g.position.y += Math.sin(u * Math.PI) * Math.min(0.03, dist * 0.3) * far;
     // (how fast and where to: the hand leans into it, the fingers loosen)
     _v3.set(0, 0, 0).addScaledVector(A.p, 6 * u2 - 6 * u).addScaledVector(mA, (3 * u2 - 4 * u + 1) * dur).addScaledVector(B.p, -6 * u2 + 6 * u).addScaledVector(mB, (3 * u2 - 2 * u) * dur).divideScalar(dur);
-    const speed = Math.min(1, _v3.length() / 0.45), side = Math.max(-1, Math.min(1, (_v3.x * Math.cos(yaw) - _v3.z * Math.sin(yaw)) / 0.45));
-    const ur = sm(Math.min(1, raw * 1.3)), uc = sm(raw * 0.85 + (raw > 0.9 ? (raw - 0.9) * 1.5 : 0));
+    const mid = far * 4 * u * (1 - u), speed = Math.min(1, _v3.length() / 0.45) * mid, side = Math.max(-1, Math.min(1, (_v3.x * Math.cos(yaw) - _v3.z * Math.sin(yaw)) / 0.45)) * mid;
+    const ur = sm(Math.min(1, raw * 1.25)), uc = sm(raw * 0.85 + (raw > 0.9 ? (raw - 0.9) * 1.5 : 0));
     H.g.quaternion.slerpQuaternions(A.q, B.q, ur);
-    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(0.06 * speed, 0, -0.22 * side, 'YXZ')));
-    const c = A.c.map((v, j) => v + (B.c[j] - v) * Math.min(1, uc) - (j >= 2 ? 0.1 * speed : 0));
-    // the press on now: down along the finger, the finger bending, the wrist following it down and back, the
-    // fingers beside it going a little with it; no two presses quite alike
-    taps.forEach((p, j) => {
-      if (p[2] !== hand) return;
-      const v = (t - p[0] * s) / (p[1] * s);
-      if (v < 0 || v > 1) return;
-      const r1 = Math.abs(Math.sin(j * 12.9898 + seed) * 43758.5453) % 1, r2 = Math.abs(Math.sin(j * 78.233 + seed) * 12345.678) % 1;
-      const d = pressCurve(v) * (0.85 + 0.3 * r1), after = v > 0.56 ? Math.sin((v - 0.56) / 0.44 * Math.PI) * 0.25 : 0;
-      H.g.position.y -= d * p[3];
-      _fw.set(0, 0, -1).applyQuaternion(H.g.quaternion); _fw.y = 0;
-      if (_fw.lengthSq() > 1e-6) H.g.position.addScaledVector(_fw.normalize(), d * (0.004 + 0.004 * r2));
-      H.g.quaternion.multiply(_hq.setFromAxisAngle(_hx, -(0.12 + 0.07 * r2) * d + 0.05 * after));
-      c[1] += (0.26 + 0.1 * r1) * d; c[2] += 0.12 * d; c[3] += 0.06 * d; c[0] -= 0.07 * d;
-    });
+    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(0.05 * speed, 0, -0.18 * side, 'YXZ')));
+    const c = A.c.map((v, j) => v + (B.c[j] - v) * Math.min(1, uc) - (j >= 2 ? 0.08 * speed : 0));
     // (never quite still: the hand rises and sinks with the breath, drifts a little, trembles a very little; the
     // fingers too)
     const n = (a, b, amp) => Math.sin(t * a + seed * b) * amp;
-    H.g.position.x += n(1.1, 1.3, 0.0016) + n(3.7, 0.9, 0.0004); H.g.position.y += n(1.6, 2.1, 0.0022) + n(8.3, 1.1, 0.00025); H.g.position.z += n(0.9, 0.7, 0.0015);
-    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(n(1.25, 1, 0.025), n(0.8, 1.7, 0.02), n(0.95, 2.3, 0.03), 'YXZ')));
-    this.curl(H, c.map((v, j) => v + n(1.8 + j * 0.4, 1.7 + j, 0.045)));
+    H.g.position.x += n(1.1, 1.3, 0.0014) + n(3.7, 0.9, 0.0003); H.g.position.y += n(1.6, 2.1, 0.0018) + n(8.3, 1.1, 0.0002); H.g.position.z += n(0.9, 0.7, 0.0013);
+    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(n(1.25, 1, 0.02), n(0.8, 1.7, 0.016), n(0.95, 2.3, 0.024), 'YXZ')));
+    for (let j = 0; j < 5; j++) c[j] += n(1.8 + j * 0.4, 1.7 + j, 0.035);
+    this.curl(H, c);
+  }
+
+  // the arm behind the hand: from its wrist to a shoulder below the eyes (that goes a little way with the hand: the
+  // body leans after it), the elbow between them, low and a little out
+  reach(H, cam) {
+    const e = cam.matrixWorld.elements, m = H.mirror;
+    const rl = Math.hypot(e[0], e[2]) || 1, rx = e[0] / rl, rz = e[2] / rl, fl = Math.hypot(e[8], e[10]) || 1, fx = -e[8] / fl, fz = -e[10] / fl;
+    const W = _v1.copy(ARM.wrist).applyQuaternion(H.g.quaternion).add(H.g.position);
+    const S = _v2.set(cam.position.x + rx * 0.18 * m - fx * 0.07, cam.position.y - 0.2, cam.position.z + rz * 0.18 * m - fz * 0.07).lerp(W, 0.1);
+    const d = _v3.subVectors(S, W), len = d.length() || 1; d.divideScalar(len);
+    const L1 = ARM.fore, L2 = ARM.upper, dd = Math.min(L1 + L2 - 1e-4, Math.max(Math.abs(L1 - L2) + 1e-3, len));
+    const a = (L1 * L1 - L2 * L2 + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    const P = _v4.set(rx * 0.5 * m - fx * 0.2, -0.8, rz * 0.5 * m - fz * 0.2);
+    P.addScaledVector(d, -P.dot(d)).normalize();
+    const El = _v5.copy(W).addScaledVector(d, a).addScaledVector(P, h);
+    // the forearm from the wrist to the elbow, turned as the hand is; the upper arm on from the elbow
+    const y = _a.subVectors(El, W).normalize(), x = _b.set(1, 0, 0).applyQuaternion(H.g.quaternion);
+    x.addScaledVector(y, -x.dot(y)).normalize();
+    H.fb.position.copy(W); H.fb.quaternion.setFromRotationMatrix(_hm.makeBasis(x, y, _c.crossVectors(x, y)));
+    y.subVectors(S, El).normalize(); x.addScaledVector(y, -x.dot(y)).normalize();
+    H.ub.position.copy(El); H.ub.quaternion.setFromRotationMatrix(_hm.makeBasis(x, y, _c.crossVectors(x, y)));
   }
 
   // w: the work under way (or null), bomb: the BombModel, p: the player, cam: the camera
   update(dt, w, bomb, p, cam) {
     const on = !!(w && w.ent === p);
-    this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.16 : -dt / 0.18)));
+    // (the hands come in and go in four tenths of a second; the eyes go down to it and back up a little slower)
+    this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.4 : -dt / 0.4)));
+    const turn = Math.min(1, (this.camTurn || 0) / Math.PI);
+    this.kc = Math.max(0, Math.min(1, (this.kc || 0) + (on ? dt / (0.7 + 0.5 * turn) : -dt / (0.6 + 0.6 * turn))));
     this.root.visible = this.k > 0.01;
     if (!this.root.visible) return;
     const R = bomb.root;
@@ -349,23 +492,19 @@ class HandsAtWork {
     const kind = this.kind = on ? w.kind : this.kind || 'plant';
     const need = this.need = on ? w.need : this.need || SD.PLANT;
     const S = SEQ[kind], s = seqScale(need), e = cam.matrixWorld.elements;
-    // (where the hands come from and go back to: below the eyes, left and right)
+    // (where the hands come from and go back to: below the eyes, left and right; the right brings the case, so it is
+    // on it from the start of a plant)
     const away = (m, out) => out.set(cam.position.x - e[4] * 0.5 + e[0] * 0.2 * m - e[8] * 0.1, cam.position.y - e[5] * 0.5 + e[1] * 0.2 * m - e[9] * 0.1, cam.position.z - e[6] * 0.5 + e[2] * 0.2 * m - e[10] * 0.1);
+    // (once it is over, from where they were: the bomb may be put away or changed by then)
     for (const [H, keys, hand, seed] of [[this.R, S.R, 'R', 1], [this.L, S.L, 'L', 2]]) {
-      this.pose(H, keys, S.taps, hand, t, s, bomb, yaw, R.matrixWorld, seed);
-      this.tgt.copy(H.g.position);
-      away(H.mirror, _b);
-      H.g.position.lerpVectors(_b, this.tgt, sm(this.k));
+      if (on) { this.pose(H, keys, S.taps, hand, t, s, bomb, yaw, R.matrixWorld, seed); (H.last || (H.last = new THREE.Vector3())).copy(H.g.position); } else if (H.last) H.g.position.copy(H.last);
+      if (!(on && kind === 'plant' && hand === 'R')) {
+        this.tgt.copy(H.g.position);
+        away(H.mirror, _b);
+        H.g.position.lerpVectors(_b, this.tgt, sm(this.k));
+      }
+      this.reach(H, cam);
     }
-    // the forearms: from the wrist back to a shoulder a little below and beside the eyes (that goes a little way
-    // with the hand: the body leans after it)
-    this.arms.forEach(({ g, arm, mirror }) => {
-      _a.set(cam.position.x + e[0] * 0.36 * mirror - e[4] * 0.45 + e[8] * 0.1, cam.position.y + e[1] * 0.36 * mirror - e[5] * 0.45 + e[9] * 0.1, cam.position.z + e[2] * 0.36 * mirror - e[6] * 0.45 + e[10] * 0.1);
-      _a.lerp(g.position, 0.12);
-      g.updateWorldMatrix(true, false);
-      _a.applyMatrix4(this.inv.copy(g.matrixWorld).invert()).sub(arm.position).normalize();
-      arm.quaternion.setFromUnitVectors(UP, _a);
-    });
   }
 }
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -415,20 +554,27 @@ export class SearchDestroy {
     this.shop = new Shop(this);
   }
 
-  // while you plant or defuse: no gun in your hands, and your eyes on the bomb
-  hidesGun() { return this.hands.root.visible; }
+  // while you plant or defuse (until the eyes are back up): no gun in your hands, and your eyes on the bomb
+  hidesGun() { return this.hands.root.visible || (this.hands.kc || 0) > 0; }
   // Kneeling at it: the eyes go down onto the spot while the case comes down, then lean in over it as the lid opens,
   // low and close (breathing a little).
   workCam(cam) {
-    const k = this.hands.k, e = k * k * (3 - 2 * k);
-    if (e <= 0.001) return;
+    const k = this.hands.kc || 0, e = k * k * k * (k * (k * 6 - 15) + 10);
+    if (k <= 0) { this.camFrom = null; this.camFollow = null; return; }
     const w = this.work, at = w && w.at ? w.at : this.bomb.root.position, yaw = w && w.yaw !== undefined ? w.yaw : this.hands.yaw || 0;
     const t = this.game.time, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    // (down from where the eyes were and the way they looked when it began, not from where crouching drops them and
+    // turning them onto the bomb points them, which is quick; back up to wherever they are by then, taken over in a
+    // third of a second)
+    const dtc = Math.min(0.05, Math.max(0, t - (this.camT ?? t))); this.camT = t;
+    if (!this.camFrom) { this.camFrom = cam.position.clone(); this.camFromQ = cam.quaternion.clone(); this.camBack = 0; }
+    this.camBack = w && w.ent === this.game.player ? 0 : Math.min(1, (this.camBack || 0) + dtc / 0.3);
+    const from = _cf.copy(this.camFrom).lerp(cam.position, sm(this.camBack)), fromQ = _cq.copy(this.camFromQ).slerp(cam.quaternion, sm(this.camBack));
     const loc = (x, y, z, out) => out.set(at.x + x * cy + z * sy, at.y + y, at.z - x * sy + z * cy);
-    const s = w ? Math.min(1, w.need / 3.2) : 1, lean = !w ? 1 : w.kind === 'plant' ? sm((w.t - 0.44 * s) / (0.32 * s)) : sm(w.t / 0.35);
+    const s = w ? seqScale(w.need) : 1, lean = !w ? 1 : w.kind === 'plant' ? sm((w.t - 1.2 * s) / (0.8 * s)) : sm(w.t / 0.5);
     const br = Math.sin(t * 1.3) * 0.003, bu = Math.sin(t * 0.9 + 1) * 0.004;
-    loc(br, 0.66 - 0.16 * lean + bu, 0.44 - 0.18 * lean, _v);
-    loc(0.0, 0.07 + 0.1 * lean, -0.01 - 0.09 * lean, _w);
+    loc(br + 0.025 * lean, 0.66 - 0.16 * lean + bu, 0.44 - 0.18 * lean, _v);
+    loc(0.035 * lean, 0.07 + 0.1 * lean, -0.01 - 0.09 * lean, _w);
     // (the body goes a little after the right hand at work: the eyes lean a centimetre or so its way and look
     // after it a little; eased, so the head follows the hand rather than sitting on it)
     if (lean > 0.5 && this.hands.R) {
@@ -438,10 +584,18 @@ export class SearchDestroy {
       f.t = t; f.x += (tx - f.x) * kf; f.z += (tz - f.z) * kf; f.lx += (ox * 0.12 - f.lx) * kf; f.lz += (oz * 0.12 - f.lz) * kf;
       _v.x += f.x; _v.z += f.z; _w.x += f.lx; _w.z += f.lz;
     }
-    cam.position.lerp(_v, e);
-    _m4.lookAt(cam.position, _w, UPY);
-    _q.setFromRotationMatrix(_m4);
-    cam.quaternion.slerp(_q, e);
+    // (from where they were to there round the bomb, the shorter way, looking at it all the way: so the eyes never swing
+    // about, even when it is done from the far side of the case; a longer way round takes longer)
+    // (round where the hands work, looking first at the point along the way they looked that is nearest it: so the view
+    // turns no faster than the eyes go round)
+    const C = loc(0.035, 0, -0.1, _cc), fd = _cd.set(0, 0, -1).applyQuaternion(fromQ);
+    const look = _ct.copy(from).addScaledVector(fd, Math.max(0.3, _cs.subVectors(C, from).dot(fd)));
+    const cx = C.x, cz = C.z, a0 = Math.atan2(from.x - cx, from.z - cz), a1 = Math.atan2(_v.x - cx, _v.z - cz), da = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
+    const r0 = Math.hypot(from.x - cx, from.z - cz), r1 = Math.hypot(_v.x - cx, _v.z - cz), a = a0 + da * e, r = r0 + (r1 - r0) * e;
+    this.hands.camTurn = Math.abs(da);
+    cam.position.set(cx + Math.sin(a) * r, from.y + (_v.y - from.y) * e, cz + Math.cos(a) * r);
+    _m4.lookAt(cam.position, look.lerp(_w, e), UPY);
+    cam.quaternion.setFromRotationMatrix(_m4);
     // (a wider view this close, so the whole case is in it)
     cam.fov += (62 - cam.fov) * e;
     cam.updateProjectionMatrix();
@@ -713,7 +867,7 @@ export class SearchDestroy {
 
   bombArmed() {
     const B = this.bomb;
-    B.lid(1); for (let i = 0; i < 3; i++) B.flip(i, true); B.trigger(false); B.pull(0); B.handle.rotation.x = -1.2;
+    B.lid(1); B.latch(0, 1); B.latch(1, 1); for (let i = 0; i < 3; i++) B.flip(i, true); B.trigger(false); B.pull(0); B.handle.rotation.x = -1.2;
     for (let i = 0; i < 4; i++) B.detLed(i, true); B.tablet(true); B.key(-1);
     B.setLed(true); B.screen('count', this.planted ? this.planted.left : SD.BOMB);
   }
@@ -788,6 +942,7 @@ export class SearchDestroy {
     if (e.isBot) e.busy = true;
     if (e === g.player) {
       this.work.stance = e.stance;
+      if (!this.camFrom) { this.camFrom = g.engine.camera.position.clone(); this.camFromQ = g.engine.camera.quaternion.clone(); } // (before the crouch drops the eyes)
       if (e.stance === 'stand') e.stance = 'crouch';
     }
     if (kind === 'plant') { const at = this.plantedAt(e); this.work.at = at.pos.clone(); this.work.yaw = at.yaw; this.work.from = this.carryFrom(at.pos, at.yaw); this.bomb.reset(); this.bomb.root.visible = true; }

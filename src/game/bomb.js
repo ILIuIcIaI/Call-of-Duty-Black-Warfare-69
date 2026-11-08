@@ -72,7 +72,8 @@ export class BombModel {
     // (rounded rubber corners, and a lip all round where the lid sits on it)
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) cyl(g, P.shellEdge, 0.019, HB + 0.004, x * (W / 2 - 0.01), HB / 2, z * (D / 2 - 0.01));
     for (const s of [-1, 1]) { box(g, P.shellEdge, W - 0.03, 0.01, 0.008, 0, HB - 0.012, s * (D / 2 + 0.002)); box(g, P.shellEdge, 0.008, 0.01, D - 0.03, s * (W / 2 + 0.002), HB - 0.012, 0); }
-    this.latches = [-0.15, 0.15].map((x) => box(g, P.grayDark, 0.05, 0.03, 0.012, x, HB - 0.006, D / 2 + 0.005));
+    // (the latches turn out and down about their lower edge to let the lid go)
+    this.latches = [-0.15, 0.15].map((x) => { const p = new THREE.Group(); p.position.set(x, HB - 0.021, D / 2 + 0.011); g.add(p); box(p, P.grayDark, 0.05, 0.03, 0.012, 0, 0.015, -0.006); return p; });
     const handle = this.handle = new THREE.Group(); handle.position.set(0, HB - 0.012, D / 2 + 0.008); g.add(handle);
     cyl(handle, P.grayDark, 0.009, 0.13, 0, 0, 0.032, 'x');
     for (const s of [-1, 1]) box(handle, P.grayDark, 0.014, 0.014, 0.034, s * 0.065, 0, 0.016);
@@ -251,14 +252,17 @@ export class BombModel {
     this.tex.needsUpdate = true;
   }
 
-  // the i-th arming switch: off (toward the back, lamp red) or on (forward, lamp green)
+  // the i-th arming switch: off (toward the back, lamp red) or on (forward, lamp green); or how far over it is, 0..1,
+  // while a finger takes it over (the lamp changes halfway)
   flip(i, on, force) {
     if (this.simple || (!force && this.flips[i] === on)) return;
     this.flips[i] = on;
-    const P = parts();
-    this.levers[i].rotation.x = on ? 0.5 : -0.5;
-    this.lamps[i].material = on ? P.ledGreen : P.ledOff;
+    const P = parts(), k = typeof on === 'number' ? on : on ? 1 : 0;
+    this.levers[i].rotation.x = -0.5 + k;
+    this.lamps[i].material = k > 0.5 ? P.ledGreen : P.ledOff;
   }
+  // a latch open, 0 (shut) .. 1 (turned out and down)
+  latch(i, k) { const l = this.latches[i]; if (l) l.rotation.x = 1.3 * Math.max(0, Math.min(1, +k)); }
   // the trigger's button held down
   trigger(on, force) {
     if (this.simple || (!force && this.held === on)) return;
@@ -283,7 +287,7 @@ export class BombModel {
 
   // everything back to how it comes out of a bag
   reset() {
-    this.lid(0);
+    this.lid(0); this.latch(0, 0); this.latch(1, 0);
     if (this.simple) return;
     this.screen('off'); for (let i = 0; i < 3; i++) this.flip(i, false); this.trigger(false); this.pull(0); this.setLed(false);
     this.key(-1); for (let i = 0; i < 4; i++) this.detLed(i, false); this.tablet(false);
@@ -292,8 +296,11 @@ export class BombModel {
   // where the hands go, in the case's own space
   spot(name, out = new THREE.Vector3()) {
     const F = WALL;
-    // (a point on the lid, wherever the lid is: x across, y up from its inside, z from the hinge)
-    const onLid = (x, y, z) => { const a = -OPEN * Math.max(0, this.k); return out.set(x, HB + y * Math.cos(a) - z * Math.sin(a), -D / 2 + y * Math.sin(a) + z * Math.cos(a)); };
+    // (a point on the lid, wherever the lid is, or where it was at an opening given after an @: x across, y up from its
+    // inside, z from the hinge)
+    const at = name.indexOf('@'), lk = at < 0 ? this.k : +name.slice(at + 1);
+    if (at >= 0) name = name.slice(0, at);
+    const onLid = (x, y, z) => { const a = -OPEN * Math.max(0, lk); return out.set(x, HB + y * Math.cos(a) - z * Math.sin(a), -D / 2 + y * Math.sin(a) + z * Math.cos(a)); };
     if (name === 'handle') return out.set(0, HB - 0.01, D / 2 + 0.04);
     if (name === 'latchL') return out.set(-0.15, HB - 0.004, D / 2 + 0.014);
     if (name === 'latchR') return out.set(0.15, HB - 0.004, D / 2 + 0.014);
