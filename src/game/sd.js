@@ -42,39 +42,131 @@ class HeldInput {
   set suppress(v) { this.inp.suppress = v; }
 }
 
-// ---- Planting and defusing, one sequence for everybody who sees it (its steps in seconds from the start; the trigger
-// is held for the rest of the time, SD.PLANT and SD.DEFUSE; a plant shorter than 3.2 s would run all of it faster).
-// Plant: the case comes down in the right hand, the left flicks the latches and throws the lid open, the screen in
-// the lid starts up, the right index finger flips the three arming switches, then holds the trigger down while the
-// device arms (a skull, a bar). Defuse: the switches back off, the trigger held, the first detonator pulled out.
-const PL = { bring: 0.3, latch: 0.36, open: 0.46, openLen: 0.24, boot: 0.72, armed: 1.0, sw: [0.98, 1.2, 1.42], swLen: 0.2, trig: 1.66, trigIn: 1.86 };
-const DF = { sw: [0.35, 0.65, 0.95], swLen: 0.26, trig: 1.25, trigIn: 1.5, det: 1.3, pull: 0.75 };
+// ---- Planting and defusing, one sequence for everybody who sees it. Its steps in seconds for the 5 s plant and
+// the 5 s defuse (a shorter one runs all of it faster; the last pose holds when it is longer).
+// Plant: the case comes down in the right hand; the left flicks a latch and throws the lid open; the screen starts
+// up; the right index finger flips the three arming switches, runs over the detonators (each lamp comes on), types
+// the code on the trigger box while the left hand confirms it on the tablet, then holds the red button down while
+// the device arms. Defuse: the switches back off, a code typed, the button held, the first detonator pulled out.
+// The hands go from pose to pose on arcs; each press has its own little movement (the finger bends, the wrist
+// follows it down and springs back) and the hands are never quite still.
+// [time, spot on the case, offset from it, [pitch, yaw, roll] of the hand, finger bends, the part of the hand on it]
+const HOVER = [-0.85, 0.25, -0.2], PRESS_C = [0.55, 0.16, 0.82, 0.88, 0.9];
+const KEYC = [0.55, 0.14, 0.8, 0.85, 0.88], KEYR = [-0.8, 0.2, -0.15];
+const SEQ = {
+  plant: {
+    R: [
+      [0, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], [0.75, 0.92, 0.95, 0.95, 0.95], 'grip'],
+      [0.6, 'handle', [0, 0.012, -0.004], [0.25, 0, 0], [0.75, 0.92, 0.95, 0.95, 0.95], 'grip'],
+      [0.86, 'switch0', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [1.1, 'switch1', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [1.33, 'switch2', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [1.56, 'switch2', [0, 0.034, 0.02], HOVER, PRESS_C, 'index'],
+      [1.74, 'det0', [-0.004, 0.026, 0.018], [-0.62, 0.12, -0.1], [0.45, 0.24, 0.55, 0.65, 0.7], 'index'],
+      [1.86, 'det1', [-0.004, 0.026, 0.018], [-0.6, 0.1, -0.08], [0.45, 0.24, 0.55, 0.65, 0.7], 'index'],
+      [1.98, 'det2', [-0.004, 0.026, 0.018], [-0.6, 0.08, -0.08], [0.45, 0.24, 0.55, 0.65, 0.7], 'index'],
+      [2.1, 'det3', [-0.004, 0.026, 0.018], [-0.62, 0.06, -0.1], [0.45, 0.24, 0.55, 0.65, 0.7], 'index'],
+      [2.32, 'key4', [0, 0.03, 0.02], KEYR, KEYC, 'index'],
+      [2.44, 'key3', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [2.66, 'key6', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [2.88, 'key0', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [3.1, 'key8', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [3.3, 'button', [0, 0.03, 0.01], [-0.7, 0.15, -0.12], [0.5, 0.2, 0.75, 0.8, 0.85], 'index'],
+      [3.46, 'button', [0, 0.007, 0.0], [-0.62, 0.15, -0.12], [0.45, 0.34, 0.74, 0.8, 0.85], 'index'],
+      [5, 'button', [0, 0.006, 0.0], [-0.6, 0.15, -0.1], [0.45, 0.36, 0.72, 0.78, 0.84], 'index'],
+    ],
+    L: [
+      [0, 'latchL', [0, 0.05, 0.035], [-0.6, 0.2, 0.2], [0.4, 0.4, 0.55, 0.6, 0.65], 'index'],
+      [0.3, 'latchL', [0, 0.016, 0.012], [-0.8, 0.2, 0.2], [0.4, 0.35, 0.6, 0.65, 0.7], 'index'],
+      [0.44, 'latchL', [0, 0.022, 0.012], [-0.8, 0.2, 0.2], [0.4, 0.35, 0.6, 0.65, 0.7], 'index'],
+      [0.5, 'lidEdge', [0, -0.006, 0.012], [-0.35, 0.15, 0.15], [0.6, 0.6, 0.62, 0.64, 0.66], 'grip'],
+      [0.74, 'lidEdge', [0, -0.006, 0.012], [-1.2, 0.15, 0.15], [0.6, 0.6, 0.62, 0.64, 0.66], 'grip'],
+      [1.0, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
+      [2.3, 'rimL', [0.03, 0.024, 0.004], [0.06, -0.33, 0.1], [0.32, 0.27, 0.3, 0.32, 0.34], 'palm'],
+      [2.46, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
+      [2.72, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
+      [3.0, 'rimL', [0.035, 0.022, -0.01], [0.08, -0.38, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
+      [5, 'rimL', [0.035, 0.022, -0.012], [0.07, -0.36, 0.1], [0.3, 0.26, 0.29, 0.31, 0.33], 'palm'],
+    ],
+    // [time, length, hand, how deep, what it presses]
+    taps: [[0.34, 0.12, 'L', 0.012, 'latch'], [0.95, 0.19, 'R', 0.022, 'sw0'], [1.18, 0.19, 'R', 0.022, 'sw1'], [1.41, 0.19, 'R', 0.022, 'sw2'],
+      [1.78, 0.1, 'R', 0.018, 'det0'], [1.9, 0.1, 'R', 0.018, 'det1'], [2.02, 0.1, 'R', 0.018, 'det2'], [2.14, 0.1, 'R', 0.018, 'det3'],
+      [2.49, 0.15, 'R', 0.02, 'key3'], [2.71, 0.15, 'R', 0.02, 'key6'], [2.93, 0.15, 'R', 0.02, 'key0'], [3.15, 0.15, 'R', 0.02, 'key8'],
+      [2.53, 0.14, 'L', 0.02, 'tab'], [3.38, 0.14, 'R', 0.014, 'btn']],
+    held: 3.46,
+  },
+  defuse: {
+    R: [
+      [0, 'switch2', [0, 0.034, 0.02], HOVER, PRESS_C, 'index'],
+      [0.25, 'switch2', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [0.5, 'switch1', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [0.75, 'switch0', [0, 0.03, 0.018], HOVER, PRESS_C, 'index'],
+      [0.98, 'switch0', [0, 0.034, 0.02], HOVER, PRESS_C, 'index'],
+      [1.18, 'key1', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [1.4, 'key5', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [1.6, 'key7', [0, 0.026, 0.018], KEYR, KEYC, 'index'],
+      [1.85, 'button', [0, 0.03, 0.01], [-0.7, 0.15, -0.12], [0.5, 0.2, 0.75, 0.8, 0.85], 'index'],
+      [2.0, 'button', [0, 0.007, 0.0], [-0.62, 0.15, -0.12], [0.45, 0.34, 0.74, 0.8, 0.85], 'index'],
+      [3.65, 'button', [0, 0.006, 0.0], [-0.6, 0.15, -0.1], [0.45, 0.36, 0.72, 0.78, 0.84], 'index'],
+      [4.15, 'det', [0, 0.006, 0.004], [-0.7, 0.3, -0.3], [0.45, 0.5, 0.8, 0.9, 0.9], 'pinch'],
+      [5, 'det', [0, 0.006, 0.004], [-0.75, 0.3, -0.32], [0.55, 0.55, 0.82, 0.9, 0.9], 'pinch'],
+    ],
+    L: [
+      [0, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
+      [0.85, 'rimL', [0.03, 0.022, 0], [0.08, -0.35, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
+      [1.05, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
+      [1.3, 'tablet', [0, 0.032, 0.016], [-0.75, -0.2, 0.15], [0.5, 0.15, 0.75, 0.8, 0.85], 'index'],
+      [1.55, 'rimL', [0.035, 0.022, -0.01], [0.08, -0.38, 0.1], [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'],
+      [5, 'rimL', [0.035, 0.022, -0.012], [0.07, -0.36, 0.1], [0.3, 0.26, 0.29, 0.31, 0.33], 'palm'],
+    ],
+    taps: [[0.3, 0.19, 'R', 0.022, 'sw2'], [0.55, 0.19, 'R', 0.022, 'sw1'], [0.8, 0.19, 'R', 0.022, 'sw0'],
+      [1.25, 0.15, 'R', 0.02, 'key1'], [1.45, 0.15, 'R', 0.02, 'key5'], [1.65, 0.15, 'R', 0.02, 'key7'],
+      [1.12, 0.14, 'L', 0.02, 'tab'], [1.93, 0.14, 'R', 0.014, 'btn']],
+    held: 2.0,
+  },
+};
 const sm = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+// a press: a little lift first, quick down, a moment on it, back up slower
+const pressCurve = (v) => (v < 0.12 ? -0.25 * Math.sin((v / 0.12) * Math.PI) : v < 0.42 ? sm((v - 0.12) / 0.3) : v < 0.56 ? 1 : 1 - sm((v - 0.56) / 0.44));
 // the lid's way open: quick, a little past, back
 const lidK = (u) => { u = Math.max(0, Math.min(1, u)); return u < 0.75 ? sm(u / 0.75) * 1.05 : 1.05 - 0.05 * sm((u - 0.75) / 0.25); };
+const seqScale = (need) => Math.min(1, need / 5);
 // what the bomb shows at time t of a piece of work (for its model, its sounds and the hands)
 function workState(kind, t, need) {
+  const S = SEQ[kind], s = seqScale(need), T = (x) => x * s;
+  const tap = (what) => S.taps.find((p) => p[4] === what);
+  const after = (what, k = 0.5) => { const p = tap(what); return p ? t > T(p[0] + p[1] * k) : false; };
+  let key = -1, digits = 0;
+  for (const p of S.taps) {
+    if (!p[4].startsWith('key')) continue;
+    if (t >= T(p[0] + p[1] * 0.3) && t < T(p[0] + p[1] * 0.75)) key = +p[4].slice(3);
+    if (t > T(p[0] + p[1] * 0.5)) digits++;
+  }
   if (kind === 'plant') {
-    const s = Math.min(1, need / 3.2), T = (x) => x * s;
-    const st = { bring: Math.min(1, t / T(PL.bring)), lid: lidK((t - T(PL.open)) / T(PL.openLen)), sw: PL.sw.map((a) => t > T(a + PL.swLen * 0.55)), trig: t > T(PL.trigIn) };
-    st.screen = t < T(PL.boot) ? ['off'] : t < T(PL.armed) ? ['boot', (t - T(PL.boot)) / (T(PL.armed) - T(PL.boot))] : ['arm', (t - T(PL.armed)) / Math.max(0.1, need - T(PL.armed))];
+    const st = { bring: Math.min(1, t / T(0.3)), lid: lidK((t - T(0.46)) / T(0.24)), sw: [0, 1, 2].map((i) => after('sw' + i, 0.55)), det: [0, 1, 2, 3].map((i) => after('det' + i, 0.4)), key, tab: after('tab', 0.5), trig: t > T(S.held) };
+    st.screen = t < T(0.72) ? ['off'] : t < T(1.0) ? ['boot', (t - T(0.72)) / T(0.28)] : ['arm', (t - T(1.0)) / Math.max(0.1, need - T(1.0)), digits];
     return st;
   }
-  return { bring: 1, lid: 1, sw: DF.sw.map((a, i) => !(t > a + DF.swLen * 0.55)).reverse(), trig: t > DF.trigIn && t < need - DF.det, pull: sm((t - (need - DF.pull)) / (DF.pull - 0.1)) };
+  return { bring: 1, lid: 1, sw: [0, 1, 2].map((i) => !after('sw' + i, 0.55)), det: [!(t > need - 0.6), true, true, true], key, tab: true, trig: t > T(S.held) && t < need - 1.35, pull: sm((t - (need - 0.75)) / 0.65) };
 }
 // the sounds of it, each once when its moment is passed
-const WORK_SOUNDS = {
-  plant: [[0.3, 'caseDown', 1, 1], [0.36, 'latch', 0.9, 1], [0.46, 'lidOpen', 1, 1], [0.76, 'bootBeep', 0.6, 1], [0.86, 'bootBeep', 0.6, 1.12], [0.96, 'bootBeep', 0.6, 1.25],
-    [0.98 + 0.11, 'toggle', 1, 1], [1.2 + 0.11, 'toggle', 1, 1.05], [1.42 + 0.11, 'toggle', 1, 1.1], [1.86, 'toggle', 0.9, 0.7]],
-  defuse: [[0.35 + 0.14, 'toggle', 1, 1.1], [0.65 + 0.14, 'toggle', 1, 1.05], [0.95 + 0.14, 'toggle', 1, 1], [1.5, 'toggle', 0.9, 0.7]],
-};
 function workSounds(g, w, t0, t1, pos) {
-  const s = w.kind === 'plant' ? Math.min(1, w.need / 3.2) : 1;
-  for (const [at, name, vol, rate] of WORK_SOUNDS[w.kind]) if (at * s > t0 && at * s <= t1) g.audio.play(name, { pos, vol, rate });
-  // (the trigger held: a soft beep every half second; pulling the detonator out)
-  const from = w.kind === 'plant' ? PL.trigIn * s : DF.trigIn;
-  if (t1 > from && Math.floor((t1 - from) / 0.45) !== Math.floor((t0 - from) / 0.45) && (w.kind === 'plant' || t1 < w.need - DF.det)) g.audio.play('holdBeep', { pos, vol: 0.5, rate: w.kind === 'plant' ? 1 + Math.min(0.5, (t1 - from) * 0.25) : 0.85 });
-  if (w.kind === 'defuse' && t0 <= w.need - DF.pull && t1 > w.need - DF.pull) g.audio.play('detPull', { pos, vol: 1 });
+  const S = SEQ[w.kind], s = seqScale(w.need), T = (x) => x * s;
+  const at = (x, name, vol, rate) => { if (T(x) > t0 && T(x) <= t1) g.audio.play(name, { pos, vol, rate }); };
+  if (w.kind === 'plant') { at(0.3, 'caseDown', 1, 1); at(0.46, 'lidOpen', 1, 1); at(0.76, 'bootBeep', 0.6, 1); at(0.86, 'bootBeep', 0.6, 1.12); at(0.96, 'bootBeep', 0.6, 1.25); }
+  for (const p of S.taps) {
+    const hit = p[0] + p[1] * 0.45, w4 = p[4];
+    if (w4 === 'latch') at(hit, 'latch', 0.9, 1);
+    else if (w4.startsWith('sw')) at(hit, 'toggle', 1, 1 + (+w4[2]) * 0.05);
+    else if (w4.startsWith('det')) at(hit, 'uiClick', 0.55, 2.3 + (+w4[3]) * 0.1);
+    else if (w4.startsWith('key')) at(hit, 'bootBeep', 0.5, 1.45 + (+w4[3] % 3) * 0.08);
+    else if (w4 === 'tab') at(hit, 'uiClick', 0.6, 1.7);
+    else if (w4 === 'btn') at(hit, 'toggle', 0.9, 0.7);
+  }
+  // (the button held: a soft beep every half second, rising while it arms; pulling the detonator out)
+  const from = T(S.held), until = w.kind === 'plant' ? w.need : w.need - 1.35;
+  if (t1 > from && t1 < until && Math.floor((t1 - from) / 0.45) !== Math.floor((t0 - from) / 0.45)) g.audio.play('holdBeep', { pos, vol: 0.5, rate: w.kind === 'plant' ? 1 + Math.min(0.5, (t1 - from) * 0.3) : 0.85 });
+  if (w.kind === 'defuse' && t0 <= w.need - 0.75 && t1 > w.need - 0.75) g.audio.play('detPull', { pos, vol: 1 });
 }
 // the model of the bomb at that moment (the case comes down from `from` to where it is put, as `at`)
 const _bq = new THREE.Quaternion(), _be = new THREE.Euler();
@@ -88,6 +180,9 @@ function poseBomb(bomb, st, from, at, yaw) {
   bomb.handle.rotation.x = st.bring < 1 || st.lid < 0.2 ? 0 : -1.2;
   bomb.lid(st.lid);
   st.sw.forEach((on, i) => bomb.flip(i, on));
+  if (st.det) st.det.forEach((on, i) => bomb.detLed(i, on));
+  bomb.key(st.key ?? -1);
+  if (st.tab !== undefined) bomb.tablet(st.tab);
   bomb.trigger(!!st.trig);
   if (st.pull !== undefined) bomb.pull(st.pull);
 }
@@ -95,7 +190,7 @@ function poseBomb(bomb, st, from, at, yaw) {
 // The hands you see while you plant or defuse: gloves with jointed fingers, the forearms turned toward the
 // shoulders every frame (long sleeves that run out of the picture). In the world, next to the bomb everybody sees.
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
-const _e = new THREE.Euler(0, 0, 0, 'YXZ');
+const _e = new THREE.Euler(0, 0, 0, 'YXZ'), _hq = new THREE.Quaternion(), _hx = new THREE.Vector3(1, 0, 0), _fw = new THREE.Vector3();
 class HandsAtWork {
   constructor(game) {
     const M = game.weapons.vm.mats;
@@ -136,7 +231,7 @@ class HandsAtWork {
     this.root.visible = false;
     game.scene.add(this.root);
     this.k = 0;
-    this.tgt = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+    this.tgt = new THREE.Vector3();
   }
   dispose() { if (this.root.parent) this.root.parent.remove(this.root); }
 
@@ -152,13 +247,14 @@ class HandsAtWork {
   anchor(H, name, out) {
     if (name === 'palm') return out.set(0, 0, 0);
     H.g.updateMatrixWorld(true);
-    const P = H.g.position.clone();
-    const at = (f) => f.tip.getWorldPosition(new THREE.Vector3()).sub(P);
-    if (name === 'index') return out.copy(at(H.fingers[1]));
-    if (name === 'thumb') return out.copy(at(H.fingers[0]));
-    if (name === 'pinch') return out.copy(at(H.fingers[0])).add(at(H.fingers[1])).multiplyScalar(0.5);
+    const P = H.g.position;
+    const at = (f, v) => f.tip.getWorldPosition(v).sub(P);
+    if (name === 'index') return at(H.fingers[1], out);
+    if (name === 'thumb') return at(H.fingers[0], out);
+    if (name === 'pinch') { at(H.fingers[0], out); return out.add(at(H.fingers[1], _fw)).multiplyScalar(0.5); }
     // grip: the middle finger's first joint
-    return out.copy(H.fingers[2].k2.getWorldPosition(new THREE.Vector3()).sub(P)).lerp(at(H.fingers[2]), 0.3);
+    H.fingers[2].k2.getWorldPosition(out).sub(P);
+    return out.lerp(at(H.fingers[2], _fw), 0.3);
   }
   // a hand turned (pitch, yaw, roll, around the bomb's own yaw) and bent, with its `anchor` on `target`
   place(H, target, yaw, pitch, dyaw, roll, curls, anchor) {
@@ -167,6 +263,41 @@ class HandsAtWork {
     H.g.position.set(0, 0, 0);
     const a = this.anchor(H, anchor, _c);
     H.g.position.copy(target).sub(a);
+  }
+  // one pose of the sequence, where it puts the hand
+  solve(H, key, bomb, yaw, M) {
+    bomb.spot(key[1], _a).add(_b.set(key[2][0], key[2][1], key[2][2])).applyMatrix4(M);
+    this.place(H, _a, yaw, key[3][0], key[3][1], key[3][2], key[4], key[5]);
+    return { p: H.g.position.clone(), q: H.g.quaternion.clone(), c: key[4] };
+  }
+  // the hand at time t: between two poses on an arc, a press if one is on, and a little life in it
+  pose(H, keys, taps, hand, t, s, bomb, yaw, M, seed) {
+    let i = keys.findIndex((k) => k[0] * s > t);
+    if (i < 0) i = keys.length;
+    const k0 = keys[Math.max(0, i - 1)], k1 = keys[Math.min(keys.length - 1, i)];
+    const t0 = k0[0] * s, t1 = k1[0] * s, u = t1 > t0 ? sm((t - t0) / (t1 - t0)) : 1;
+    const A = this.solve(H, k0, bomb, yaw, M), B = k1 === k0 ? A : this.solve(H, k1, bomb, yaw, M);
+    const dist = A.p.distanceTo(B.p);
+    H.g.position.lerpVectors(A.p, B.p, u); H.g.position.y += Math.sin(u * Math.PI) * Math.min(0.045, dist * 0.45);
+    H.g.quaternion.slerpQuaternions(A.q, B.q, u);
+    const c = A.c.map((v, j) => v + (B.c[j] - v) * u);
+    // the press on now: down along the finger, the finger bending, the wrist following
+    for (const p of taps) {
+      if (p[2] !== hand) continue;
+      const v = (t - p[0] * s) / (p[1] * s);
+      if (v < 0 || v > 1) continue;
+      const d = pressCurve(v);
+      H.g.position.y -= d * p[3];
+      _fw.set(0, 0, -1).applyQuaternion(H.g.quaternion); _fw.y = 0;
+      if (_fw.lengthSq() > 1e-6) H.g.position.addScaledVector(_fw.normalize(), d * 0.006);
+      H.g.quaternion.multiply(_hq.setFromAxisAngle(_hx, -0.14 * d));
+      c[1] += 0.28 * d; c[0] -= 0.05 * d; c[2] -= 0.04 * d;
+    }
+    // (never quite still: a hand breathes a little, the fingers too)
+    const n = (a, b, amp) => Math.sin(t * a + seed * b) * amp;
+    H.g.position.x += n(1.7, 1.3, 0.0012); H.g.position.y += n(2.3, 2.1, 0.001); H.g.position.z += n(1.9, 0.7, 0.0012);
+    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(n(1.3, 1, 0.02), n(0.9, 1.7, 0.015), n(1.1, 2.3, 0.025), 'YXZ')));
+    this.curl(H, c.map((v, j) => v + n(2.1 + j * 0.3, 1.7 + j, 0.035)));
   }
 
   // w: the work under way (or null), bomb: the BombModel, p: the player, cam: the camera
@@ -178,105 +309,18 @@ class HandsAtWork {
     const R = bomb.root;
     R.updateWorldMatrix(true, false);
     const yaw = this.yaw = on ? w.yaw : this.yaw ?? 0;
-    const W = (v) => v.applyMatrix4(R.matrixWorld);
     const t = on ? w.t : this.lastT || 0;
     if (on) this.lastT = t;
-    const kind = on ? w.kind : this.kind || 'plant';
-    this.kind = kind;
-    const need = on ? w.need : this.need || SD.PLANT;
-    this.need = need;
-    const e = cam.matrixWorld.elements;
+    const kind = this.kind = on ? w.kind : this.kind || 'plant';
+    const need = this.need = on ? w.need : this.need || SD.PLANT;
+    const S = SEQ[kind], s = seqScale(need), e = cam.matrixWorld.elements;
     // (where the hands come from and go back to: below the eyes, left and right)
-    const away = (s, out) => out.set(cam.position.x - e[4] * 0.5 + e[0] * 0.2 * s - e[8] * 0.1, cam.position.y - e[5] * 0.5 + e[1] * 0.2 * s - e[9] * 0.1, cam.position.z - e[6] * 0.5 + e[2] * 0.2 * s - e[10] * 0.1);
-    const press = (u) => (u < 0.35 ? 1 - sm(u / 0.35) : u < 0.6 ? 0 : sm((u - 0.6) / 0.4)); // (1 above the switch, 0 down on it)
-    // ---- the right hand
-    {
-      const H = this.R, at = _a;
-      if (kind === 'plant') {
-        const s = Math.min(1, need / 3.2), T = (x) => x * s;
-        const i = PL.sw.findIndex((a) => t >= T(a) && t < T(a + PL.swLen));
-        if (t < T(0.62)) this.place(H, W(bomb.spot('handle', at).add(_b.set(0, 0.012, -0.004))), yaw, 0.25, 0, 0, [0.75, 0.92, 0.95, 0.95, 0.95], 'grip');
-        else if (t < T(PL.sw[0])) {
-          // from the handle over to the first switch
-          const u = sm((t - T(0.62)) / (T(PL.sw[0]) - T(0.62)));
-          W(bomb.spot('handle', at).add(_b.set(0, 0.012, -0.004)));
-          W(bomb.spot('switch0', _c).add(_b.set(0, 0.045, 0.02)));
-          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(u * Math.PI) * 0.06, 0)), yaw, 0.25 - 1.2 * u, 0.25 * u, -0.2 * u, [0.75 - 0.2 * u, 0.92 - 0.82 * u, 0.95 - 0.1 * u, 0.95, 0.95], u < 0.5 ? 'grip' : 'index');
-        } else if (i >= 0) {
-          const u = (t - T(PL.sw[i])) / T(PL.swLen), up = press(u);
-          W(bomb.spot('switch' + i, at).add(_b.set(0, 0.006 + 0.04 * up, 0.012 * up - 0.008 * (1 - up))));
-          this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
-        } else if (t < T(PL.trig)) {
-          // (between two switches, or done with them and on the way)
-          const j = PL.sw.findIndex((a) => t < T(a)), from = j < 0 ? 2 : j - 1;
-          if (j >= 0) {
-            const u = sm((t - T(PL.sw[from] + PL.swLen)) / (T(PL.sw[j]) - T(PL.sw[from] + PL.swLen)));
-            W(bomb.spot('switch' + from, at).add(_b.set(0, 0.046, 0.012)));
-            W(bomb.spot('switch' + j, _c).add(_b.set(0, 0.046, 0.012)));
-            this.place(H, at.lerp(_c, u), yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
-          } else {
-            W(bomb.spot('switch2', at).add(_b.set(0, 0.046, 0.012)));
-            this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
-          }
-        } else {
-          // over to the trigger, and the button held down with the index finger
-          const u = sm((t - T(PL.trig)) / (T(PL.trigIn) - T(PL.trig)));
-          W(bomb.spot('switch2', at).add(_b.set(0, 0.046, 0.012)));
-          W(bomb.spot('trigger', _c).add(_b.set(0, 0.004 + 0.035 * (1 - u), 0)));
-          const breathe = Math.sin(t * 5.5) * 0.0015 * u;
-          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(u * Math.PI) * 0.05 + breathe, 0)), yaw, -0.95 + 0.35 * u, 0.25 - 0.1 * u, -0.2 + 0.05 * u, [0.55 - 0.15 * u, 0.1 + 0.15 * u, 0.85 - 0.1 * u, 0.9 - 0.1 * u, 0.9 - 0.1 * u], 'index');
-        }
-      } else {
-        // defusing: the switches off one after the other (2, 1, 0), the trigger, then the detonator out
-        const i = DF.sw.findIndex((a) => t >= a && t < a + DF.swLen);
-        const pullAt = need - DF.det;
-        if (t < DF.sw[0]) this.place(H, W(bomb.spot('switch2', at).add(_b.set(0, 0.05, 0.02))), yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
-        else if (i >= 0) {
-          const u = (t - DF.sw[i]) / DF.swLen, up = press(u), sw = 2 - i;
-          W(bomb.spot('switch' + sw, at).add(_b.set(0, 0.006 + 0.04 * up, -0.012 * up + 0.01 * (1 - up))));
-          this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
-        } else if (t < pullAt) {
-          const u = sm((t - DF.trig) / (DF.trigIn - DF.trig));
-          W(bomb.spot('switch0', at).add(_b.set(0, 0.046, 0.012)));
-          W(bomb.spot('trigger', _c).add(_b.set(0, 0.004 + 0.035 * (1 - u), 0)));
-          this.place(H, at.lerp(_c, t < DF.trig ? 0 : u), yaw, -0.6, 0.15, -0.15, [0.4, 0.25, 0.75, 0.8, 0.8], 'index');
-        } else {
-          // to the first detonator, take it between thumb and finger, and out with it
-          const u = sm((t - pullAt) / (DF.det - DF.pull));
-          W(bomb.spot('trigger', at).add(_b.set(0, 0.004, 0)));
-          W(bomb.spot('det', _c).add(_b.set(0, 0.006, 0.004)));
-          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(Math.min(1, u) * Math.PI) * 0.05, 0)), yaw, -0.7, 0.3, -0.3, [0.45 + 0.1 * u, 0.5, 0.8, 0.9, 0.9], 'pinch');
-        }
-      }
-      this.tgt.R.copy(H.g.position);
-      away(1, _b);
-      H.g.position.lerpVectors(_b, this.tgt.R, sm(this.k));
-    }
-    // ---- the left hand: the latches and the lid when planting, then on the rim of the case
-    {
-      const H = this.L, at = _a;
-      const s = Math.min(1, need / 3.2), T = (x) => x * s;
-      const rim = () => { W(bomb.spot('rimL', at).add(_b.set(0.03, 0.022, 0))); this.place(H, at, yaw, 0.08, -0.35, 0.1, [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'); };
-      if (kind !== 'plant' || t >= T(0.95)) rim();
-      else if (t < T(PL.open)) {
-        // to the left latch and flick it
-        const u = sm((t - T(0.18)) / (T(PL.latch) - T(0.18))), flick = Math.max(0, Math.sin(Math.max(0, t - T(PL.latch)) / T(0.1) * Math.PI)) * (t < T(PL.open) ? 1 : 0);
-        W(bomb.spot('latchL', at).add(_b.set(0, 0.012 + 0.03 * (1 - u) + 0.008 * flick, 0.01)));
-        this.place(H, at, yaw, -0.8, 0.2, 0.2, [0.4, 0.35, 0.6, 0.65, 0.7], 'index');
-      } else if (t < T(PL.open + PL.openLen + 0.05)) {
-        // the lid's front edge, carried up and over
-        W(bomb.spot('lidEdge', at).add(_b.set(0, -0.006, 0.012)));
-        this.place(H, at, yaw, -0.3 - bomb.k * 0.9, 0.15, 0.15, [0.6, 0.6, 0.62, 0.64, 0.66], 'grip');
-      } else {
-        // from the lid down onto the rim
-        const u = sm((t - T(PL.open + PL.openLen + 0.05)) / (T(0.95) - T(PL.open + PL.openLen + 0.05)));
-        W(bomb.spot('lidEdge', at).add(_b.set(0, -0.006, 0.012)));
-        W(bomb.spot('rimL', _c).add(_b.set(0.03, 0.022, 0)));
-        this.place(H, at.lerp(_c, u), yaw, -0.3 - 0.9 * (1 - u) + 0.38 * u, 0.15 - 0.5 * u, 0.15 - 0.05 * u, [0.6 - 0.3 * u, 0.6 - 0.35 * u, 0.62 - 0.34 * u, 0.64 - 0.34 * u, 0.66 - 0.34 * u], u < 0.5 ? 'grip' : 'palm');
-      }
-      this.tgt.L.copy(H.g.position);
-      away(-1, _b);
-      H.g.position.lerpVectors(_b, this.tgt.L, sm(this.k));
+    const away = (m, out) => out.set(cam.position.x - e[4] * 0.5 + e[0] * 0.2 * m - e[8] * 0.1, cam.position.y - e[5] * 0.5 + e[1] * 0.2 * m - e[9] * 0.1, cam.position.z - e[6] * 0.5 + e[2] * 0.2 * m - e[10] * 0.1);
+    for (const [H, keys, hand, seed] of [[this.R, S.R, 'R', 1], [this.L, S.L, 'L', 2]]) {
+      this.pose(H, keys, S.taps, hand, t, s, bomb, yaw, R.matrixWorld, seed);
+      this.tgt.copy(H.g.position);
+      away(H.mirror, _b);
+      H.g.position.lerpVectors(_b, this.tgt, sm(this.k));
     }
     // the forearms: from the wrist back to a shoulder a little below and beside the eyes
     this.arms.forEach(({ g, arm, mirror }) => {
@@ -624,11 +668,13 @@ export class SearchDestroy {
   bombArmed() {
     const B = this.bomb;
     B.lid(1); for (let i = 0; i < 3; i++) B.flip(i, true); B.trigger(false); B.pull(0); B.handle.rotation.x = -1.2;
+    for (let i = 0; i < 4; i++) B.detLed(i, true); B.tablet(true); B.key(-1);
     B.setLed(true); B.screen('count', this.planted ? this.planted.left : SD.BOMB);
   }
   bombSafe() {
     const B = this.bomb;
     for (let i = 0; i < 3; i++) B.flip(i, false); B.trigger(false); B.pull(1);
+    for (let i = 0; i < 4; i++) B.detLed(i, false); B.key(-1);
     B.setLed('green'); B.screen('safe');
   }
   // where the case comes from when it is put down: in the right hand, up and to the right, toward whoever puts it
@@ -653,7 +699,7 @@ export class SearchDestroy {
       if (!rw.at) { const at = this.plantedAt(rw.ent); rw.at = at.pos; rw.yaw = at.yaw; rw.from = this.carryFrom(rw.at, rw.yaw); this.bomb.reset(); }
       const st = workState('plant', rw.t, need);
       poseBomb(this.bomb, st, rw.from, rw.at, rw.yaw);
-      this.bomb.screen(st.screen[0], st.screen[1]);
+      this.bomb.screen(st.screen[0], st.screen[1], st.screen[2]);
       this.bomb.root.visible = true;
       workSounds(this.game, { kind: 'plant', need }, t0, rw.t, rw.at);
     } else if (this.planted && !this.planted.done) {
@@ -726,7 +772,7 @@ export class SearchDestroy {
       // the case, its lid, switches and screen at this moment of it, and its sounds
       const st = workState(w.kind, w.t, w.need);
       poseBomb(this.bomb, st, w.from, w.at, w.yaw);
-      if (st.screen) this.bomb.screen(st.screen[0], st.screen[1]);
+      if (st.screen) this.bomb.screen(st.screen[0], st.screen[1], st.screen[2]);
       else if (this.planted) this.bomb.screen('defuse', this.planted.left, w.t / w.need);
       if (w.kind === 'plant') this.bomb.root.visible = true;
       workSounds(g, w, t0, w.t, w.at || this.bomb.root.position);

@@ -130,6 +130,9 @@ export class BombModel {
       const det = new THREE.Group(); det.position.set(x, F + 0.05, -0.085); g.add(det);
       cyl(det, P.det, 0.0075, 0.034, 0, 0.012, 0);
       cyl(det, P.metal, 0.0045, 0.012, 0, 0.033, 0);
+      // (a small lamp on its side, lit once it has been checked and is live)
+      const dl = new THREE.Mesh(P.ledG, P.ledOff); dl.scale.setScalar(0.0048); dl.position.set(0.0, 0.024, 0.0082); det.add(dl);
+      det.userData.led = dl;
       this.dets.push(det);
       const w = tube(g, P.wire, [[x, F + 0.08, -0.085], [x - 0.01, F + 0.1, -0.06], [-0.03 - i * 0.004, F + 0.075, -0.02 + i * 0.012], [-0.045, F + 0.05, -0.04 + i * 0.03]], 0.0022);
       if (i === 0) this.detWire = w;
@@ -140,7 +143,9 @@ export class BombModel {
     box(g, P.gray, 0.048, 0.04, 0.16, 0.208, F + 0.02, 0.025);
     // (its keypad: nine keys in a dark frame)
     box(g, P.grayDark, 0.046, 0.004, 0.05, 0.208, F + 0.041, -0.025);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) box(g, P.steel, 0.009, 0.004, 0.009, 0.196 + c * 0.012, F + 0.044, -0.04 + r * 0.014);
+    this.keys = [];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) this.keys.push(box(g, P.steel, 0.009, 0.004, 0.009, 0.196 + c * 0.012, F + 0.044, -0.04 + r * 0.014));
+    this.lit = -1;
     this.button = cyl(g, P.btn, 0.012, 0.012, 0.208, F + 0.046, 0.06);
     this.led = new THREE.Mesh(P.ledG, P.ledOff); this.led.scale.setScalar(0.005); this.led.position.set(0.222, F + 0.043, 0.01); g.add(this.led);
     this.geos.push(tube(g, P.wireB, [[0.208, F + 0.03, -0.06], [0.205, F + 0.06, -0.12], [0.19, HB - 0.01, -D / 2 + 0.03]], 0.004).geometry);
@@ -169,18 +174,36 @@ export class BombModel {
     box(lid, P.ribbon, 0.035, 0.003, 0.11, 0.035, iy - 0.004, 0.065);
   }
 
-  // the tablet's picture: a map with lines, our own
+  // the tablet's picture: a map with lines, our own; once tapped, a green bar over it
   tabletMat() {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 80;
-    const x = c.getContext('2d');
+    const c = this.tabCv = document.createElement('canvas'); c.width = 64; c.height = 80;
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    this.tabTex = t;
+    this.tabMat = new THREE.MeshBasicMaterial({ map: t });
+    this.tablet(false, true);
+    return this.tabMat;
+  }
+  tablet(ok, force) {
+    if (!this.tabCv || (!force && this.tabOk === ok)) return;
+    this.tabOk = ok;
+    const x = this.tabCv.getContext('2d');
     x.fillStyle = '#9fc6e0'; x.fillRect(0, 0, 64, 80);
     x.strokeStyle = '#4a7fa8'; x.lineWidth = 2;
     for (let i = 0; i < 6; i++) { x.beginPath(); x.moveTo(4, 10 + i * 11); x.lineTo(60, 8 + i * 12); x.stroke(); }
     x.fillStyle = '#d23a2a'; x.fillRect(38, 30, 8, 8);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-    this.tabTex = t;
-    return (this.tabMat = new THREE.MeshBasicMaterial({ map: t }));
+    if (ok) { x.fillStyle = '#2fbf5a'; x.fillRect(6, 58, 52, 16); x.fillStyle = '#ffffff'; x.font = 'bold 12px monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('OK', 32, 66); }
+    this.tabTex.needsUpdate = true;
   }
+  // one key of the keypad down and lit (-1: none)
+  key(i) {
+    if (this.simple || i === this.lit) return;
+    const P = parts(), F = WALL;
+    if (this.lit >= 0) { this.keys[this.lit].material = P.steel; this.keys[this.lit].position.y = F + 0.044; }
+    this.lit = i;
+    if (i >= 0) { this.keys[i].material = P.btnLit; this.keys[i].position.y = F + 0.0425; }
+  }
+  // the lamp of the i-th detonator
+  detLed(i, on) { if (this.simple) return; const d = this.dets[i], P = parts(); if (d) d.userData.led.material = on ? P.ledOn : P.ledOff; }
 
   // the lid: 0 shut, 1 open (a little past upright)
   lid(k) {
@@ -194,7 +217,7 @@ export class BombModel {
   // left), 'defuse' (a: seconds left, b: 0..1), 'safe', 'dead'
   screen(mode, a = 0, b = 0) {
     if (this.simple) return;
-    const key = mode + '|' + (mode === 'boot' ? Math.floor(a * 40) : mode === 'arm' || mode === 'defuse' ? Math.floor((mode === 'arm' ? a : b) * 60) + '|' + Math.ceil(a * (mode === 'defuse' ? 1 : 0)) : mode === 'count' ? Math.ceil(a * 10) : '');
+    const key = mode + '|' + (mode === 'boot' ? Math.floor(a * 40) : mode === 'arm' ? Math.floor(a * 60) + '|' + b : mode === 'defuse' ? Math.floor(b * 60) + '|' + Math.ceil(a * 10) : mode === 'count' ? Math.ceil(a * 10) : '');
     if (key === this.mode) return;
     this.mode = key;
     const x = this.cv.getContext('2d'), Wc = 320, Hc = 212;
@@ -208,10 +231,13 @@ export class BombModel {
       const n = a * (L.length + 1);
       L.forEach((t, i) => { if (n > i) line(t.slice(0, Math.max(0, Math.floor((n - i) * t.length))), 30 + i * 34, i >= 3 ? '#ffffff' : '#8fa4ac', i >= 3 ? 24 : 19); });
     } else if (mode === 'arm') {
-      skull(Wc / 2, 76, 10, '#e8edf0');
-      line('SCHARF MACHEN', 152, '#ffffff', 20, 'center');
-      bar(a, 168, '#3a8fe8');
-      line('ZUENDER WIRD INITIALISIERT', 196, '#9fb3bb', 14, 'center');
+      // (b: how many digits of the code are typed in so far)
+      skull(Wc / 2, 64, 9, '#e8edf0');
+      line('SCHARF MACHEN', 128, '#ffffff', 19, 'center');
+      const code = '4719', n = Math.max(0, Math.min(4, b | 0));
+      line('CODE  ' + [...code].map((ch, i) => (i < n ? ch : '_')).join(' '), 154, n >= 4 ? '#7dff9a' : '#ffd84a', 20, 'center');
+      bar(a, 174, '#3a8fe8');
+      line('ZUENDER WIRD INITIALISIERT', 198, '#9fb3bb', 13, 'center');
     } else if (mode === 'count' || mode === 'defuse') {
       const s = Math.max(0, a), mm = Math.floor(s / 60), ss = Math.floor(s % 60), cs = Math.floor((s % 1) * 100);
       x.fillStyle = '#2a0504'; x.fillRect(18, 40, Wc - 36, 82);
@@ -260,22 +286,25 @@ export class BombModel {
     this.lid(0);
     if (this.simple) return;
     this.screen('off'); for (let i = 0; i < 3; i++) this.flip(i, false); this.trigger(false); this.pull(0); this.setLed(false);
+    this.key(-1); for (let i = 0; i < 4; i++) this.detLed(i, false); this.tablet(false);
   }
 
   // where the hands go, in the case's own space
   spot(name, out = new THREE.Vector3()) {
     const F = WALL;
+    // (a point on the lid, wherever the lid is: x across, y up from its inside, z from the hinge)
+    const onLid = (x, y, z) => { const a = -OPEN * Math.max(0, this.k); return out.set(x, HB + y * Math.cos(a) - z * Math.sin(a), -D / 2 + y * Math.sin(a) + z * Math.cos(a)); };
     if (name === 'handle') return out.set(0, HB - 0.01, D / 2 + 0.04);
     if (name === 'latchL') return out.set(-0.15, HB - 0.004, D / 2 + 0.014);
     if (name === 'latchR') return out.set(0.15, HB - 0.004, D / 2 + 0.014);
-    if (name === 'lidEdge') { // the front edge of the lid, wherever it is
-      const a = -OPEN * Math.max(0, this.k);
-      const y = HL * 0.5, z = D;
-      return out.set(-0.12, HB + y * Math.cos(a) - z * Math.sin(a), -D / 2 + y * Math.sin(a) + z * Math.cos(a));
-    }
+    if (name === 'lidEdge') return onLid(-0.12, HL * 0.5, D); // the front edge of the lid
+    if (name === 'lidSide') return onLid(-W / 2 + 0.006, HL * 0.5, D * 0.5); // its left side, halfway up
     if (name.startsWith('switch')) { const i = +name.slice(6); return out.set(-0.068, F + 0.078, -0.03 + i * 0.045); }
-    if (name === 'trigger') return out.set(0.208, F + 0.052, 0.06);
+    if (name === 'trigger' || name === 'button') return out.set(0.208, F + 0.052, 0.06);
+    if (name.startsWith('key')) { const i = +name.slice(3); return out.set(0.196 + (i % 3) * 0.012, F + 0.047, -0.04 + Math.floor(i / 3) * 0.014); }
+    if (name === 'tablet') return out.set(-0.165, F + 0.024, -0.05);
     if (name === 'det') return out.copy(this.dets[0].position).add(new THREE.Vector3(0, 0.035, 0));
+    if (/^det\d$/.test(name)) return out.copy(this.dets[+name[3]].position).add(new THREE.Vector3(0, 0.04, 0));
     if (name === 'rimL') return out.set(-W / 2 + 0.01, HB + 0.006, 0.08);
     return out.set(0, HB, 0);
   }
