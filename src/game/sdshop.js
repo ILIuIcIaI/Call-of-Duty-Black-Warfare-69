@@ -277,16 +277,19 @@ export class Shop {
   }
 
   // The menu: big, every gun on a card with its picture, its kind and its price; the one under the mouse (or the
-  // last one looked at) turns in a window on the right with its numbers, and a click on a card or on the button there
-  // buys it. Built once, then only its states change.
+  // one picked) turns in a window on the right with its numbers. A click on a card picks it, the button there buys
+  // it, a double click on a card buys at once. Built once, then only its states change.
+  // (open, the menu has the mouse: the game lets go of it without pausing, nothing turns or shoots, Escape or B
+  // closes, and closing catches the mouse again)
   show() {
     const g = this.game;
     this.open = true;
+    g.uiMouse = true; g.uiClose = () => this.close(); g.input.ui = true;
     g.input.unlock();
     if (!this.el) this.build();
     this.el.style.display = '';
-    if (!this.lookId) this.lookId = 'ar';
-    this.look(this.lookId);
+    if (!this.pick) this.pick = 'ar';
+    this.look(this.pick);
     this.render();
     this.spin();
   }
@@ -298,15 +301,19 @@ export class Shop {
       '<div class="sdb-body"><div class="sdb-list">' + SHOP.map(([title, ids]) => '<section><h4>' + title + '</h4><div class="sdb-grid">' + ids.map(card).join('') + '</div></section>').join('') + '</div>' +
       '<div class="sdb-view"><div class="sdb-3d"><canvas></canvas></div><div class="sdb-tag"></div><h3 class="sdb-name"></h3><div class="sdb-stats"></div>' +
       '<button class="sdb-go" data-buynow></button><div class="sdb-now"></div></div></div>' +
-      '<div class="sdb-hint">Nur die Grundausführung: ohne Visier, ohne Skin. Eine neue Waffe ersetzt die alte im selben Platz, die alte bleibt liegen.</div>';
+      '<div class="sdb-hint">Klick wählt eine Waffe, der Knopf kauft sie (oder ein Doppelklick auf die Karte). Nur die Grundausführung: ohne Visier, ohne Skin. Eine neue Waffe ersetzt die alte im selben Platz, die alte bleibt liegen.</div>';
     document.getElementById('hud').appendChild(this.el);
+    // a click picks a gun (the button then buys it), a double click buys it at once; the mouse over a card shows that
+    // one turning, and off the cards the picked one comes back
     this.el.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-buy]');
-      if (b) { this.buy(b.dataset.buy); return; }
-      if (e.target.closest('[data-buynow]')) { this.buy(this.lookId); return; }
-      if (e.target.closest('[data-close]')) { this.close(); g.input.lock(); }
+      if (e.target.closest('[data-buynow]')) { this.buy(this.pick); return; }
+      if (e.target.closest('[data-close]')) { this.close(); return; }
+      const b = e.target.closest('[data-gun]');
+      if (b) { this.pick = b.dataset.gun; this.look(this.pick); }
     });
+    this.el.addEventListener('dblclick', (e) => { const b = e.target.closest('[data-gun]'); if (b) { this.pick = b.dataset.gun; this.buy(this.pick); } });
     this.el.addEventListener('mouseover', (e) => { const c = e.target.closest('[data-gun]'); if (c && c.dataset.gun !== this.lookId) this.look(c.dataset.gun); });
+    this.el.querySelector('.sdb-list').addEventListener('mouseleave', () => { if (this.pick && this.lookId !== this.pick) this.look(this.pick); });
     this.drawIcons();
   }
   // the gun that is looked at: its picture turning, its name, kind, numbers and what it costs
@@ -317,7 +324,7 @@ export class Shop {
     this.el.querySelector('.sdb-tag').textContent = d.cls.toUpperCase() + (d.slot === 'primary' ? ' · PRIMÄRWAFFE' : ' · SEKUNDÄRWAFFE');
     this.el.querySelector('.sdb-name').textContent = d.name;
     this.el.querySelector('.sdb-stats').innerHTML = stat('SCHADEN', d.stats.dmg) + stat('FEUERRATE', d.stats.rof) + stat('REICHWEITE', d.stats.rng) + stat('PRÄZISION', d.stats.acc) + stat('MOBILITÄT', d.stats.mob) + stat('HANDLING', d.stats.hnd);
-    for (const c of this.el.querySelectorAll('.sdb-card')) c.classList.toggle('look', c.dataset.gun === id);
+    for (const c of this.el.querySelectorAll('.sdb-card')) { c.classList.toggle('look', c.dataset.gun === id); c.classList.toggle('pick', c.dataset.gun === this.pick); }
     this.setModel(id);
     this.render();
   }
@@ -332,9 +339,11 @@ export class Shop {
       const t = own ? 'HAST DU' : '$ ' + PRICE[id], sp = c.querySelector('span');
       if (sp.textContent !== t) sp.textContent = t;
     }
-    const id = this.lookId, own = id && this.owns(id), cant = id && !own && PRICE[id] > m, go = this.el.querySelector('.sdb-go');
-    go.textContent = !id ? '' : own ? 'HAST DU SCHON' : cant ? 'ZU TEUER · $ ' + PRICE[id] : 'KAUFEN · $ ' + PRICE[id];
+    // (the button buys the picked gun, whatever the mouse is over, and says which)
+    const id = this.pick, own = id && this.owns(id), cant = id && !own && PRICE[id] > m, go = this.el.querySelector('.sdb-go'), nm = id ? WEAPONS[id].name : '';
+    go.textContent = !id ? '' : own ? nm + ' · HAST DU SCHON' : cant ? nm + ' · ZU TEUER ($ ' + PRICE[id] + ')' : 'KAUFEN: ' + nm + ' · $ ' + PRICE[id];
     go.disabled = !!(own || cant);
+    for (const c of this.el.querySelectorAll('.sdb-card')) c.classList.toggle('pick', c.dataset.gun === id);
     const n = (s) => (s ? s.def.name : '—');
     this.el.querySelector('.sdb-now').innerHTML = '<span>DEINE WAFFEN</span><b>' + n(W.slots[0]) + '</b><b>' + n(W.slots[1]) + '</b>';
   }
@@ -411,9 +420,14 @@ export class Shop {
     };
     requestAnimationFrame(step);
   }
+  // closed (with B, Escape or the button, or by itself once the buy time is over or you leave the spawn): the game
+  // catches the mouse again right away, as long as you are still playing and alive
   close() {
     if (!this.open) return;
+    const g = this.game;
     this.open = false;
     if (this.el) this.el.style.display = 'none';
+    g.uiMouse = false; g.uiClose = null; g.input.ui = false;
+    if (g.state === 'playing' && g.player.alive && !g.paused) g.input.relock();
   }
 }

@@ -43,6 +43,7 @@ export class Input {
     this.onLockChange = null;
     this.enabled = true;
     this.capture = false; // in a match: Ctrl+<key> belongs to the game, not to the browser
+    this.ui = false; // an on-screen menu has the mouse (the S&D shop): no looking, no shots, no wheel
     // virtual input layer used by automated tests / dev tools
     this.virtual = {};
     this.virtualPressed = new Set();
@@ -56,7 +57,7 @@ export class Input {
     window.addEventListener('keyup', (e) => { this.keys.delete(e.code); this.releasedKeys.add(e.code); });
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse = [false, false, false]; });
     window.addEventListener('mousedown', (e) => {
-      if (!this.locked && !this.hoverLook) return;
+      if ((!this.locked && !this.hoverLook) || this.ui) return;
       if (e.button < 3) { this.mouse[e.button] = true; this.mousePressed[e.button] = true; }
     });
     window.addEventListener('mouseup', (e) => {
@@ -65,13 +66,13 @@ export class Input {
     window.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', (e) => {
       this.cx = e.clientX; this.cy = e.clientY; this.inside = true;
-      if (this.locked || this.hoverLook) { this.dx += e.movementX; this.dy += e.movementY; }
+      if ((this.locked || this.hoverLook) && !this.ui) { this.dx += e.movementX; this.dy += e.movementY; }
     });
     document.addEventListener('mouseleave', () => { this.inside = false; });
     window.addEventListener('blur', () => { this.inside = false; });
     window.addEventListener('wheel', (e) => {
       if (e.ctrlKey && (this.locked || this.capture)) e.preventDefault(); // Ctrl + wheel would zoom the page
-      if (this.locked || this.hoverLook) this.wheel += Math.sign(e.deltaY);
+      if ((this.locked || this.hoverLook) && !this.ui) this.wheel += Math.sign(e.deltaY);
     }, { passive: false });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
@@ -94,12 +95,19 @@ export class Input {
       });
     } catch (e) { this.lockFailed(); }
   }
+  // catch the mouse again without a click, after the game itself let go of it (an on-screen menu closing): browsers allow
+  // that then. Should one refuse, a click on the game catches it as ever; unlike lock(), no fall back to hover look.
+  relock() {
+    if (this.locked || this.hoverLook) return;
+    const again = () => { try { const p = this.target.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* a click will */ } };
+    try { const p = this.target.requestPointerLock({ unadjustedMovement: true }); if (p && p.catch) p.catch(again); } catch (e) { again(); }
+  }
   unlock() { if (document.pointerLockElement) document.exitPointerLock(); }
 
   // -1..1 turn request while the cursor rests in the outer band of the window (hover look only)
   edgeTurn(out) {
     out.x = 0; out.y = 0;
-    if (!this.hoverLook || this.locked || !this.inside || this.cx < 0) return out;
+    if (!this.hoverLook || this.locked || this.ui || !this.inside || this.cx < 0) return out;
     const W = window.innerWidth, H = window.innerHeight;
     const nx = (this.cx / W) * 2 - 1, ny = (this.cy / H) * 2 - 1;
     const band = (v, start) => { const a = Math.abs(v); return a <= start ? 0 : Math.sign(v) * Math.min(1, (a - start) / (1 - start)); };

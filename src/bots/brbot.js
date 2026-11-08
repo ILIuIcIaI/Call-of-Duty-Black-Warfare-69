@@ -449,7 +449,8 @@ export class BRBot extends Bot {
     const g = this.game;
     if (this.out) {
       if (!this.hiddenBody) {
-        if (g.time - this.deathT > 16) { this.hiddenBody = true; this.soldier.setVisible(false); this.closeCanopy(); }
+        // (bodies go after a while, but never in front of you: only out of sight, or after two minutes)
+        if (g.time - this.deathT > 16 && (!this.soldier.seen(g.engine.camera) || g.time - this.deathT > 120)) { this.hiddenBody = true; this.soldier.setVisible(false); this.closeCanopy(); }
         else this.soldier.update(dt, this.animState(), this.pos);
       }
       return;

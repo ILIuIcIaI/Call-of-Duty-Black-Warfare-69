@@ -256,9 +256,12 @@ export class Ragdoll {
     for (let i = 0; i < n; i++) { this.t += h; this.step(h); }
     if (!(this.p[0].x === this.p[0].x)) { this.asleep = true; return; } // (never happens; if it did, the last good pose stays)
     // asleep once the muscles are gone and nothing moves any more
-    const calm = this.tone < 0.01 && this.landT >= 0 && this.moved < 0.06;
+    // (lying with its muscles gone, a body that has had two seconds to settle comes to rest even if the joints still
+    // nudge it along a little, and three and a half seconds after landing at the latest: before, that crept on over the
+    // ground for up to nine seconds)
+    const calm = this.tone < 0.01 && this.landT >= 0 && (this.moved < 0.06 || (this.t > this.landT + 2.2 && this.moved < 0.5));
     this.still = calm ? this.still + dt : 0;
-    if (this.still > 0.35 || this.t > 9) this.asleep = true;
+    if (this.still > 0.35 || this.t > 9 || (this.landT >= 0 && this.tone < 0.01 && this.t > this.landT + 3.5)) this.asleep = true;
     this.apply();
   }
 
@@ -276,8 +279,11 @@ export class Ragdoll {
     let E0 = 1e-9;
     // once it lies there without a will, what still moves slowly comes to rest (clothes, gear and the ground see to that)
     const settle = this.landT >= 0 && this.tone < 0.05, slow = 0.3 * this.h * 0.3 * this.h;
+    // (and a second after it is down with the muscles gone, everything is slowed, more and more: the parts no longer fight on
+    // over the ground, which made the body twitch, lift and creep along it until it was stopped after nine seconds)
+    const quiet = settle && this.tone < 0.01 ? smooth((this.t - this.landT - 1.0) / 1.0) : 0, kq = 1 - 0.12 * quiet;
     for (let i = 0; i < N; i++) {
-      const pi = p[i], oi = o[i], k = r * (settle && pi.distanceToSquared(oi) < slow ? 0.96 : DAMP);
+      const pi = p[i], oi = o[i], k = r * kq * (settle && pi.distanceToSquared(oi) < slow ? 0.96 : DAMP);
       const vx = (pi.x - oi.x) * k + A[i * 3] * h2, vy = (pi.y - oi.y) * k + A[i * 3 + 1] * h2, vz = (pi.z - oi.z) * k + A[i * 3 + 2] * h2;
       oi.copy(pi);
       pi.x += vx; pi.y += vy; pi.z += vz;

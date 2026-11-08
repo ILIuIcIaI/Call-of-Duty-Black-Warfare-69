@@ -423,7 +423,8 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #sd-buy .sdb-card b { font-family: var(--head); font-weight: 400; font-size: 1.3em; letter-spacing: 1.5px; }
 #sd-buy .sdb-card i { font-style: normal; font-size: .85em; color: rgba(255,255,255,.55); letter-spacing: 1px; }
 #sd-buy .sdb-card span { position: absolute; right: .7em; top: .5em; font-family: var(--head); font-size: 1.25em; letter-spacing: 1px; color: #7dff6a; }
-#sd-buy .sdb-card:hover, #sd-buy .sdb-card.look { background: rgba(255,208,74,.14); border-color: #ffd04a; }
+#sd-buy .sdb-card:hover, #sd-buy .sdb-card.look { background: rgba(255,208,74,.1); border-color: rgba(255,208,74,.6); }
+#sd-buy .sdb-card.pick { background: rgba(255,208,74,.2); border-color: #ffd04a; box-shadow: inset 0 0 0 1px #ffd04a; }
 #sd-buy .sdb-card.cant { opacity: .45; } #sd-buy .sdb-card.cant span { color: var(--enemy); }
 #sd-buy .sdb-card.own span { color: #fff; } #sd-buy .sdb-card.own { border-color: rgba(125,255,106,.55); }
 #sd-buy .sdb-view { display: flex; flex-direction: column; min-height: 0; padding: 1em 1.2em; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.1); }
@@ -434,19 +435,14 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #sd-buy .sdb-stats .stat { font-size: 1em; margin-top: .45em; }
 #sd-buy .sdb-stats .stat span { width: 8.5em; }
 #sd-buy .sdb-stats .stat i { height: .45em; }
-#sd-buy .sdb-go { margin-top: 1em; padding: .7em 1em; background: #ffd04a; border: none; color: #111; font-family: var(--head); font-size: 1.5em; letter-spacing: 3px; cursor: pointer; }
+#sd-buy .sdb-go { margin-top: 1em; padding: .7em 1em; background: #ffd04a; border: none; color: #111; font-family: var(--head); font-size: 1.35em; letter-spacing: 2px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sd-buy .sdb-go:not(:disabled):hover { background: #ffe07a; }
 #sd-buy .sdb-go:disabled { background: rgba(255,255,255,.12); color: rgba(255,255,255,.55); cursor: default; }
 #sd-buy .sdb-now { display: flex; flex-wrap: wrap; gap: .4em 1em; align-items: baseline; margin-top: .9em; font-size: .95em; color: rgba(255,255,255,.7); letter-spacing: 1px; }
 #sd-buy .sdb-now span { font-weight: 700; color: rgba(255,255,255,.45); letter-spacing: 2px; }
 #sd-buy .sdb-now b { font-family: var(--head); font-weight: 400; font-size: 1.15em; color: #fff; }`,
 #sd-buy .sdb-hint { margin-top: .8em; font-size: .9em; color: rgba(255,255,255,.55); letter-spacing: 1px; }
-/* the killcam: black bars, KILLCAM and whose eyes these are; the death screen waits until it is over */
-#killcam { position: absolute; inset: 0; pointer-events: none; }
-#killcam .kc-tag { position: absolute; left: 50%; top: 4%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; text-shadow: 0 2px 6px #000; }
-#killcam .kc-tag b { font-family: var(--head); font-weight: 400; font-size: 26px; letter-spacing: 6px; color: var(--enemy); }
-#killcam .kc-tag span { font-size: 13px; letter-spacing: 3px; font-weight: 700; color: #fff; }
-#death-screen.kc { display: none; }
-#hud.kc-on #scorebar, #hud.kc-on #minimap-wrap, #hud.kc-on #ammo, #hud.kc-on #crosshair, #hud.kc-on #sd-panel, #hud.kc-on #sd-money, #hud.kc-on #sb-points, #hud.kc-on #gun-panel, #hud.kc-on #nametags { visibility: hidden; }
+#sd-buy .sdb-card, #sd-buy .sdb-go, #sd-buy button { user-select: none; }
 #hud.sd-working #crosshair { visibility: hidden; }
 /* (at work over the bomb its own screen shows how far it has got: the panel under the score would cover it) */
 #sd-panel { transition: opacity .2s; }

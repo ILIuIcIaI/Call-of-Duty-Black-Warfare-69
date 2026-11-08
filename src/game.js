@@ -24,7 +24,6 @@ import { IslandNav } from './bots/islandNav.js';
 import { Match } from './game/match.js';
 import { BRMatch } from './game/br.js';
 import { GunFinale } from './game/finale.js';
-import { Killcam } from './game/killcam.js';
 import { Autopilot } from './dev/autopilot.js';
 import { Net } from './net/net.js';
 import { Lobby } from './ui/lobby.js';
@@ -108,18 +107,19 @@ export class Game {
     window.addEventListener('pointerdown', unlockAudio);
     window.addEventListener('keydown', unlockAudio);
     this.engine.renderer.domElement.addEventListener('click', () => {
-      if (this.state === 'playing' && !this.input.locked && !this.dev) this.input.lock();
+      if (this.state === 'playing' && !this.input.locked && !this.dev && !this.uiMouse) this.input.lock();
     });
     this.input.onLockFail = () => {
       if (this._lockHinted) return; this._lockHinted = true;
       this.hud.message('<span style="font-size:19px">Maus-Fang hier nicht möglich – die Kamera folgt einfach der Maus,<br>am Fensterrand dreht sie weiter. Perfekt: http://localhost:8069 in Chrome/Edge</span>', 6);
     };
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === 'playing' && !this.dev && this.onPause) this.onPause();
+      if (!locked && this.state === 'playing' && !this.dev && !this.uiMouse && this.onPause) this.onPause();
     };
     // Escape pauses even without pointer lock (embedded views); Escape / L close the pause menu again
     window.addEventListener('keydown', (e) => {
       if (e.repeat || this.state !== 'playing') return;
+      if (this.uiMouse) { if (e.code === 'Escape' && this.uiClose) this.uiClose(); return; }
       if (this.paused) { if (e.code === 'Escape' || e.code === 'KeyL') this.resume(); return; }
       if (e.code === 'Escape' && !this.input.locked && !this.dev) this.onPause();
     });
@@ -273,7 +273,6 @@ export class Game {
     this.paused = false;
     if (this.br) this.br.dispose();
     if (this.match && this.match.sd) this.match.sd.dispose();
-    if (this.killcam) { this.killcam.dispose(); this.killcam = null; }
     if (this.clearBots) this.clearBots();
     this.match = null;
     document.getElementById('death-screen').classList.add('hidden');
@@ -350,8 +349,6 @@ export class Game {
     if (undoMatch) undoMatch();
     // Gun Game: the winning stab is played out as a finisher (and nothing of the last one carries over)
     this.finale = cfg.mode === 'gun' ? new GunFinale(this) : null;
-    if (this.killcam) this.killcam.dispose();
-    this.killcam = Killcam.wanted(cfg.mode) ? new Killcam(this) : null;
     this.slowmo = 0; this.engine.film = 0;
     this.player.team = cfg.mode === 'ffa' || cfg.mode === 'gun' ? 1 : 0;
     this.player.kills = 0; this.player.deaths = 0; this.player.score = 0; this.player.tier = 0; this.player.gunSkin = null;
@@ -395,7 +392,6 @@ export class Game {
 
   spawnPlayer() {
     const p = this.player;
-    if (this.killcam) this.killcam.stop();
     p.alive = false;
     if (this.params.has('autopilot') && !this.autopilot) this.autopilot = new Autopilot(this);
     const sp = this.match.chooseSpawn(p);
@@ -512,7 +508,6 @@ export class Game {
       const tr = isPlayer ? (def.fire !== 'auto' || Math.random() < 0.6) : Math.random() < 0.8;
       if (tr) this.fx.tracer(tracerFrom, endPoint, 380 + Math.random() * 120, isPlayer ? 0.018 : 0.03);
     }
-    if (this.killcam && endPoint) this.killcam.shot(shooter, tracerFrom || origin, endPoint);
     // bullet whiz past the player's head
     if (!isPlayer && this.player.alive && endPoint) {
       const e = this.engine.camera.position;
@@ -634,8 +629,6 @@ export class Game {
     const wdef = info && info.weapon;
     let strength = wdef ? Math.min(7, 2.2 + (wdef.damage[0] * (wdef.pellets || 1)) / 40) : 3;
     if (info && info.part === 'head') strength *= 1.15;
-    // (kept for the killcam: it lets the body fall again the same way)
-    this.lastDeath = { dir: dir.clone(), part: info && info.part, point: info && info.point ? info.point.clone() : undefined, strength, vel: p.vel.clone() };
     c.die(dir, { part: info && info.part, point: info && info.point, strength, vel: p.vel.clone() });
   }
 
@@ -646,8 +639,7 @@ export class Game {
     const ds = document.getElementById('death-screen');
     ds.classList.remove('hidden');
     document.getElementById('death-by').textContent = killer && killer !== this.player ? 'von ' + killer.name : '';
-    const kc = this.killcam && !(info && info.staged) && this.killcam.start(killer, this.lastDeath);
-    this.respawnT = kc ? 5.7 : 3.5;
+    this.respawnT = 3.5;
     this.weapons.vm.root.visible = false;
     if (this.br) this.br.onPlayerDown(killer);
     this.audio.setMuffle(0);
@@ -660,7 +652,6 @@ export class Game {
 
   onMatchEnd(won) {
     this.state = 'ended';
-    if (this.killcam) this.killcam.stop();
     this.input.unlock();
     const res = won === true ? 'SIEG' : won === false ? 'NIEDERLAGE' : 'UNENTSCHIEDEN';
     const el = document.getElementById('menu');
@@ -784,12 +775,15 @@ export class Game {
     } else if (!br) {
       this.respawnT -= dt;
       document.getElementById('death-timer').textContent = this.respawnT > 0 ? `Respawn in ${this.respawnT.toFixed(1)}s` : 'Klicken zum Respawnen';
-      if (this.respawnT <= 0 && !(this.killcam && this.killcam.on) && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
+      if (this.respawnT <= 0 && (inp.firePressed || this.respawnT < -2 || inp.pressed('jump'))) { this.spawnPlayer(); this.weapons.vm.root.visible = true; }
     }
     for (const b of this.bots) if (!(fin && this.finale.holds(b, dt))) b.update(dt);
-    if (this.killcam) this.killcam.record(dt);
     if (this.mapDef.update) this.mapDef.update(this, dt);
-    if (this.playerCorpse && this.playerCorpse.dead) this.playerCorpse.update(dt, null, null);
+    if (this.playerCorpse && this.playerCorpse.dead) {
+      this.playerCorpse.update(dt, null, null);
+      // (your own body goes after a while, once you are up again elsewhere and it is out of sight)
+      if (this.player.alive && this.playerCorpse.root.visible && this.playerCorpse.deathT > 25 && !this.playerCorpse.seen(this.engine.camera)) this.playerCorpse.setVisible(false);
+    }
     if (inp.pressed('loadout') && !br && !(this.match && (this.match.gun || this.match.sd))) { this.paused = true; this.menu.show('loadout', 'pause'); this.input.unlock(); }
     if (this.net) this.net.tick(dt);
     if (this.match) {
@@ -817,14 +811,13 @@ export class Game {
     if (this.finale && this.finale.on) this.finale.camera(cam);
     else if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
     else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; if (sdm && sdm.hidesGun()) sdm.workCam(cam); }
-    else if (this.killcam && this.killcam.on && this.killcam.camera(cam, dt)) { /* the killcam has the camera */ }
     else if (br && br.watchOn) br.watchCam(cam, dt);
     else if (sdm && (this.deathCamT || 0) > 2.4 && sdm.watch(cam, dt)) { /* watching a teammate */ }
     else this.deathCam(dt);
     // sniper scope sway + overlay
     const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
     this.hud.setScope(scoped ? optic.overlay : null);
-    W.vm.root.visible = (p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on) && !(sdm && sdm.hidesGun())) || !!(this.killcam && this.killcam.on && this.killcam.on.playing);
+    W.vm.root.visible = (p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on) && !(sdm && sdm.hidesGun()));
     W.vm.smoke.points.visible = W.vm.root.visible;
     if (!W.vm.root.visible) W.vm.smoke.update(dt); // (the smoke of the last shots goes on without the gun, out of sight)
     if (scoped) {

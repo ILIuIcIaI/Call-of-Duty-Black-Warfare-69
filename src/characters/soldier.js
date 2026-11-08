@@ -745,8 +745,9 @@ export class Soldier {
       for (const m of this.skinned) m.boundingSphere.center.copy(c); // root sits at the origin while ragdolling
       this.blob.scale.set(1.3, 2.2, 1);
     }
-    // after a while, sink into the ground
-    if (t > 6) { this.root.position.y -= dt * 0.3; }
+    // (it stays where it lies: it no longer sinks into the ground after a while, which looked like the body sliding into
+    // the floor; where bodies have to go, they go out of sight, see seen())
+    void t;
     this.updateWeaponDrop(dt);
   }
 
@@ -773,6 +774,14 @@ export class Soldier {
   }
 
   setVisible(v) { this.root.visible = v; this.blob.visible = v; }
+  // could the camera see this body now (in front of it and not far)?
+  seen(cam, far = 45) {
+    const c = this.lodPos(), dx = c.x - cam.position.x, dy = c.y - cam.position.y, dz = c.z - cam.position.z, d = Math.hypot(dx, dy, dz);
+    if (d > far) return false;
+    if (d < 3) return true;
+    const e = cam.matrixWorld.elements; // (the camera looks down its -z)
+    return -(dx * e[8] + dy * e[9] + dz * e[10]) / d > 0.35;
+  }
 
   // detailed or simple: see Game.updateLod
   setFar(far) {
