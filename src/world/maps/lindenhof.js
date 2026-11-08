@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { crate, barrel, tree, mtx, boundary, truck, stairs, railing } from '../props.js';
 import { PLAIN } from '../kit.js';
-import { H, DECO, seeded, house, wall, block, siteLetter, cart } from './sdparts.js';
+import { H, DECO, seeded, houses, wall, block, siteLetter, cart } from './sdparts.js';
 
 // =============================================================================
 // LINDENHOF — a village in summer, afternoon, made for Search and Destroy (4 vs 4 up to 6 vs 6).
@@ -84,10 +84,14 @@ function glasshouse(b, x0, z0, x1, z1, h = 2.6, doors = ['n', 's']) {
       b.glassPane(cx + 0.65, 0.45, z - 0.02, x1 - 0.06, h - 0.05, z + 0.02, 0xbfe0d0);
     } else b.glassPane(x0 + 0.06, 0.45, z - 0.02, x1 - 0.06, h - 0.05, z + 0.02, 0xbfe0d0);
   }
-  // the roof: a low ridge of glass (to look at; the panes on top don't hold you)
+  // the roof: a low ridge of glass; whoever gets up there walks on it (steps along the slopes), bullets go through
   const g = new THREE.BoxGeometry(x1 - x0 + 0.1, 0.02, (z1 - z0) / 2 + 0.25);
   for (const s of [-1, 1]) b.geom(g, 'carGlass', mtx(cx, h + 0.45, (z0 + z1) / 2 + s * (z1 - z0) / 4, 0, 1, 1, 1, s * 0.42));
-  b.box(x0, h, z0, x1, h + 0.22, z1, 'carGlass', { visual: false, noBullet: true }); b.box(x0, h + 0.22, z0 + (z1 - z0) / 4, x1, h + 0.45, z1 - (z1 - z0) / 4, 'carGlass', { visual: false, noBullet: true });
+  const half = (z1 - z0) / 2, sl = ((half + 0.25) / 2) * Math.sin(0.42), lo = 0.45 - sl, hi = 0.45 + sl;   // the glass at the eaves and at the ridge, over h
+  for (let i = 0; i < 4; i++) {
+    const ins = half * i / 4, bot = i ? h + lo + (hi - lo) * i / 4 : h, top = h + lo + (hi - lo) * (i + 1) / 4;
+    b.box(x0, bot, z0 + ins, x1, Math.max(top, bot + 0.03), z1 - ins, 'carGlass', { visual: false, noBullet: true });
+  }
   // tables of pots inside, along both long sides
   for (const x of [x0 + 0.75, x1 - 0.75]) {
     b.box(x - 0.45, 0, z0 + 0.8, x + 0.45, 0.82, z1 - 0.8, 'woodPale', { pen: 1 });
@@ -99,6 +103,25 @@ function bed(b, x0, z0, x1, z1) {
   b.box(x0, 0, z0, x1, 0.55, z1, 'woodDark', { pen: 1 });
   b.box(x0 + 0.08, 0.55, z0 + 0.08, x1 - 0.08, 0.62, z1 - 0.08, 'dirt', DECO);
   for (let x = x0 + 0.4; x < x1 - 0.2; x += 0.6) b.box(x - 0.18, 0.62, z0 + 0.2, x + 0.18, 0.95, z1 - 0.2, 'foliageDark', DECO);
+}
+// the land round the village, out to the haze: meadows, low hills, woods (nothing of it is in reach)
+const HILL = new THREE.SphereGeometry(1, 28, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+const CLUMP = new THREE.IcosahedronGeometry(1, 1);
+function countryside(b) {
+  // round the ground of the map (x -52..52, z -72..52), not over it
+  for (const [x0, z0, x1, z1] of [[-420, -420, -52, 420], [52, -420, 420, 420], [-52, -420, 52, -72], [-52, 52, 52, 420]]) b.box(x0, -0.5, z0, x1, 0, z1, 'grass', { collide: false, ao: false, faces: '+y' });
+  const hills = [[-110, -150, 90, 14, 60], [40, -170, 110, 18, 60], [160, -60, 60, 16, 110], [150, 90, 90, 20, 60], [20, 170, 120, 22, 60], [-120, 140, 80, 17, 70],
+    [-170, -10, 60, 15, 110], [-240, -200, 120, 30, 90], [240, 220, 120, 28, 90], [260, -150, 100, 26, 90], [-260, 200, 110, 30, 80]];
+  for (const [x, z, rx, h, rz] of hills) b.geom(HILL, 'grass', mtx(x, -0.3, z, (x * 0.011 + z * 0.006) % 3.1, rx, h, rz));
+  // woods: clumps of crowns on the hills and along the fields
+  let i = 0;
+  for (const [cx, cz, r, n, y] of [[-75, -95, 22, 12, 0], [70, -100, 26, 14, 0], [95, 10, 18, 10, 0], [-92, 30, 20, 11, 0], [-40, 95, 26, 12, 0], [60, 85, 22, 12, 0],
+    [-110, -150, 40, 16, 8], [150, 90, 40, 16, 12], [-170, -10, 30, 12, 9], [20, 170, 50, 18, 14]]) {
+    for (let k = 0; k < n; k++, i++) {
+      const a = (i * 2.399) % (Math.PI * 2), d = r * Math.sqrt(((i * 0.618) % 1)), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, s = 4 + ((i * 7) % 5);
+      b.geom(CLUMP, k % 3 ? 'foliageDark' : 'foliage', mtx(x, y + s * 0.9, z, i * 0.7, s, s * 0.85, s));
+    }
+  }
 }
 // a bench and a table of the beer garden
 function beerTable(b, x, z) {
@@ -136,9 +159,18 @@ export default {
     cob(-40, 32, 40, 36); cob(-30, 24, -26, 32); cob(24, 28, 28, 32); cob(-12, 36, 10, 46, 'pavers');   // church street, lanes, church square
     cob(-40, 8, -26, 24, 'gravel'); cob(18, 0, 40, 8, 'gravel'); cob(18, 8, 40, 28, 'gravel');          // the yards
     cob(34, -46, 42, -14, 'dirt'); cob(4, -66, 12, -46, 'gravel');                       // farm track, the road in from the fields
-    // the map's edge: hedges and fields all round
-    boundary(B, -60, -80, -46, 60); boundary(B, 46, -80, 60, 60); boundary(B, -60, -80, 60, -66); boundary(B, -60, 47, 60, 60);
-    hedge(B, -45, -46, -44, 36, 2.6); hedge(B, 44, -46, 45, 36, 2.6);
+    // the map's edge: a hedgerow too high to climb all round (the backs of the houses and a churchyard wall close the
+    // north), trees behind it, the fields and hills beyond out to the haze
+    // (the edge stands right against the hedges' inner faces: nobody climbs them and walks round on top)
+    boundary(B, -60, -80, -44, 60); boundary(B, 44, -80, 60, 60); boundary(B, -60, -80, 60, -65.2); boundary(B, -60, 46, 60, 60);
+    countryside(B);
+    hedge(B, -46.4, -66.4, -44, 36, 4.0); hedge(B, 44, -66.4, 46.4, 36, 4.0);
+    hedge(B, -44, -66.4, 4.3, -65.2, 4.0); hedge(B, 11.7, -66.4, 44, -65.2, 4.0);
+    // where the road leaves the fields: blocked by a stack of bales
+    for (const [x, y] of [[5.0, 0], [6.4, 0], [7.8, 0], [9.2, 0], [10.6, 0], [5.7, 1.45], [7.1, 1.45], [8.5, 1.45], [9.9, 1.45]]) bale(B, x, -65.8, 'z', y);
+    // the churchyard wall behind the square
+    wall(B, -12, 46, 10, 47.2, 3.6, 'fieldstone', [], 'concreteDark');
+    for (const [x, z] of [[-50, -60], [-49, -40], [-51, -18], [-49, 4], [-50, 26], [50, -58], [49, -36], [51, -12], [50, 12], [49, 30], [-30, -70], [-12, -71], [20, -70], [36, -71]]) tree(B, x, z, 9, 3.2);
 
     // ------------------------------------------------------------- the fields (attackers): the road in, bales, a field barn
     fence(B, -44, -46.05, 44, -45.95, 1.05, [[-38, -30], [4, 12], [34, 42]]);
@@ -151,11 +183,8 @@ export default {
     crate(B, 0, -50, 1.2); crate(B, 1.2, -50.2, 1.0); crate(B, 14, -48, 1.2);
     for (const [x, z] of [[-20, -64], [-6, -66], [24, -65], [38, -62], [-42, -50], [40, -50]]) tree(B, x, z, 7, 2.6);
 
-    // ------------------------------------------------------------- the houses
-    for (const s of HOUSES) house(B, out, s);
+    // ------------------------------------------------------------- the houses: built last, see houses(); the barn first
     this.barn(B);
-    this.inn(B, out);
-    this.brewery(B, out);
 
     // ------------------------------------------------------------- closed blocks: the backs of the village
     block(B, 24, -26, 34, -14, 4.2, 'barnGrey', 'e', 'euro');                            // the hen house behind the farm
@@ -163,7 +192,7 @@ export default {
     block(B, -44, 8, -40, 36, 5, 'plasterOchre', '', 'euro');
     block(B, 18, 28.6, 24, 32, 5.2, 'wallCream', 's', 'euro'); block(B, 28, 28.6, 44, 32, 5.2, 'plasterRose', 's', 'euro');
     block(B, -44, 36, -12, 47, 7.2, 'plasterWhite', 'n', 'euro'); block(B, 10, 36, 44, 47, 7.2, 'wallCream', 'n', 'euro');
-    wall(B, -40.6, 32, -40, 36, 3.4, 'fieldstone', [], 'concreteDark'); wall(B, 40, 32, 40.6, 36, 3.4, 'fieldstone', [], 'concreteDark');
+    wall(B, 40, 32, 40.6, 36, 3.4, 'fieldstone', [], 'concreteDark');   // (the west end is the block itself)
 
     // ------------------------------------------------------------- the church on the square in the north (defenders)
     B.box(-2, 0, 38, 10, 9, 46, 'plasterWhite');
@@ -177,7 +206,7 @@ export default {
     // lime trees along the back of the square, benches, a notice board
     for (const x of [-11.2, -6.4]) tree(B, x, 45.4, 8, 2.2);
     B.box(-11.6, 0, 36.4, -9.4, 0.46, 36.9, 'woodDark'); B.box(-3.6, 0, 36.4, -1.4, 0.46, 36.9, 'woodDark');
-    B.box(-12, 0, 41, -11.8, 2.2, 43, 'woodDark'); B.box(-11.85, 1.0, 41.2, -11.8, 2.0, 42.8, 'posters', DECO);
+    B.box(-12, 0, 41, -11.8, 2.2, 43, 'woodDark'); B.box(-11.8, 1.0, 41.2, -11.78, 2.0, 42.8, 'posters', DECO);
 
     // ------------------------------------------------------------- the square: the linden tree, the maypole, the fountain
     tree(B, -7, -6, 12, 5.2);
@@ -198,7 +227,7 @@ export default {
     // stands of the weekly market at the edge
     for (const [x, z, c] of [[-13.5, -11, 'canvasRed'], [-13.5, -7.5, 'canvasBlue'], [6, -12.5, 'canvasYellow']]) {
       B.box(x - 0.6, 0, z - 1.0, x + 0.6, 0.95, z + 1.0, 'woodDark');
-      B.box(x - 0.9, 2.3, z - 1.25, x + 0.9, 2.36, z + 1.25, c, DECO);
+      B.box(x - 0.9, 2.3, z - 1.25, x + 0.9, 2.36, z + 1.25, c, { ao: false, noBullet: true });
       for (const sx of [-0.55, 0.55]) for (const sz of [-0.95, 0.95]) B.box(x + sx - 0.04, 0, z + sz - 0.04, x + sx + 0.04, 2.3, z + sz + 0.04, 'woodDark', DECO);
     }
     cart(B, -12, -1.6, 'x');
@@ -239,6 +268,11 @@ export default {
     tree(B, 24.5, -12.4, 9, 3.4); tree(B, 27, -1.4, 8, 3.2);
     for (const [x, z, a] of [[30.6, 4.6, 'x'], [36.4, 2.6, 'z']]) bale(B, x, z, a);
     cart(B, 23.6, 4.4, 'x'); crate(B, 38.6, 6.2, 1.2);
+
+    // ------------------------------------------------------------- the houses, last: they look at what stands round them
+    this.inn(B);
+    this.brewery(B);
+    houses(B, out, [...HOUSES, INN, BREW, MALT]);
   },
 
   // the big barn on the farm track (x 28..40, z -14..0): doors south (track), north (farmyard) and west (beer garden),
@@ -270,9 +304,8 @@ export default {
   },
 
   // the inn on the square (x 8..20, z -14..0): the room with the bar below, rooms above, the beer garden behind
-  inn(B, out) {
-    const K = house(B, out, { r: [8, -14, 20, 0], face: 'W', fl: 2, ext: 'wallCream', front: 6.4, frontType: 'bar', b1: 'kitchen', b2: 'storeroom', doors: [{ room: 'b2', side: 'n', at: 2 }], roof: 'gable', roofMat: 'roofBrown', rise: 3.2, look: look({ shutter: 'shutterRed' }) });
-    void K;
+  // (the house itself is INN below)
+  inn(B) {
     // the sign over the door
     B.box(7.5, 3.0, -7.6, 7.9, 3.06, -6.4, 'woodDark', DECO);
     B.box(7.0, 2.4, -7.3, 7.05, 3.0, -6.7, 'paintYellow', DECO);
@@ -280,11 +313,16 @@ export default {
 
   // the brew house north of the yard (x -40..-30, z 24..32) and the malt house on the Brauergasse (x -26..-20, z 10..18):
   // the brew house is entered from the yard and from the church street, the malt house from the alley and from the yard
-  brewery(B, out) {
-    house(B, out, { r: [-40, 24, -30, 32], face: 'S', fl: 2, ext: 'plasterOchre', front: 4.2, frontType: 'storeroom', b1: 'storeroom', b2: 'kitchen', doors: [{ room: 'b1', side: 'n', at: -2.4 }], roof: 'gable', roofMat: 'rooftile', rise: 3.4, look: look({ shutter: 'shutterRed' }) });
-    // copper kettles in front of the brew house
-    for (const x of [-38.2, -35.6]) { B.box(x - 0.85, 0, 22.4 - 0.85, x + 0.85, 1.6, 22.4 + 0.85, 'metalYellow', { visual: false }); B.geom(new THREE.CylinderGeometry(0.85, 0.9, 1.6, 16), 'metalYellow', mtx(x, 0.8, 22.4)); B.geom(new THREE.SphereGeometry(0.86, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'metalYellow', mtx(x, 1.6, 22.4)); }
-    house(B, out, { r: [-26, 10, -20, 18], face: 'E', fl: 2, ext: 'plasterWhite', doors: [{ room: 'b1', side: 'n', at: 0 }], roof: 'gable', roofMat: 'roofBrown', rise: 2.6, look: look({ shutter: 'shutterGreen' }) });
+  // (the houses themselves are BREW and MALT below)
+  brewery(B) {
+    // copper kettles in front of the brew house, their domes in steps you can stand on
+    // (either side of the brew house's door, which stays free)
+    const z = 22.5;
+    for (const x of [-38.4, -31.6]) {
+      B.box(x - 0.85, 0, z - 0.85, x + 0.85, 1.6, z + 0.85, 'metalYellow', { visual: false });
+      for (const [h0, h1, f] of [[1.6, 2.0, 0.8], [2.0, 2.36, 0.45]]) B.box(x - 0.86 * f, h0, z - 0.86 * f, x + 0.86 * f, h1, z + 0.86 * f, 'metalYellow', { visual: false });
+      B.geom(new THREE.CylinderGeometry(0.85, 0.9, 1.6, 16), 'metalYellow', mtx(x, 0.8, z)); B.geom(new THREE.SphereGeometry(0.86, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'metalYellow', mtx(x, 1.6, z));
+    }
   },
 
   // the sites, and the spawns: attackers on the road in from the fields round (8, -57), defenders on the church
@@ -342,3 +380,8 @@ const HOUSES = [
   F({ r: [-16, 20, -4, 32], face: 'N', ext: 'plasterOchre', roofMat: 'rooftile' }),
   F({ r: [-4, 20, 8, 32], face: 'N', fl: 2, ext: 'plasterWhite', roofMat: 'roofBrown' }),
 ];
+// the inn on the square (x 8..20, z -14..0): the room with the bar below, rooms above, the beer garden behind
+const INN = { r: [8, -14, 20, 0], face: 'W', fl: 2, ext: 'wallCream', front: 6.4, frontType: 'bar', b1: 'kitchen', b2: 'storeroom', doors: [{ room: 'b2', side: 'n', at: 2 }], roof: 'gable', roofMat: 'roofBrown', rise: 3.2, look: look({ shutter: 'shutterRed' }) };
+// the brew house north of the yard (x -40..-30, z 24..32) and the malt house on the Brauergasse (x -26..-20, z 10..18)
+const BREW = { r: [-40, 24, -30, 32], face: 'S', fl: 2, ext: 'plasterOchre', front: 4.2, frontType: 'storeroom', b1: 'storeroom', b2: 'kitchen', doors: [{ room: 'b1', side: 'n', at: -2.4 }], roof: 'gable', roofMat: 'rooftile', rise: 3.4, look: look({ shutter: 'shutterRed' }) };
+const MALT = { r: [-26, 10, -20, 18], face: 'E', fl: 2, ext: 'plasterWhite', doors: [{ room: 'b1', side: 'n', at: 0 }], roof: 'gable', roofMat: 'roofBrown', rise: 2.6, look: look({ shutter: 'shutterGreen' }) };

@@ -465,7 +465,7 @@ class Packer {
         if (this.placed.some((q) => over(rect, q))) continue;
         const s = this.K.sub(along ? c : line, along ? line : c, Q_OF[side], false, this.P.y);
         s.box(-w / 2 - 0.04, y - 0.04, 0, w / 2 + 0.04, y + h + 0.04, 0.02, o.frame || 'woodDark', { ...DECO, faces: '+z+x-x+y-y' });
-        s.box(-w / 2, y, 0.02, w / 2, y + h, 0.021, mat, { ...DECO, faces: '+z' });
+        s.box(-w / 2, y, 0.02, w / 2, y + h, 0.028, mat, { ...DECO, faces: '+z' });   // (8 mm before the frame: a millimetre flickered)
         return true;
       }
     }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { wallX, wallZ, stairs, container, crate, barrel, barrier, truck, lampPost, railing, mtx, sandbags } from '../props.js';
+import { groundRing, hills } from './surround.js';
 
 // =============================================================================
 // BLACKSITE — compact research facility at blue hour. Small and intense:
@@ -30,6 +31,9 @@ export default {
   bounds: { minX: -30, maxX: 30, minZ: -24, maxZ: 24 },
 
   build(B) {
+    // ------------------------------------------------------------- the land round the site, out to the haze
+    groundRing(B, [-34, -28, 34, 28], 'dirt');
+    hills(B, [[-120, -90, 70, 18, 50], [-30, -150, 80, 24, 50], [100, -110, 60, 16, 60], [150, 10, 50, 22, 80], [110, 120, 70, 20, 50], [0, 160, 80, 26, 50], [-120, 110, 60, 18, 60], [-160, 0, 50, 24, 80]], 'rockDark');
     // ------------------------------------------------------------- center (built once)
     // lab roof and floor
     B.box(-10, 0, -12, 10, 0.05, 12, 'labFloor', { ao: false });
@@ -72,7 +76,7 @@ export default {
     B.box(-2.4, 0, -20.4, 2.4, 3.0, -15.6, 'concrete');
     B.box(-2.7, 3.0, -20.7, 2.7, 3.15, -15.3, 'metalDark', { ao: false });
     sandbagsRing(B, 3.15);
-    B.box(-2.7, 5.4, -20.7, 2.7, 5.6, -15.3, 'corrugated', { collide: false });
+    B.box(-2.7, 5.4, -20.7, 2.7, 5.6, -15.3, 'corrugated', { ao: false });
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.boxC(sx * 2.55, -18 + sz * 2.55, 0.15, 0.15, 3.15, 2.25, 'metalDark', { collide: false });
     stairs(B, -7.4, -21.5, '+x', 1.4, 3.0, 4.6, 'metal');
     stairs(B, 7.4, -21.5, '-x', 1.4, 3.0, 4.6, 'metal');
@@ -116,6 +120,12 @@ export default {
     b.box(-32, 3.2, -26, 0, 30, -24, 'concrete', { visual: false });
     b.box(-32, 3.2, 24, 0, 30, 26, 'concrete', { visual: false });
     b.box(-32, 3.2, -26, -30, 30, 26, 'concrete', { visual: false });
+    // posts along the west wall too, and three strands of barbed wire along all of it
+    for (let z = -22; z <= 22; z += 4) b.box(-31.1, 3.2, z - 0.1, -30.9, 4.2, z + 0.1, 'metalDark', { collide: false });
+    for (const y of [3.5, 3.8, 4.1]) {
+      for (const z of [25, -25]) b.box(-30, y - 0.015, z - 0.015, 0, y + 0.015, z + 0.015, 'metalDark', { collide: false, ao: false });
+      b.box(-31.015, y - 0.015, -25, -30.985, y + 0.015, 25, 'metalDark', { collide: false, ao: false });
+    }
 
     // ================= lab (west half) =================
     const H = 4.2, T = 0.35;

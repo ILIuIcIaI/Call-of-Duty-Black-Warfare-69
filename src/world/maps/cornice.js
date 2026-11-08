@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { projectUV } from '../textures.js';
 import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
+import { rockWall } from './surround.js';
 
 // =============================================================================
 // CORNICE: the top station of a cable car and a mountain hut on a snowy saddle, at sunset. Made for the 2 vs 2
@@ -101,6 +102,13 @@ export default {
     boundary(B, -27.5, 19.5, 27.5, 22);
     boundary(B, -27.5, -22, -26, 22);
     boundary(B, 26, -22, 27.5, 22);
+    // where the saddle is open to the sides and to the north: snowy rocks, their faces where the map ends; the snow
+    // goes on round them
+    for (const [x0, z0, x1, z1] of [[-420, -420, -60, 24], [60, -420, 420, 24], [-60, -420, 60, -24]]) B.box(x0, -0.5, z0, x1, 0, z1, 'snow', { collide: false, ao: false, faces: '+y' });
+    for (const s of [-1, 1]) {
+      rockWall(B, 'z', s * 26, -20.5, -8.6, s, 5.5, { mat: 'rockDark', dark: 'rock', cap: 'snow' }); rockWall(B, 'z', s * 26, 8.6, 19.5, s, 5.5, { mat: 'rockDark', dark: 'rock', cap: 'snow' });
+    }
+    rockWall(B, 'x', SZ0 - 0.5, -26, -9.3, -1, 6, { mat: 'rockDark', dark: 'rock', cap: 'snow' }); rockWall(B, 'x', SZ0 - 0.5, 9.3, 26, -1, 6, { mat: 'rockDark', dark: 'rock', cap: 'snow' });
     for (let x = -25; x <= 25; x += 2.5) B.box(x - 0.05, 0, 19.35, x + 0.05, 1.1, 19.45, 'woodDark', noCol);   // fence at the edge
     for (const y of [0.55, 1.05]) B.box(-26, y - 0.04, 19.36, 26, y, 19.44, 'woodDark', noCol);
 
@@ -311,9 +319,10 @@ export default {
     b.box(-14.6, 0, -2.0, -11.8, 2.6, 1.0, 'barnGrey');
     b.box(-14.8, 2.6, -2.2, -11.6, 2.8, 1.2, 'metalDark', flat);
     snowCap(b, -14.8, -2.2, -11.6, 1.2, 2.8, 0.15);
-    b.box(-11.84, 1.2, -1.2, -11.8, 2.0, 0.2, 'black', noCol);
+    b.box(-11.8, 1.2, -1.2, -11.77, 2.0, 0.2, 'black', noCol);
     b.box(-11.8, 0, -0.9, -10.6, 5.4, -0.6, 'metalYellow');
     b.geom(new THREE.CylinderGeometry(1.0, 1.0, 0.12, 18), 'metalDark', mtx(-10.4, 5.6, -0.75));
+    b.box(-11.1, 5.54, -1.45, -9.7, 5.66, -0.05, 'metalDark', { visual: false });   // (the wheel holds whoever climbs onto it)
     for (let x = -10.4; x > -60; x -= 9) {
       if (x < -27) b.box(x - 0.2, 0, -0.95, x + 0.2, 6.6, -0.55, 'metalYellow', noCol);
       for (const dz of [-1.75, 0.25]) b.box(x - 4.5, 5.6, dz - 0.015, x + 4.5, 5.63, dz + 0.015, 'black', noCol);

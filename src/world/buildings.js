@@ -120,7 +120,7 @@ export function stadthaus(b, out, o) {
   if (up) {
     flatRoof(K, [[-hw, -hd, hw, hd]], top, { wall: L.ext, top: L.trim, holes: R.holes, floor: pick(['tilesTerra', 'concreteDark', 'woodPale']) });
     stairHouse(K, top, -1.6, -1.26, 2, { mat: L.ext });
-    K.box(-2.1, top + 2.3, 1, 4.5, top + 2.42, 5.6, 'woodDark', { ...DECO });
+    K.box(-2.1, top + 2.3, 1, 4.5, top + 2.42, 5.6, 'woodDark', { ...PLAIN });   // (whoever climbs onto it stands on it)
     for (const [x, z] of [[-2, 1.1], [4.4, 1.1], [-2, 5.5], [4.4, 5.5]]) K.box(x - 0.06, top, z - 0.06, x + 0.06, top + 2.3, z + 0.06, 'woodDark', { ...PLAIN });
     const tb = K.sub(1.2, 3.4, 0, false, top); ITEMS.roundTable.draw(tb);
     K.spot(-3.2, top, 3.2, { indoor: false, kind: 'room' });
@@ -736,7 +736,7 @@ export function warehouse(b, out, o) {
       if (blocked(x - 2.4, z - 1.2, x + 2.4, z + 1.2)) continue;
       K.box(x - 2.2, yBase, z - 0.9, x + 2.2, yBase + 0.95, z + 0.9, pick(['wood', 'woodDark', 'woodPale']), { skirt: false, pen: 0.7 });
       for (const [ax, az] of [[-2.1, -0.85], [2.1, -0.85], [-2.1, 0.85], [2.1, 0.85]]) K.box(x + ax - 0.05, yBase, z + az - 0.05, x + ax + 0.05, yBase + 2.5, z + az + 0.05, 'woodDark', DECO);
-      K.box(x - 2.5, yBase + 2.5, z - 1.2, x + 2.5, yBase + 2.6, z + 1.2, pick(cols), DECO);
+      K.box(x - 2.5, yBase + 2.5, z - 1.2, x + 2.5, yBase + 2.6, z + 1.2, pick(cols), { ...PLAIN, noBullet: true });   // (the cloth holds whoever lands on it)
       for (let i = 0; i < 5; i++) K.box(x - 2 + i * 0.85, yBase + 0.95, z - 0.5, x - 1.45 + i * 0.85, yBase + 1.25, z + 0.5, pick(['canvasYellow', 'canvasRed', 'foliage', 'carpetBeige']), DECO);
       K.spot(x, yBase + 0.95, z, { kind: 'floor' });
     }
@@ -916,7 +916,7 @@ export function church(b, out, o) {
   // the loft inside the nave at the height of the tower's first floor
   const loftY = BASE + tH;
   K.box(-5.4, loftY - 0.2, 5.1, 5.4, loftY, 8.9, 'wood', { ...PLAIN });
-  K.box(-5.4, loftY - 0.2, 5.1, 5.4, loftY - 0.19, 8.9, 'wallCream', DECO);
+  K.box(-5.4, loftY - 0.21, 5.1, 5.4, loftY - 0.2, 8.9, 'wallCream', DECO);   // (under the boards, not in them: it flickered)
   railing(K, -5.4, 5.1, 5.4, 5.1, 1.05, 'woodDark', true, loftY);
   for (const x of [-4.6, 4.6]) K.box(x - 0.18, BASE, 5.0, x + 0.18, loftY, 5.3, 'marble', { ...PLAIN, faces: '+x-x+z-z' });
   K.spot(0, loftY, 7, { kind: 'room' }); K.spot(3.5, loftY, 7.2, { kind: 'floor' });
@@ -942,7 +942,7 @@ export function bunker(b, out, o) {
   P.out(mainR, 'w', { at: 3.2, w: 1.75, leaf: false });
   const slit = { w: 1.8, y: 1.35, h: 0.42, plain: true };
   P.noWin = false;
-  P.win(mainR, 's', { ...slit, at: [-5.5, -1.5] }); P.win(mainR, 'n', { ...slit, at: [-5.5, -1.5] }); P.win(map, 's', { ...slit, at: [5.8] }); P.win(mainR, 'w', { ...slit, at: [-2.2] }); P.win(baffle, 'n', false); P.win(map, 'e', { ...slit, at: [2.6] });
+  P.win(mainR, 's', { ...slit, at: [-3.8, -1.2] }); P.win(mainR, 'n', { ...slit, at: [-5.5, -1.5] }); P.win(map, 's', { ...slit, at: [5.8] }); P.win(mainR, 'w', { ...slit, at: [-2.2] }); P.win(baffle, 'n', false); P.win(map, 'e', { ...slit, at: [2.6] });   // (the south slits clear of the steps up to the roof)
   foundation(K, [[-hw, -hd, hw, hd]]);
   finish(P);
   K.box(-hw - 0.23, top - SLAB, -hd - 0.23, hw + 0.23, top + 0.3, hd + 0.23, 'concreteDark', { ...PLAIN });

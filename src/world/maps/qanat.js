@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { stairs, crate, barrel, palm, mtx, boundary, truck } from '../props.js';
 import { BASE, PLAIN, subtract } from '../kit.js';
-import { H, DECO, seeded, house, wall, block, siteLetter, cart } from './sdparts.js';
+import { H, DECO, seeded, houses, wall, block, siteLetter, cart } from './sdparts.js';
 
 // =============================================================================
 // QANAT — an old oasis town in the desert at morning, made for Search and Destroy (4 vs 4 up to 6 vs 6).
@@ -28,9 +28,31 @@ function townWall(b, x0, z0, x1, z1, h, gaps = []) {
   const along = x1 - x0 > z1 - z0 ? 'x' : 'z', A0 = along === 'x' ? x0 : z0, A1 = along === 'x' ? x1 : z1;
   for (let a = A0 + 0.5; a < A1 - 0.5; a += 2.0) {
     if (gaps.some(([g0, g1]) => a > g0 - 1 && a < g1 + 1)) continue;
-    if (along === 'x') b.box(a, h, z0, a + 1.0, h + 0.7, z1, 'adobeOchre', DECO);
-    else b.box(x0, h, a, x1, h + 0.7, a + 1.0, 'adobeOchre', DECO);
+    if (along === 'x') b.box(a, h, z0, a + 1.0, h + 0.7, z1, 'adobeOchre', { ao: false });
+    else b.box(x0, h, a, x1, h + 0.7, a + 1.0, 'adobeOchre', { ao: false });
   }
+}
+// a tower of the town wall, square, with merlons
+function tower(b, x0, z0, x1, z1, h) {
+  b.box(x0, 0, z0, x1, h, z1, 'adobeOchre');
+  b.box(x0 - 0.15, h, z0 - 0.15, x1 + 0.15, h + 0.25, z1 + 0.15, 'sandstone', { ao: false });
+  for (const [a, c] of [[x0 - 0.15, z0 - 0.15], [x1 - 0.65, z0 - 0.15], [x0 - 0.15, z1 - 0.65], [x1 - 0.65, z1 - 0.65]]) b.box(a, h + 0.25, c, a + 0.8, h + 1.0, c + 0.8, 'adobeOchre', { ao: false });
+  for (const y of [h - 1.6, h - 3.6]) for (const [a, c, nx] of [[(x0 + x1) / 2, z0, 0], [(x0 + x1) / 2, z1, 0], [x0, (z0 + z1) / 2, 1], [x1, (z0 + z1) / 2, 1]]) {
+    if (nx) b.box(a - 0.03, y, c - 0.18, a + 0.03, y + 0.9, c + 0.18, 'black', DECO);
+    else b.box(a - 0.18, y, c - 0.03, a + 0.18, y + 0.9, c + 0.03, 'black', DECO);
+  }
+}
+const DUNE = new THREE.SphereGeometry(1, 28, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+// the land round the town, out to the haze: sand, dunes, palms beyond the garden walls (nothing of it is in reach)
+function desert(b) {
+  // round the ground of the map (x -52..52, z -74..52), not over it: the qanat's stair holes stay open
+  for (const [x0, z0, x1, z1] of [[-420, -420, -52, 420], [52, -420, 420, 420], [-52, -420, 52, -74], [-52, 52, 52, 420]]) b.box(x0, -0.5, z0, x1, 0, z1, 'sand', { collide: false, ao: false, faces: '+y' });
+  const dunes = [[-95, -120, 70, 9, 34], [-20, -150, 60, 12, 30], [70, -125, 65, 8, 40], [140, -40, 50, 11, 70], [120, 60, 70, 10, 36], [40, 125, 80, 13, 34],
+    [-60, 120, 60, 9, 42], [-135, 40, 55, 12, 60], [-140, -55, 60, 8, 34], [-210, 120, 90, 18, 60], [210, -150, 90, 16, 70], [0, 230, 110, 20, 60], [-230, -180, 100, 17, 60], [230, 110, 80, 15, 50]];
+  for (const [x, z, rx, h, rz] of dunes) b.geom(DUNE, 'sand', mtx(x, -0.2, z, (x * 0.013 + z * 0.007) % 3.1, rx, h, rz));
+  const out = [[-50, -44], [-52, -52], [-50, -61], [-53, -69], [-47, -74], [-38, -73], [-27, -75], [-15, -72], [-4, -76], [8, -73], [19, -75], [31, -72], [42, -74], [50, -69], [53, -60],
+    [50, -51], [52, -43], [-58, -64], [57, -57], [-12, -82], [24, -81]];
+  for (const [x, z] of out) palm(b, x, z, 6 + ((Math.round(x * 3 + z) % 4) + 4) % 4);
 }
 const VAT = new THREE.CylinderGeometry(0.85, 0.95, 0.8, 18);
 const DYE = new THREE.CylinderGeometry(0.72, 0.72, 0.04, 18);
@@ -57,6 +79,7 @@ function kiln(b, x, z, r = 1.9) {
   b.geom(KILN, 'clay', mtx(x, 0.5, z, 0, r, r * 0.95, r));
   b.box(x - 0.45, 0.25, z + r - 0.2, x + 0.45, 1.0, z + r + 0.02, 'black', DECO);
   b.geom(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 10), 'brickDark', mtx(x + r * 0.35, r * 1.1 + 0.3, z - r * 0.2));
+  b.box(x + r * 0.35 - 0.3, r * 0.9, z - r * 0.2 - 0.3, x + r * 0.35 + 0.3, r * 1.1 + 0.75, z - r * 0.2 + 0.3, 'brickDark', { visual: false });
 }
 const JAR = new THREE.LatheGeometry([[0, 0], [0.16, 0.02], [0.26, 0.2], [0.29, 0.42], [0.22, 0.66], [0.1, 0.78], [0.12, 0.86], [0.09, 0.88]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
 function jar(b, x, z, s = 1, y = 0, solid = true) {
@@ -76,14 +99,14 @@ function stall(b, x, z, along, cloth) {
   const ax = along === 'x', [hx, hz] = ax ? [1.1, 0.5] : [0.5, 1.1];
   b.box(x - hx, 0, z - hz, x + hx, 0.95, z + hz, 'woodDark');
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(x + sx * (hx - 0.05) - 0.04, 0, z + sz * (hz - 0.05) - 0.04, x + sx * (hx - 0.05) + 0.04, 2.3, z + sz * (hz - 0.05) + 0.04, 'woodDark', DECO);
-  b.box(x - hx - 0.2, 2.3, z - hz - 0.25, x + hx + 0.2, 2.36, z + hz + 0.25, cloth, DECO);
+  b.box(x - hx - 0.2, 2.3, z - hz - 0.25, x + hx + 0.2, 2.36, z + hz + 0.25, cloth, { ao: false, noBullet: true });
   for (let i = 0; i < 4; i++) {
     const ox = ax ? i * 0.5 : 0, oz = ax ? 0 : i * 0.5;
     b.box(x - hx + 0.2 + ox, 0.95, z - hz + 0.15 + oz, x - hx + 0.55 + ox, 1.15, z - hz + 0.5 + oz, ['paintYellow', 'canvasRed', 'foliage', 'plasterTerra'][i], DECO);
   }
 }
-// a cloth stretched over the street between the houses (shade, no collision)
-function shade(b, x0, z0, x1, z1, y, cloth) { b.box(x0, y, z0, x1, y + 0.04, z1, cloth, DECO); }
+// a cloth stretched over the street between the houses: it holds whoever lands on it, bullets go through
+function shade(b, x0, z0, x1, z1, y, cloth) { b.box(x0, y, z0, x1, y + 0.04, z1, cloth, { ao: false, noBullet: true }); }
 // ---------------------------------------------------------------------------
 // The town
 // ---------------------------------------------------------------------------
@@ -113,12 +136,25 @@ export default {
     const out = { spots: [], vehicles: [], navRects: [], footprints: [] };
     // ------------------------------------------------------------- ground, with the two stair holes of the qanat
     for (const q of subtract([[-52, -74, 52, 52]], [QIN, QOUT])) B.box(q[0], -1, q[1], q[2], 0, q[3], 'sand');
-    B.box(-43.4, 0, -37.4, 43.4, 0.012, 46, 'dirt', { collide: false, ao: false });
+    for (const q of subtract([[-43.4, -37.4, 43.4, 46]], [QOUT])) B.box(q[0], 0, q[1], q[2], 0.012, q[3], 'dirt', { collide: false, ao: false });
     B.box(-10, 0.012, -37.4, 2.5, 0.02, -16, 'pavers', { collide: false, ao: false });
     B.box(-10, 0.012, -16, 10, 0.02, -2, 'paversDark', { collide: false, ao: false });
     B.box(-8, 0.012, 28, 10, 0.02, 40, 'pavers', { collide: false, ao: false });
-    // the map's edge
-    boundary(B, -60, -78, -46, 56); boundary(B, 46, -78, 60, 56); boundary(B, -60, -78, 60, -68); boundary(B, -60, 47, 60, 56);
+    // the map's edge: the town wall with a tower at each corner, and round the palm grove in front of it a garden
+    // wall too high to climb; beyond them the desert goes on to the haze
+    // (the edge stands right against the garden walls' inner faces and the town wall's outer face: nobody climbs the
+    // garden walls, and whoever walks the town wall stays on it)
+    boundary(B, -60, -78, -45.4, -40.4); boundary(B, -60, -40.4, -44.6, 56); boundary(B, 45.4, -78, 60, -40.4); boundary(B, 44.6, -40.4, 60, 56);
+    boundary(B, -60, -78, 60, -67.6); boundary(B, -60, 46, 60, 56);   // (right against the backs of the north blocks: no gap to drop into)
+    desert(B);
+    tower(B, -46.4, -40.4, -43, -36.6, 7.4); tower(B, 43, -40.4, 46.4, -36.6, 7.4);
+    tower(B, -46.4, 43, -43, 47.2, 7.4); tower(B, 43, 43, 46.4, 47.2, 7.4);
+    wall(B, -46.6, -68.6, -45.4, -40.4, 3.8, 'adobeLight'); wall(B, 45.4, -68.6, 46.6, -40.4, 3.8, 'adobeLight');
+    wall(B, -46.6, -68.8, 46.6, -67.6, 3.8, 'adobeLight');
+    // the grove's gate in the south wall, shut
+    B.box(-3.2, 0, -67.75, 3.2, 3.4, -67.55, 'woodDark', DECO); B.box(-0.04, 0, -67.8, 0.04, 3.4, -67.5, 'metalDark', DECO);
+    B.box(-3.8, 0, -69.2, -3.0, 4.6, -67.2, 'adobeOchre'); B.box(3.0, 0, -69.2, 3.8, 4.6, -67.2, 'adobeOchre');
+    B.box(-4.0, 4.6, -69.4, 4.0, 5.1, -67.0, 'adobeOchre');
 
     // ------------------------------------------------------------- the town wall, the gate, the gap
     townWall(B, -44.6, -38.6, 44.6, -37.4, 5.2, [[-6, -2], [-34, -29.5]]);
@@ -126,7 +162,7 @@ export default {
     townWall(B, 43.4, -37.4, 44.6, 46, 5.2);
     B.box(-6.6, 0, -39.4, -6, 5.6, -36.8, 'adobeOchre'); B.box(-2, 0, -39.4, -1.4, 5.6, -36.8, 'adobeOchre');
     B.box(-6.6, 3.4, -39.4, -1.4, 5.6, -36.8, 'adobeOchre');
-    B.box(-6.9, 5.6, -39.6, -1.1, 6.4, -36.6, 'adobeOchre', DECO);
+    B.box(-6.9, 5.6, -39.6, -1.1, 6.4, -36.6, 'adobeOchre', { ao: false });
     for (const [x, z, s] of [[-34.6, -36.6, 1.1], [-29, -39.3, 0.9], [-33.9, -39.4, 0.7], [-29.5, -36.4, 0.8]]) B.box(x - s, 0, z - s * 0.7, x + s, s * 0.8, z + s * 0.7, 'adobeOchre');
     // behind the gate a wall with a fountain: nobody looks from the souk straight out at the grove
     B.box(-5.6, 0, -35.5, -1.4, 2.6, -34.9, 'sandstone');
@@ -146,12 +182,13 @@ export default {
     wall(B, 14.6, -47, 15.2, -39.6, 3.1, 'adobeLight'); wall(B, 18.8, -47, 19.4, -39.6, 3.1, 'adobeLight');
     B.box(14.4, 3.1, -47.8, 19.6, 3.35, -39.4, 'clay');
     B.geom(new THREE.SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'adobeLight', mtx(17, 3.3, -43.6, 0, 1, 0.55, 1.7));
+    // the dome in steps you can stand on
+    for (const [h0, h1, f] of [[3.3, 3.7, 0.94], [3.7, 4.1, 0.75], [4.1, 4.42, 0.32]]) B.box(17 - 2.2 * f, h0, -43.6 - 3.74 * f, 17 + 2.2 * f, h1, -43.6 + 3.74 * f, 'adobeLight', { visual: false });
 
     // ------------------------------------------------------------- the qanat
     this.qanat(B);
 
-    // ------------------------------------------------------------- the houses
-    for (const s of HOUSES) house(B, out, s);
+    // ------------------------------------------------------------- the houses: built last, see houses()
     // closed blocks: the backs of the east quarter, the north edge
     block(B, 12, -37.4, 43.4, -16, 6.2, 'adobe', 'w'); block(B, 16, -16, 43.4, -10, 6.2, 'adobeRose');
     block(B, 18.4, -10, 43.4, -2, 6.2, 'adobe', 'w'); block(B, 18.4, -2, 20.6, 7.4, 6.2, 'adobeOchre', 'w'); block(B, 28.4, -2, 43.4, 7.4, 6.2, 'adobeLight');
@@ -172,7 +209,9 @@ export default {
     wall(B, -43.4, -8.6, -38.2, -8, 1.3, 'adobeLight');
     wall(B, -38.8, -8, -38.2, 1.0, 1.3, 'adobeLight');
     for (const [x, z] of [[-41, -34], [-40, -26], [-41.4, -23], [-39.5, -16.5], [-41.6, -12], [-35.5, -10.5], [-31.5, -16], [-41, -4], [-36, 0.5], [-31.4, -4.5]]) palm(B, x, z, 6 + ((Math.round(x + z) % 3) + 3) % 3);
-    B.box(-43.3, -0.3, -37.3, -42.4, 0.0, 4, 'water', { collide: false, ao: false });
+    // the water channel along the wall: stone curbs, the water between them
+    B.box(-43.4, 0, -37.3, -43.22, 0.16, 4, 'sandstone', DECO); B.box(-42.48, 0, -37.3, -42.3, 0.16, 4, 'sandstone', DECO);
+    B.box(-43.22, 0, -37.3, -42.48, 0.07, 4, 'water', DECO);
     cart(B, -35, -16, 'z');
     for (const [x, z] of [[-38.2, -30.2], [-34.4, -6.2], [-40.6, 2.4]]) { B.box(x - 0.9, 0, z - 0.7, x + 0.9, 1.3, z + 0.7, 'hay'); }
     wall(B, -41, -27.4, -38.4, -26.8, 1.3, 'adobeLight'); wall(B, -38.6, -2.2, -35.4, -1.6, 1.3, 'adobeLight');
@@ -234,6 +273,9 @@ export default {
     crate(B, 8.9, 39.0, 1.2); crate(B, 8.9, 39.0, 1.0, 1.2); crate(B, 7.6, 39.1, 1.0); crate(B, 9.0, 29.3, 1.1);
     for (const [x, z] of [[-7.3, 29.2], [-6.5, 29.0], [-7.4, 39.2]]) jar(B, x, z, 1.15);
     B.box(-2.4, 3.6, 39.6, 2.4, 3.75, 40, 'woodDark', DECO); B.box(-2.2, 0.9, 39.85, 2.2, 3.55, 39.95, 'canvasRed', DECO);
+
+    // ------------------------------------------------------------- the houses, last: they look at what stands round them
+    houses(B, out, HOUSES);
   },
 
   // the cistern house: four walls round the head of the stairs up from the qanat, a door to the north
@@ -313,9 +355,9 @@ const HOUSES = [
   { r: [-10, -2, 3, 6.4], face: 'S', fl: 2, ext: 'adobe' },
   { r: [10, -16, 16, -10], face: 'W', ext: 'adobeRose', roofStair: 'e' },
   // --- between the square and A: the alley's houses (the alley north runs x -20.4..-15.4 to the yard's gap)
-  { r: [-30, -6.4, -20.4, -0.2], face: 'S', ext: 'adobe', doors: [{ room: 'b1', side: 'n', at: -2 }] },
+  { r: [-30, -6.4, -20.4, -0.2], face: 'S', ext: 'adobe', doors: [{ room: 'b1', side: 'w', at: -1.8 }] },
   { r: [-30, -0.2, -20.4, 5.4], face: 'E', ext: 'adobeLight' },
-  { r: [-15.4, -6.4, -10, 3.6], face: 'W', ext: 'adobeRose', doors: [{ room: 'b1', side: 'n', at: 0 }] },
+  { r: [-15.4, -6.4, -10, 3.6], face: 'W', ext: 'adobeRose', doors: [{ room: 'b1', side: 'n', at: -3 }] },
   { r: [-15.4, 3.6, -10, 15.2], face: 'W', ext: 'adobe' },
   { r: [-20.4, 15.2, -10, 24], face: 'S', fl: 2, ext: 'adobeOchre', doorAt: 2.7 },
   { r: [-10, 6.4, 3, 15], face: 'E', ext: 'adobe' },

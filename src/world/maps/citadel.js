@@ -18,7 +18,7 @@ import { wallX, wallZ, stairs, crate, barrel, railing, lampPost, tree, palm, car
 const stall = (b, x, z, canvas) => {
   b.box(x - 1.0, 0, z - 0.45, x + 1.0, 0.9, z + 0.45, 'woodDark');
   for (const sx of [-0.95, 0.95]) for (const sz of [-0.55, 0.55]) b.box(x + sx - 0.04, 0, z + sz - 0.04, x + sx + 0.04, 2.25, z + sz + 0.04, 'woodDark', { collide: false, ao: false });
-  b.box(x - 1.15, 2.25, z - 0.75, x + 1.15, 2.32, z + 0.75, canvas, { collide: false, ao: false });
+  b.box(x - 1.15, 2.25, z - 0.75, x + 1.15, 2.32, z + 0.75, canvas, { ao: false, noBullet: true });   // (it holds whoever lands on it)
   for (let i = 0; i < 3; i++) b.box(x - 0.8 + i * 0.6, 0.9, z - 0.3, x - 0.45 + i * 0.6, 1.1, z + 0.3, ['canvasRed', 'canvasYellow', 'foliage'][i], { collide: false, ao: false });
 };
 const planter = (b, x, z, w = 1.6, d = 1.6) => {
@@ -74,6 +74,8 @@ export default {
     for (const [x, z] of [[14.5, -2], [17.5, 2], [15, 3.2]]) {
       B.box(x - 0.45, 0, z - 0.45, x + 0.45, 0.78, z + 0.45, 'metalDark');
       B.geom(new THREE.ConeGeometry(1.4, 0.5, 10, 1, true), 'canvasRed', mtx(x, 2.3, z));
+      // the parasol holds whoever lands on it (in two steps along its slope), bullets go through
+      B.box(x - 0.95, 2.05, z - 0.95, x + 0.95, 2.22, z + 0.95, 'canvasRed', { visual: false, noBullet: true }); B.box(x - 0.5, 2.22, z - 0.5, x + 0.5, 2.4, z + 0.5, 'canvasRed', { visual: false, noBullet: true });
       B.box(x - 0.03, 0.78, z - 0.03, x + 0.03, 2.2, z + 0.03, 'metal', { collide: false, ao: false });
     }
     // west connector: a stone well
@@ -95,12 +97,12 @@ export default {
 
     // ================= boundaries: tall facades all around =================
     b.box(-38, 0, -36, 38, 9, -32, facade);
-    for (let x = -30; x <= 30; x += 6) b.box(x - 0.8, 3.6, -32.06, x + 0.8, 5.0, -32, shutters, { collide: false, ao: false });
+    for (let x = -30; x <= 30; x += 6) b.box(x - 0.8, 3.6, -32, x + 0.8, 5.0, -31.95, shutters, { collide: false, ao: false });
     b.box(-38, 9, -36, 38, 9.4, -31.7, 'rooftile', { collide: false });
     b.box(-38, 0, -32, -32, 8, 0, facade);
     for (let z = -28; z <= -4; z += 6) {
-      b.box(-32.04, 0, z - 0.7, -32, 2.3, z + 0.7, 'woodDark', { collide: false, ao: false });
-      b.box(-32.06, 3.6, z - 0.6, -32, 5.0, z + 0.6, shutters, { collide: false, ao: false });
+      b.box(-32, 0, z - 0.7, -31.96, 2.3, z + 0.7, 'woodDark', { collide: false, ao: false });
+      b.box(-32, 3.6, z - 0.6, -31.95, 5.0, z + 0.6, shutters, { collide: false, ao: false });
     }
     b.box(-38, 8, -32, -31.7, 8.4, 0, 'rooftile', { collide: false });
     b.box(34, 0, -32, 38, 9, 0, facade);
@@ -171,7 +173,7 @@ export default {
     wallZ(b, tz0, tz1, 10, 0, 2 * tF, 0.35, hall, [{ c: -17.5, w: 1.4, y: 0, h: 2.4 }, { c: -16.5, w: 1.2, y: tF + 0.9, h: 1.3 }]);
     // inner wall behind the arcade (3 doors), arcade pillars at the front
     wallX(b, -10, 10, -14.2, 0, tF, 0.3, hall, [{ c: -5, w: 1.6, y: 0, h: 2.6 }, { c: 0, w: 1.6, y: 0, h: 2.6 }, { c: 5, w: 1.6, y: 0, h: 2.6 }]);
-    for (const x of [-9.7, -6.5, -3.25, 0, 3.25, 6.5, 9.7]) b.boxC(x, -12.3, 0.6, 0.6, 0, tF, 'marble');
+    for (const x of [-9.7, -6.5, -3.25, 0, 3.25, 6.5, 9.7]) b.boxC(x, -12.31, 0.6, 0.58, 0, tF, 'marble');
     // upper floor + front wall with three balcony doors
     b.box(-10, tF, -19.2, 10, tF + 0.25, tz1, 'marble', { ao: false });
     b.box(-3.0, tF, tz0 + 0.2, 10, tF + 0.25, -19.2, 'marble', { ao: false });
@@ -192,7 +194,7 @@ export default {
     b.box(-1.0, tF + 0.25, -15.4, 1.0, tF + 1.05, -14.6, 'woodPale');
     // roof + clock tower (landmark)
     b.box(-10.2, 2 * tF, tz0 - 0.2, 10.2, 2 * tF + 0.3, tz1 + 0.2, 'rooftile');
-    b.box(-1.6, 2 * tF, -18.4, 1.6, 2 * tF + 4.6, -15.4, hall);
+    b.box(-1.6, 2 * tF + 0.3, -18.4, 1.6, 2 * tF + 4.6, -15.4, hall);
     b.box(-1.9, 2 * tF + 4.6, -18.7, 1.9, 2 * tF + 4.9, -15.1, 'rooftile');
     b.geom(new THREE.CylinderGeometry(0.9, 0.9, 0.08, 24), 'paintWhite', mtx(0, 2 * tF + 3.2, -15.38, 0, 1, 1, 1, Math.PI / 2));
     b.box(-0.04, 2 * tF + 3.2, -15.33, 0.04, 2 * tF + 3.85, -15.3, 'black', { collide: false, ao: false });

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { stairs } from '../props.js';
-import { Kit, Plan, BASE, T, SLAB, PLAIN, straightStair, topRail, awning, gableRoof, hipRoof } from '../kit.js';
+import { Kit, Plan, BASE, T, SLAB, PLAIN, straightStair, topRail, awning, gableRoof, hipRoof, bays } from '../kit.js';
 
 // =============================================================================
 // Parts the Search and Destroy maps share: houses you walk through (built with the building kit, furnished),
@@ -21,7 +21,7 @@ export function seeded(seed, fn) {
 export function roofTerrace(K, x0, z0, x1, z1, y, o = {}) {
   const e = T / 2, X0 = x0 - e, X1 = x1 + e, Z0 = z0 - e, Z1 = z1 + e, par = o.par ?? 0.8, t = 0.26, wall = o.wall || 'adobe';
   K.box(X0, y - SLAB, Z0, X1, y, Z1, o.floor || 'clay', { ...PLAIN, faces: '+y' });
-  K.box(X0, y - SLAB, Z0, X1, y, Z1, 'plasterWhite', { ...DECO, faces: '-y+x-x+z-z' });
+  K.box(X0, y - SLAB, Z0, X1, y, Z1, 'plasterWhite', { ...DECO, faces: '-y' });   // (its edges are the walls' own faces)
   if (par <= 0) return;
   const gaps = o.gaps || [];
   const run = (side, a0, a1, emit) => {
@@ -53,7 +53,82 @@ export function roofTerrace(K, x0, z0, x1, z1, y, o = {}) {
 //   look: what goes to the kit's storeys (timber, plinth, shutter, flower, winW, winH, winY, bay, frame, leaf)
 // ---------------------------------------------------------------------------
 const FACE = { N: 0, E: 1, S: 2, W: 3 };
-export function house(b, out, s) {
+const NORMAL = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
+const NEAR = 0.8;   // closer than this, a window looks straight onto the wall in front of it
+const topOf = (s) => BASE + (s.fl || 1) * H;
+const highOf = (s) => topOf(s) + (s.roof && s.roof !== 'flat' ? (s.rise ?? 2.6) : (s.par ?? ((s.fl || 1) === 2 ? 1.1 : 0.8)));
+
+// ---------------------------------------------------------------------------
+// The houses of a town. Where two stand against each other they share one wall: the later one steps back by a
+// wall's thickness, so no two walls stand in one place (nothing flickers) and no roof reaches into the next house.
+// No window opens onto a wall right in front of it, the solid things built before (blocks, walls) count as well.
+// ---------------------------------------------------------------------------
+export function houses(b, out, list) {
+  const R = list.map((s) => s.r.slice()), adj = list.map(() => ({ N: [], E: [], S: [], W: [] }));
+  const add = (i, side, a0, a1, top) => { if (a1 - a0 > 0.3) adj[i][side].push([a0, a1, top]); };
+  // which sides of rect a does rect c stand against: [side of a, side of c, gap, from, to]
+  const against = (a, c) => {
+    const ox = Math.min(a[2], c[2]) - Math.max(a[0], c[0]), oz = Math.min(a[3], c[3]) - Math.max(a[1], c[1]), res = [];
+    if (oz > 0.3) {
+      if (c[0] - a[2] > -0.06 && c[0] - a[2] < NEAR) res.push(['E', 'W', c[0] - a[2], Math.max(a[1], c[1]), Math.min(a[3], c[3])]);
+      if (a[0] - c[2] > -0.06 && a[0] - c[2] < NEAR) res.push(['W', 'E', a[0] - c[2], Math.max(a[1], c[1]), Math.min(a[3], c[3])]);
+    }
+    if (ox > 0.3) {
+      if (c[1] - a[3] > -0.06 && c[1] - a[3] < NEAR) res.push(['S', 'N', c[1] - a[3], Math.max(a[0], c[0]), Math.min(a[2], c[2])]);
+      if (a[1] - c[3] > -0.06 && a[1] - c[3] < NEAR) res.push(['N', 'S', a[1] - c[3], Math.max(a[0], c[0]), Math.min(a[2], c[2])]);
+    }
+    return res;
+  };
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = R[i], c = R[j];
+    if (Math.min(a[2], c[2]) - Math.max(a[0], c[0]) > 0.06 && Math.min(a[3], c[3]) - Math.max(a[1], c[1]) > 0.06) console.warn('sd: houses overlap', list[i].r, list[j].r);
+    for (const [sa, sc, gap, a0, a1] of against(a, c)) {
+      add(i, sa, a0, a1, highOf(list[j])); add(j, sc, a0, a1, highOf(list[i]));
+      if (gap < 0.06) { const k = { W: 0, N: 1, E: 2, S: 3 }[sc]; c[k] += (sc === 'W' || sc === 'N' ? 1 : -1) * (T - gap); }
+    }
+  }
+  // the solid things already standing: walls and blocks as high as a window
+  for (const q of (b.col && b.col.raw) || []) {
+    const [x0, y0, z0, x1, y1, z1] = q;
+    if (y0 > 1.0 || y1 < 1.8 || y1 - y0 > 20) continue;   // (not the ground, not the map's invisible edge)
+    for (let i = 0; i < list.length; i++) for (const [sa, , , a0, a1] of against(R[i], [x0, z0, x1, z1])) if (a1 - a0 >= 0.8) add(i, sa, a0, a1, y1);
+  }
+  return list.map((s, i) => house(b, out, { ...s, r: R[i] }, adj[i]));
+}
+
+// the world side (N/E/S/W) a side of the house's own frame looks to
+const sideOf = (K, ls) => {
+  const [ox, oz] = K.w(0, 0), [x, z] = K.w(...NORMAL[ls]), dx = Math.round(x - ox), dz = Math.round(z - oz);
+  return dx > 0 ? 'E' : dx < 0 ? 'W' : dz > 0 ? 'S' : 'N';
+};
+// leave out the windows of a storey that would look straight onto a wall
+function blind(P, K, adj) {
+  const sill = K.y + P.y + P.winY;
+  for (const r of P.rooms) for (const ls of ['n', 's', 'w', 'e']) {
+    const spec = r.win[ls];
+    if (spec === false || (r.noWin && !spec)) continue;
+    const ws = sideOf(K, ls), walls = adj[ws].filter((q) => q[2] > sill + 0.3);
+    if (!walls.length) continue;
+    const S = { bay: P.bay, w: P.winW, ...(spec || {}) }, horiz = ls === 'n' || ls === 's';
+    const p = horiz ? r.x0 : r.z0, q = horiz ? r.x1 : r.z1, line = { n: r.z0, s: r.z1, w: r.x0, e: r.x1 }[ls];
+    if (q - p - 0.7 < S.w + 0.2) continue;
+    const list = S.at || bays(p + 0.35, q - 0.35, S.bay), along = ws === 'N' || ws === 'S' ? 0 : 1;
+    const at = (c) => K.w(horiz ? c : line, horiz ? line : c)[along];
+    const keep = list.filter((c) => {
+      const A = at(c - S.w / 2), B2 = at(c + S.w / 2), lo = Math.min(A, B2) - 0.3, hi = Math.max(A, B2) + 0.3;
+      return !walls.some(([u0, u1]) => u0 < hi && u1 > lo);
+    });
+    if (keep.length < list.length) P.win(r, ls, keep.length ? { ...(spec || {}), at: keep } : false);
+  }
+}
+// the sides of the house's own frame with something at least as high as its eaves right against them
+function shutSides(K, adj, top) {
+  const o = {};
+  for (const ls of ['n', 's', 'w', 'e']) o[ls] = adj[sideOf(K, ls)].some((q) => q[1] - q[0] >= 1.0 && q[2] >= top - 0.1);
+  return o;
+}
+
+export function house(b, out, s, adj = null) {
   const [x0, z0, x1, z1] = s.r, rot = FACE[s.face], sideways = rot % 2 === 1;
   const w = sideways ? z1 - z0 : x1 - x0, d = sideways ? x1 - x0 : z1 - z0, hw = w / 2, hd = d / 2;
   const K = new Kit(b, out, { x: (x0 + x1) / 2, z: (z0 + z1) / 2, rot });
@@ -85,6 +160,13 @@ export function house(b, out, s) {
   }
   // a low plinth (no foundation into the ground: a tunnel may run under the town)
   K.box(-hw - T / 2 - 0.04, 0, -hd - T / 2 - 0.04, hw + T / 2 + 0.04, BASE, hd + T / 2 + 0.04, s.base || 'sandstone', { ...PLAIN, faces: '+x-x+z-z' });
+  if (adj && s.roofStair && fl === 1) {
+    // the stairs up the outside and their wall stand in front of that side
+    const ls = s.roofStair, ws = sideOf(K, ls), along = ws === 'N' || ws === 'S' ? 0 : 1, sx = ls === 'e' ? hw : -hw;
+    const a = K.w(sx, hd - 4.7)[along], c = K.w(sx, hd)[along];
+    adj = { ...adj, [ws]: [...adj[ws], [Math.min(a, c), Math.max(a, c), BASE + H + 0.9]] };
+  }
+  if (adj) for (const P of plans) blind(P, K, adj);
   for (const P of plans) P.build();
   const top = BASE + fl * H;
   if (roof === 'flat') {
@@ -101,11 +183,24 @@ export function house(b, out, s) {
     // beam ends under the roof along the front, the look of the old desert town
     if (s.beams !== false) for (let a = -hw + 0.6; a < hw - 0.3; a += 1.1) K.box(a - 0.07, top - 0.42, hd + T / 2, a + 0.07, top - 0.3, hd + T / 2 + 0.3, 'woodDark', { ...DECO });
   } else {
-    const o = { along: s.ridge || (w >= d ? 'x' : 'z'), rise: s.rise ?? 2.6, mat: s.roofMat || 'rooftile', wall: s.gableWall || ext };
+    const along = s.ridge || (w >= d ? 'x' : 'z');
+    const o = { along, rise: s.rise ?? 2.6, mat: s.roofMat || 'rooftile', wall: s.gableWall || ext };
+    if (adj) {
+      // against a house as high as this one the roof stops at the wall: no eaves into the next house
+      const shut = shutSides(K, adj, top);
+      if (roof === 'hip') { if (shut.n || shut.s || shut.w || shut.e) o.over = 0.05; }
+      else {
+        if ((along === 'x' ? ['w', 'e'] : ['n', 's']).some((q) => shut[q])) o.rake = 0;
+        if ((along === 'x' ? ['n', 's'] : ['w', 'e']).some((q) => shut[q])) o.over = 0.05;
+      }
+    }
     if (roof === 'hip') hipRoof(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o);
     else gableRoof(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o);
   }
-  if (shop) { const c = s.awning || ['awningRed', 'paintWhite']; awning(K, -hw + 0.3, hw - 0.3, hd + T / 2, BASE + 2.9, 1.3, c[0], c[1]); }
+  if (shop) {
+    const c = s.awning || ['awningRed', 'paintWhite'], y = BASE + 2.9, z = hd + T / 2, dep = 1.3;
+    awning(K, -hw + 0.3, hw - 0.3, z, y, dep, c[0], c[1]);   // (it holds whoever lands on it)
+  }
   return K;
 }
 

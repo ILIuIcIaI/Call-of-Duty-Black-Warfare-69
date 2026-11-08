@@ -171,7 +171,7 @@ export default {
     B.box(-3, 0, -9.6, 3, 1.1, -8.9, 'woodDark', { pen: 0.6 });
     B.box(-3.1, 1.1, -9.7, 3.1, 1.16, -8.8, 'marble', flat);
     for (const x of [-1.6, 0, 1.6]) B.box(x - 0.26, 1.16, -9.35, x + 0.26, 1.5, -9.3, 'black', flat);
-    B.box(-4.2, 0, -11.2, 4.2, 0.012, -10.2, 'carpetBlue', flat);
+    B.box(-4.2, 0.012, -11.2, 4.2, 0.02, -10.2, 'carpetBlue', flat);
     // the main entrance: a porch out into the forecourt
     for (const s of [-1, 1]) {
       B.box(s * 3 - 0.15, 0, -18.5, s * 3 + 0.15, 3.2, -16, 'facade');
@@ -283,7 +283,7 @@ export default {
     b.pointLight(-16, 2.8, -8.5, 0xfff0d8, 2, 9);
     // lobby side: the lift core by the entrance, seating, planters
     b.box(-10, 0, -IZ, -6.4, C2, -12, 'plasterGrey');
-    for (const y of [0, F2]) for (const x of [-9.0, -7.4]) b.box(x - 0.55, y, -12.03, x + 0.55, y + 2.2, -12.0, 'metal', flat);
+    for (const y of [0, F2]) for (const x of [-9.0, -7.4]) b.box(x - 0.55, y, -12.0, x + 0.55, y + 2.2, -11.97, 'metal', flat);
     sofa(b, -4.2, -3.9, 0, 'z', -1); sofa(b, -4.2, 3.9, 0, 'z', -1);
     plant(b, -4.2, -6.0, 0, 1.3); plant(b, -4.2, 6.0, 0, 1.3);
     lights(b, -10, -10, -7, 10, C1 - 0.02, 3.4);

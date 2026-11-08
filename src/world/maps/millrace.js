@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MATERIALS } from '../mapBuilder.js';
 import { projectUV } from '../textures.js';
 import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
+import { groundRing, hills, rockWall } from './surround.js';
 
 // =============================================================================
 // MILLRACE: a sawmill on a mill brook in a pine forest, early morning. Made for the 2 vs 2 capture mode (and small
@@ -135,6 +136,17 @@ export default {
     boundary(B, -28, 20.6, 28, 22);
     boundary(B, -28.5, -21, -27, 22);
     boundary(B, 27, -21, 28.5, 22);
+    // the valley: rock walls rise where the map ends (the forest stands on top of them), the forest floor goes on
+    // out to the haze, wooded hills beyond
+    rockWall(B, 'z', -27, -21, 22, -1, 7); rockWall(B, 'z', 27, -21, 22, 1, 7);
+    rockWall(B, 'x', -19, -27, -8.5, -1, 7); rockWall(B, 'x', -19, 8.5, 27, -1, 7);
+    rockWall(B, 'x', 20.6, -27, -CH - 0.7, 1, 6); rockWall(B, 'x', 20.6, CH + 0.7, 27, 1, 6);
+    // where the brook leaves the map: a stone arch over it, a grate across it
+    B.box(-CH - 0.7, 1.4, 20.6, CH + 0.7, 2.6, 22.2, 'fieldstone');
+    B.box(-CH, BED, 20.75, CH, 1.4, 20.85, 'grate');
+    groundRing(B, [-40, -34, 40, 34], 'needles');
+    hills(B, [[-120, -90, 70, 22, 50], [-40, -150, 80, 26, 50], [90, -120, 60, 20, 60], [140, 0, 50, 24, 80], [110, 110, 70, 26, 50], [10, 160, 80, 28, 50], [-110, 120, 60, 22, 60], [-150, 10, 50, 26, 80]], 'needles');
+    for (const [x, z, h] of [[-44, -30, 14], [-50, -10, 15], [-46, 12, 13], [-52, 30, 15], [44, -26, 14], [50, -4, 15], [46, 18, 13], [52, 36, 14], [-20, -44, 14], [6, -48, 15], [24, -42, 13], [-14, 44, 15], [12, 46, 14], [30, 42, 13], [-36, 46, 14]]) pine(B, x, z, h);
 
     // ------------------------------------------------------------- A: the saw hall over the brook
     B.box(-8.2, 0, MZ0 + 0.3, 8.2, 0.02, MZ1 - 0.3, 'woodDark', flat);
@@ -244,7 +256,7 @@ export default {
     wallX(b, -8.5, 0, MZ0 + 0.15, 0, 1.0, 0.36, 'fieldstone', [], noCol);
     for (const x of [-5.6, -2.0]) { // windows of the north wall, up at the loft (shown, not open)
       b.box(x - 0.7, 3.7, MZ0 + 0.29, x + 0.7, 4.8, MZ0 + 0.31, 'black', noCol);
-      b.box(x - 0.78, 3.62, MZ0 + 0.28, x + 0.78, 4.88, MZ0 + 0.3, 'trimWhite', noCol);
+      b.box(x - 0.78, 3.62, MZ0 + 0.3, x + 0.78, 4.88, MZ0 + 0.32, 'trimWhite', noCol);
     }
     for (const [z, y, w, h] of [[-17.5, 0, 1.6, 2.3], [-17.5, LOFT, 1.6, 2.1]]) { // door trims on the outside
       b.box(-8.56, y + h, z - w / 2 - 0.1, -8.5, y + h + 0.1, z + w / 2 + 0.1, 'trimWhite', noCol);
@@ -329,8 +341,8 @@ export default {
     b.box(-26.5, 0, -20, -20.4, 0.012, 21, 'gravel', flat);
     logPile(b, -19.2, -8.0, -16.4, 8.0, 3.5, 'x');
     for (const s of [-1, 1]) logPile(b, -24.2, s > 0 ? 8.0 : -9.6, -19.2, s > 0 ? 9.6 : -8.0, 3.5, 'z');
-    for (const [z, y, l] of [[-6.6, 3.82, 3.2], [-3.1, 3.8, 3.4], [0.6, 3.84, 3.1], [4.4, 3.8, 3.3], [7.2, 3.82, 3.0]]) log(b, -17.8, y, z, l, 0.34, 'x');
-    for (const s of [-1, 1]) for (const [x, y] of [[-23.4, 3.82], [-21.0, 3.8]]) log(b, x, y, s * 8.8, 1.6, 0.34, 'z');
+    for (const [z, y, l] of [[-6.6, 3.82, 3.2], [-3.1, 3.8, 3.4], [0.6, 3.84, 3.1], [4.4, 3.8, 3.3], [7.2, 3.82, 3.0]]) { log(b, -17.8, y, z, l, 0.34, 'x'); b.box(-17.8 - l / 2, 3.5, z - 0.34, -17.8 + l / 2, y + 0.3, z + 0.34, 'barkLog', { visual: false, pen: 1 }); }
+    for (const s of [-1, 1]) for (const [x, y] of [[-23.4, 3.82], [-21.0, 3.8]]) { log(b, x, y, s * 8.8, 1.6, 0.34, 'z'); b.box(x - 0.34, 3.5, s * 8.8 - 0.8, x + 0.34, y + 0.3, s * 8.8 + 0.8, 'barkLog', { visual: false, pen: 1 }); }
     logTruck(b, -26.6, -17.4, -17.6);
     b.box(-26.6, 0, 12.4, -21.6, 3.0, 18.2, 'barnGrey');                                         // woodcutters' hut
     const hut = new THREE.Shape();

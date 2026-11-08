@@ -24,6 +24,7 @@ const WZ = 16.6;  // the well
 const HW = 5.6;   // walls of the market hall
 
 const flat = { collide: false, ao: false };
+const cloth = { ao: false, noBullet: true };   // awnings and canopies: they hold whoever lands on them, bullets go through
 const JAR = new THREE.LatheGeometry([[0, 0], [0.16, 0.02], [0.26, 0.2], [0.29, 0.42], [0.22, 0.66], [0.1, 0.78], [0.12, 0.86], [0.09, 0.88]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
 const SACK = new THREE.CylinderGeometry(0.22, 0.27, 0.5, 9);
 const HEAP = new THREE.ConeGeometry(0.21, 0.2, 9);
@@ -101,7 +102,7 @@ function trim(b, side, at, o, t, shut) {
     if (ax) b.box(a0, y0, lo, a1, y1, hi, mat, flat); else b.box(lo, y0, a0, hi, y1, a1, mat, flat);
   };
   const top = (o.y || 0) + (o.h ?? 2.3);
-  if (!o.y) put(o.c - o.w / 2 - 0.22, o.c + o.w / 2 + 0.22, top, top + 0.16, 0.06, -t - 0.06, 'woodDark');
+  if (!o.y) put(o.c - o.w / 2 - 0.22, o.c + o.w / 2 + 0.22, top - 0.02, top + 0.16, 0.06, -t - 0.06, 'woodDark');
   else {
     put(o.c - o.w, o.c - o.w / 2, o.y, top, 0.01, 0.06, shut);
     put(o.c + o.w / 2, o.c + o.w, o.y, top, 0.01, 0.06, shut);
@@ -175,7 +176,7 @@ function stall(b, x, z, along, awning, k = 0) {
   const ax = along === 'x', hx = ax ? 1.1 : 0.45, hz = ax ? 0.45 : 1.1, px = ax ? 1.05 : 0.68, pz = ax ? 0.68 : 1.05;
   b.box(x - hx, 0, z - hz, x + hx, 0.9, z + hz, 'woodDark', { pen: 0.6 });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(x + sx * px - 0.045, 0, z + sz * pz - 0.045, x + sx * px + 0.045, 2.3, z + sz * pz + 0.045, 'woodDark', flat);
-  b.box(x - px - 0.18, 2.3, z - pz - 0.18, x + px + 0.18, 2.36, z + pz + 0.18, awning, flat);
+  b.box(x - px - 0.18, 2.3, z - pz - 0.18, x + px + 0.18, 2.36, z + pz + 0.18, awning, cloth);
   for (let i = -1; i <= 1; i++) sack(b, x + (ax ? i * 0.62 : 0), z + (ax ? 0 : i * 0.62), k + i + 1, 0.9, false);
 }
 function cart(b, x, z, along) {
@@ -357,7 +358,7 @@ export default {
     // ================================================================ caravan yard (spawn)
     // stable along the wall to the north of the gate
     for (const z of [5.2, 10, 14.8]) b.box(-28.55, 0, z - 0.12, -28.31, 3.0, z + 0.12, 'woodDark');
-    b.box(-31.5, 3.0, 4.8, -28.1, 3.14, 15.2, 'woodDark', { collide: false });
+    b.box(-31.5, 3.0, 4.8, -28.1, 3.14, 15.2, 'woodDark', { ao: false });
     for (const z of [4.8, 7.4, 10, 12.6, 15.2]) b.box(-31.5, 2.86, z - 0.08, -28.0, 3.0, z + 0.08, 'woodDark', flat);
     b.box(-31.4, 0, 5.8, -30.2, 0.8, 7.4, 'hay'); b.box(-31.4, 0.8, 6.0, -30.4, 1.6, 7.2, 'hay');
     b.box(-31.4, 0, 12.0, -30.2, 0.8, 14.4, 'hay');
@@ -365,7 +366,7 @@ export default {
     b.box(-30.0, 0.5, 8.5, -29.4, 0.56, 10.7, 'water', flat);
     // canopy over rugs to the south of the gate
     for (const [x, z] of [[-30.6, -14.6], [-26.4, -14.6], [-30.6, -6.4], [-26.4, -6.4]]) b.box(x - 0.08, 0, z - 0.08, x + 0.08, 2.7, z + 0.08, 'woodDark');
-    b.box(-31.0, 2.7, -15.0, -26.0, 2.76, -6.0, 'awningBlue', flat);
+    b.box(-31.0, 2.7, -15.0, -26.0, 2.76, -6.0, 'awningBlue', cloth);
     b.box(-30.3, 0, -13.8, -26.9, 0.02, -7.2, 'rug', flat);
     b.box(-29.4, 0, -11.2, -27.8, 0.4, -9.6, 'woodDark');
     for (const z of [-13, -8.2]) b.box(-30.1, 0, z - 0.5, -29.3, 0.3, z + 0.5, 'canvasRed');

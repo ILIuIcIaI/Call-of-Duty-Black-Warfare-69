@@ -244,8 +244,8 @@ function city(b, out) {
   on(stadthaus, -10, 63, 0, { floors: 3, shop: true });
   on(stadthaus, 10, 63, 0, { floors: 4 });
   on(parking, 46.5, 48, 0, { w: 30, d: 24 });
-  on(bar, 36, 67);
-  on(garage, 55, 67);
+  on(bar, 36, 69.5);   // (far enough from the parking deck that its back doors open onto a lane)
+  on(garage, 55, 69.5);
   // ---- the plaza: fountain, statues, market stalls, trees
   const P = 10;
   A.box(-5, 0, P - 4.5, 5, 0.55, P + 4.5, 'marble');
@@ -259,7 +259,7 @@ function city(b, out) {
   for (const [mx, mz, cm] of [[-9, 2, 'canvasRed'], [9, 18, 'canvasGreen'], [9, 2, 'canvasBlue'], [-9, 18, 'canvasYellow']]) {
     A.box(mx - 2.2, 0, mz - 0.9, mx + 2.2, 1.0, mz + 0.9, 'wood', { pen: 0.7, skirt: false });
     for (const [ax, az] of [[-2, -0.8], [2, -0.8], [-2, 0.8], [2, 0.8]]) A.box(mx + ax - 0.06, 0, mz + az - 0.06, mx + ax + 0.06, 2.6, mz + az + 0.06, 'woodDark', { ...PLAIN, collide: false });
-    A.box(mx - 2.6, 2.6, mz - 1.3, mx + 2.6, 2.72, mz + 1.3, cm, { ...PLAIN, collide: false });
+    A.box(mx - 2.6, 2.6, mz - 1.3, mx + 2.6, 2.72, mz + 1.3, cm, { ...PLAIN, noBullet: true });   // (the cloth holds whoever lands on it, bullets go through)
     A.spot(mx, 1.0, mz, { indoor: false, kind: 'floor' });
   }
   // ---- the streets: lamps, barriers, a few cars and crates to run between
@@ -309,7 +309,7 @@ function harbor(b, out) {
     if (i % 2) container(b, cx, (sz0 + sz1) / 2 - 4, 'x', cols[(i + 1) % 6], deck + 2.6);
     new Kit(b, out, {}).spot(cx, deck, sz0 + 1.6, { indoor: false, kind: 'room' });
   }
-  radioShack(b, out, { x: sx1 - 11, z: (sz0 + sz1) / 2, y: deck - 0.15 });
+  radioShack(b, out, { x: sx1 - 11, z: (sz0 + sz1) / 2, y: deck - 0.13 });   // (its floor a hair over the deck, not in it)
   // gangway: broad stairs from the quay up to the deck
   stairs(b, p.x - 10, Z + 34, '+z', 3.4, deck - y, 6, 'metalDark', y);
   { const g = new Kit(b, out, { x: p.x - 10, z: Z + 34, y }); sideRail(g, -1.7, deck - y, 6, 'metalYellow'); sideRail(g, 1.7, deck - y, 6, 'metalYellow'); }
@@ -362,7 +362,7 @@ function base(b, out) {
     s.box(-2.6, 7, -2.6, 2.6, top, 2.6, 'woodDark', PLAIN);
     for (const [ax, az, bx, bz] of [[-2.6, -2.6, 2.6, -2.5], [-2.6, 2.5, 2.6, 2.6], [-2.6, -2.6, -2.5, 2.6]]) s.box(ax, top, az, bx, 8.1, bz, 'woodDark', { ...PLAIN, pen: 0.7 });
     for (const [ax, az] of [[-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5], [2.5, 2.5]]) s.box(ax - 0.05, top, az - 0.05, ax + 0.05, 9.6, az + 0.05, 'metalDark', { ...PLAIN, collide: false });
-    s.box(-2.8, 9.6, -2.8, 2.8, 9.8, 2.8, 'metalDark', { ...PLAIN, collide: false });
+    s.box(-2.8, 9.6, -2.8, 2.8, 9.8, 2.8, 'metalDark', { ...PLAIN });   // (whoever climbs onto the roof stands on it)
     const f = s.sub(3.5, 8, 2);
     stepFlight(f, 1.7, top, 8.6, 'metalDark', [-1]);
     sideRail(f, 0.85, top, 8.6, 'metalDark', 0, 0.58);
@@ -390,7 +390,7 @@ function factory(b, out) {
     A.geom(new THREE.ConeGeometry(4.3, 1.8, 14), 'metalDark', mtx(sx, 13.9, sz));
     A.spot(sx, 0, sz + 6, { indoor: false, kind: 'floor' });
   }
-  for (const [cx, cz] of [[X - 1, Z - 34], [X - 1, Z - 16]]) {
+  for (const [cx, cz] of [[X + 2, Z - 34], [X + 2, Z - 16]]) {   // (clear of the big hall's east gate)
     A.geom(new THREE.CylinderGeometry(1.2, 2, 26, 12), 'brickDark', mtx(cx, 13, cz));
     A.box(cx - 1.3, 0, cz - 1.3, cx + 1.3, 26, cz + 1.3, 'brickDark', { visual: false });
   }

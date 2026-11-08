@@ -48,6 +48,7 @@ function tank(b, x, z, r = 2.2, h = 4.6) {
   b.geom(new THREE.CylinderGeometry(r, r, h, 24), 'metalWhite', mtx(x, h / 2, z));
   b.geom(new THREE.CylinderGeometry(r + 0.05, r + 0.05, 0.15, 24), 'metalDark', mtx(x, h - 0.1, z));
   b.geom(new THREE.CylinderGeometry(r * 0.96, r, 0.5, 24), 'metalWhite', mtx(x, h + 0.25, z));
+  b.box(x - r * 0.68, h, z - r * 0.68, x + r * 0.68, h + 0.5, z + r * 0.68, 'metalWhite', { visual: false, pen: 0.3 });   // (the lid holds you)
   for (const y of [0.2, h - 0.2]) b.box(x + r - 0.02, 0.2, z - 0.25, x + r + 0.08, h, z - 0.21, 'metalDark', flat);
   for (let y = 0.4; y < h; y += 0.35) b.box(x + r + 0.02, y, z - 0.25, x + r + 0.06, y + 0.04, z + 0.25, 'metalDark', flat);
   b.box(x + r + 0.02, 0.2, z + 0.21, x + r + 0.08, h, z + 0.25, 'metalDark', flat);
@@ -109,6 +110,7 @@ export default {
     // ------------------------------------------------------------- the coal heap, its top across the middle
     B.box(-24.6, 2.5, -2.0, -21.4, 3.5, 2.0, 'coal');
     for (const [x, z, s] of [[-23.0, 0, 1.3], [-24.0, 0.6, 0.8], [-22.0, -0.7, 0.9]]) B.geom(new THREE.SphereGeometry(s, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'coal', mtx(x, 3.5, z, 0, 1.2, 0.5, 1));
+    B.box(-24.3, 3.5, -1.0, -21.7, 3.95, 1.0, 'coal', { visual: false });   // (the heap holds you)
 
     for (const b of [B, B.mirroredZ()]) this.half(b);
   },
@@ -123,7 +125,7 @@ export default {
       wallZ(b, 0, HZ - 0.4, x, 0, 5, 0.4, 'brickDark', [{ c: 0, w: 3, h: 3.6 }]);
       wallZ(b, 0, HZ - 0.4, x, 5, HH - 5, 0.4, 'corrugated', []);
     }
-    for (const x of [-10, 8]) b.box(x - 1.7, 3.6, HZ, x + 1.7, 3.8, HZ + 1.0, 'metalDark', flat);
+    for (const x of [-10, 8]) b.box(x - 1.7, 3.6, HZ, x + 1.7, 3.8, HZ + 1.0, 'metalDark', { ao: false });
     b.box(-HX, HH - 0.25, 0, HX, HH, 3, 'corrugated');
     b.glassPane(-HX + 0.4, HH - 0.2, 3, HX - 0.4, HH - 0.15, 5);
     b.box(-HX, HH - 0.25, 5, HX, HH, HZ, 'corrugated');
@@ -162,7 +164,7 @@ export default {
     wallZ(b, 11.4, 15.1, -3.3, 0, 3.4, 0.4, 'brick', [{ c: 13.5, w: 1.8, h: 2.4 }]);
     wallZ(b, 11.4, 15.1, 3.3, 0, 3.4, 0.4, 'brick', [{ c: 13.5, w: 1.8, h: 2.4 }]);
     b.box(-3.7, 3.4, 11.0, 3.7, 3.65, 15.5, 'concreteDark');
-    b.box(-3.1, 0, 11.4, 3.1, 0.012, 15.1, 'tilesCheck', flat);
+    b.box(-3.1, 0.012, 11.4, 3.1, 0.018, 15.1, 'tilesCheck', flat);
     for (const x of [-1.6, 1.6]) { b.box(x - 0.6, 0, 13.8, x + 0.6, 1.1, 14.9, 'machineBlue', { pen: 0.3 }); b.geom(new THREE.CylinderGeometry(0.22, 0.22, 2.3, 10), 'metal', mtx(x, 2.3, 14.3)); }
     b.box(-2.9, 2.6, 14.2, 2.9, 2.9, 14.5, 'metal', flat);
     b.box(-0.3, 2.95, 13.2, 0.3, 3.05, 13.8, 'lampOn', flat);
@@ -170,6 +172,7 @@ export default {
     // pipe rack along the back of the yard, high enough to walk under
     for (let x = -14; x <= 14; x += 7) for (const z of [17.5, 18.5]) b.box(x - 0.15, 0, z - 0.15, x + 0.15, 4.7, z + 0.15, 'metalDark');
     b.box(-HX, 4.4, 17.3, HX, 4.7, 18.7, 'metalDark', { pen: 0.4 });
+    b.box(-HX, 4.7, 17.3, HX, 5.1, 18.7, 'metal', { visual: false, pen: 0.4 });   // (whoever gets up there walks on the pipes, not in them)
     for (const [z, r, m] of [[17.6, 0.3, 'metal'], [18.15, 0.22, 'metalYellow'], [18.5, 0.16, 'metalRed']]) b.geom(new THREE.CylinderGeometry(r, r, 30, 10), m, mtx(0, 4.7 + r, z, 0, 1, 1, 1, 0, Math.PI / 2));
     // things to hide behind
     barrier(b, -5.6, 9.6, 'x', 3); barrier(b, 5.6, 9.6, 'x', 3);
@@ -218,7 +221,7 @@ export default {
     // the conveyor gallery from the shed into the tower, 2 m up: under it you walk, it screens the coal bunker (a capture
     // point) from the car park, and from the dozer's cab you climb onto it and on to the shed's roof
     b.box(-26.4, 2.0, 11.4, -19.6, 4.0, 13.0, 'corrugated');
-    b.box(-26.4, 2.0, 11.36, -19.6, 2.15, 13.04, 'metalDark', flat);
+    b.box(-26.42, 1.98, 11.36, -19.58, 2.15, 13.04, 'metalDark', flat);
     dozer(b, -23.0, 10.0);   // (its cab clear of the gallery)
     for (const [x, z] of [[-29.6, 6.2], [-17.0, 16.5]]) b.geom(new THREE.SphereGeometry(1.4, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'coal', mtx(x, 0, z, 0, 1.2, 0.7, 1));
     for (const [x, z] of [[-29.6, 6.2], [-17.0, 16.5]]) b.box(x - 1.0, 0, z - 0.8, x + 1.0, 0.9, z + 0.8, 'coal', { visual: false });
@@ -237,7 +240,7 @@ export default {
     b.glassPane(18.18, 1.2, 0.4, 18.22, 2.3, 2.0); b.glassPane(25.78, 1.2, 0.4, 25.82, 2.3, 2.0);
     b.glassPane(18.9, 1.2, 2.78, 20.3, 2.3, 2.82); b.glassPane(23.7, 1.2, 2.78, 25.1, 2.3, 2.82);
     b.box(17.8, 3.4, 0, 26.2, 3.65, 3.2, 'concreteDark');
-    b.box(18.4, 0, 0, 25.6, 0.012, 2.6, 'tilesCheck', flat);
+    b.box(18.4, 0.012, 0, 25.6, 0.018, 2.6, 'tilesCheck', flat);
     b.box(18.6, 0, 1.6, 19.4, 1.0, 2.4, 'metalDark', { pen: 0.4 });
     b.box(18.62, 1.0, 1.7, 19.38, 1.3, 2.3, 'screen', flat);
     // transformers behind a fire wall, gantries, insulators

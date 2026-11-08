@@ -100,7 +100,7 @@ export default {
     for (let x = -29.5; x < 30; x += 1) B.box(x - 0.12, TRK, -19.4, x + 0.12, TRK + 0.08, -17.2, 'woodDark', noCol);
     B.box(-26.4, 7.0, -20.4, 26.4, 7.4, -8.6, 'concreteWhite');                                    // platform hall ceiling
     B.box(-10.4, 8.0, -8.6, 10.4, 8.4, 9.0, 'concreteWhite');                                      // transfer hall
-    B.box(-10.4, 7.0, -9.0, 10.4, 8.0, -8.6, 'tilesCream');                                        // (its wall over the platform's ceiling)
+    B.box(-10.4, 7.4, -9.0, 10.4, 8.0, -8.6, 'tilesCream');                                        // (its wall over the platform's ceiling)
     B.box(-10.4, 7.0, 9.0, 10.4, 7.4, 20.4, 'concreteWhite');                                      // ticket hall
     for (const [x0, z0, x1, z1] of [[-30, -24, 30, -9.0], [-30, 9.0, 30, 24], [-30, -9.0, -10.4, 9.0], [10.4, -9.0, 30, 9.0]]) B.box(x0, 7.4, z0, x1, 12, z1, 'concrete', hidden);
     B.box(-10.4, 8.4, -9.0, 10.4, 12, 9.0, 'concrete', hidden);                                     // (the transfer hall reaches higher)
@@ -295,7 +295,7 @@ export default {
     for (let z = -4; z <= 4; z += 4) tubeZ(b, z - 1.0, z + 1.0, 3.75, -22.4);
     b.pointLight(-22.4, 3.0, 0, 0xe8f4ff, 2.0, 9);
     // ------------------------------------------------------------- south: the corridor from the base, the shop, the toilets
-    b.box(-26.4, 3.6, 9.0, -10.4, 3.9, 20.4, 'concreteWhite');
+    b.box(-26.4, 3.6, 9.02, -10.4, 3.9, 20.4, 'concreteWhite');
     wallX(b, -26.4, -10.4, 13.2, 0, 3.6, 0.4, 'tilesCream', [{ c: -13.8, w: 1.6, y: 0, h: 2.4 }, { c: -11.6, w: 1.6, y: 0.9, h: 1.5 }, { c: -22.0, w: 1.0, y: 0, h: 2.1 }]);
     b.glassPane(-12.4, 0.9, 13.18, -10.8, 2.4, 13.22);
     b.box(-22.5, 0, 13.0, -21.5, 2.1, 13.02, 'woodBlue', noCol);

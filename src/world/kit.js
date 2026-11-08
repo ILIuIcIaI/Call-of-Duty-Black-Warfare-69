@@ -579,7 +579,7 @@ export function gableRoof(K, x0, z0, x1, z1, y, o = {}) {
   const k = along === 'x' ? K : K.sub(0, 0, 1);
   const [X0, X1, Z0, Z1] = along === 'x' ? [x0, x1, z0, z1] : [-z1, -z0, x0, x1];
   const mat = o.mat || 'rooftile', rise = o.rise ?? 2.3, over = o.over ?? 0.45, rake = o.rake ?? 0.3, zc = (Z0 + Z1) / 2, hd = (Z1 - Z0) / 2;
-  if (!o.hollow) k.box(X0, y - SLAB, Z0, X1, y, Z1, o.ceil || 'plasterWhite', PLAIN); // from inside you look at a ceiling, not through the roof
+  if (!o.hollow) k.box(X0, y - SLAB, Z0, X1, y, Z1, o.ceil || 'plasterWhite', { ...PLAIN, faces: '-y' }); // from inside you look at a ceiling, not through the roof (its edges are the walls' own faces: they flickered)
   const yr = y + rise, A = X0 - rake, E = X1 + rake, ZS = Z1 + over, ZN = Z0 - over, tile = MATERIALS[mat].scale || 2;
   const v = [];
   quad(v, [A, y, ZS], [E, y, ZS], [E, yr, zc], [A, yr, zc]);
@@ -610,7 +610,7 @@ export function hipRoof(K, x0, z0, x1, z1, y, o = {}) {
   const k = along === 'x' ? K : K.sub(0, 0, 1);
   const [X0, X1, Z0, Z1] = along === 'x' ? [x0, x1, z0, z1] : [-z1, -z0, x0, x1];
   const mat = o.mat || 'rooftile', rise = o.rise ?? 2.2, over = o.over ?? 0.5, tile = MATERIALS[mat].scale || 2;
-  k.box(X0, y - SLAB, Z0, X1, y, Z1, o.ceil || 'plasterWhite', PLAIN);
+  k.box(X0, y - SLAB, Z0, X1, y, Z1, o.ceil || 'plasterWhite', { ...PLAIN, faces: '-y' });   // (its edges are the walls' own faces)
   const A = X0 - over, E = X1 + over, ZS = Z1 + over, ZN = Z0 - over, hd = (ZS - ZN) / 2, zc = (ZN + ZS) / 2, ra = Math.min(A + hd, (A + E) / 2), re = Math.max(E - hd, (A + E) / 2), yr = y + rise;
   const v = [];
   quad(v, [A, y, ZS], [E, y, ZS], [re, yr, zc], [ra, yr, zc]);
@@ -629,7 +629,7 @@ export function hipRoof(K, x0, z0, x1, z1, y, o = {}) {
 // one slope, high at the back (z0)
 export function shedRoof(K, x0, z0, x1, z1, y, o = {}) {
   const mat = o.mat || 'metalDark', rise = o.rise ?? 1.4, over = o.over ?? 0.4, tile = MATERIALS[mat].scale || 2, wall = o.wall || 'plasterWhite';
-  K.box(x0, y - SLAB, z0, x1, y, z1, o.ceil || 'plasterWhite', PLAIN);
+  K.box(x0, y - SLAB, z0, x1, y, z1, o.ceil || 'plasterWhite', { ...PLAIN, faces: '-y' });   // (its edges are the walls' own faces)
   const A = x0 - over, E = x1 + over, ZS = z1 + over, ZN = z0 - 0.15, yr = y + rise;
   const v = [];
   quad(v, [A, y, ZS], [E, y, ZS], [E, yr, ZN], [A, yr, ZN]);
@@ -731,6 +731,9 @@ export function awning(K, a0, a1, z, y, depth, c1 = 'canvasRed', c2 = 'paintWhit
     K.geom(g, i % 2 ? c1 : c2, mtx(a0 + w * (i + 0.5), y - 0.275, z + depth / 2, 0, 1, 1, 1, ang));
     K.box(a0 + w * i, y - 0.75, z + depth, a0 + w * (i + 1), y - 0.55, z + depth + 0.015, i % 2 ? c1 : c2, { ...DECO, faces: '+z-z' });
   }
+  // the cloth holds whoever lands on it (two steps along its slope); bullets go through
+  K.box(a0, y - 0.2, z, a1, y - 0.12, z + depth / 2, c1, { visual: false, noBullet: true });
+  K.box(a0, y - 0.47, z + depth / 2, a1, y - 0.39, z + depth, c1, { visual: false, noBullet: true });
 }
 // a board with lettering. p is the board's center, nx/nz the direction it faces, both in this frame.
 const SIGN_ROW = { HOTEL: 0, BAR: 1, 'CAFÉ': 2, MARKT: 3, 'BÄCKEREI': 4, APOTHEKE: 5, BANK: 6, GARAGE: 7, TANKSTELLE: 8, SCHULE: 9, KLINIK: 10, RATHAUS: 11, FISCH: 12, POST: 13, PENSION: 14, LAGER: 15 };

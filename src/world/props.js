@@ -189,6 +189,11 @@ export function forklift(b, x, z, rot = 0) {
   solid(-0.55, -1.06, 0.55, -0.94, 2.2);
   b.geom(new THREE.BoxGeometry(1.2, 0.9, 1.8), 'metalYellow', mtx(x, 0.75, z, rot));
   b.geom(new THREE.BoxGeometry(1.1, 0.06, 1.2), 'metalDark', mtx(x + s * 0.2, 2.2, z + c * 0.2, rot));
+  { // the roof over the seat holds whoever climbs onto it
+    const xs = [], zs = [];
+    for (const lx of [-0.55, 0.55]) for (const lz of [-0.4, 0.8]) { xs.push(x + lx * c + lz * s); zs.push(z - lx * s + lz * c); }
+    b.box(Math.min(...xs), 2.17, Math.min(...zs), Math.max(...xs), 2.23, Math.max(...zs), 'metalDark', { visual: false });
+  }
   for (const k of [-0.5, 0.5]) b.geom(new THREE.BoxGeometry(0.06, 1.9, 0.06), 'metalDark', mtx(x + k * c, 1.25, z - k * s, rot));
   b.geom(new THREE.BoxGeometry(1.1, 2.2, 0.12), 'metalDark', mtx(x - s * 1.0, 1.1, z - c * 1.0, rot));
   b.geom(new THREE.BoxGeometry(0.9, 0.06, 1.1), 'metalDark', mtx(x - s * 1.55, 0.15, z - c * 1.55, rot));
