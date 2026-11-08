@@ -634,6 +634,8 @@ export class Game {
     const wdef = info && info.weapon;
     let strength = wdef ? Math.min(7, 2.2 + (wdef.damage[0] * (wdef.pellets || 1)) / 40) : 3;
     if (info && info.part === 'head') strength *= 1.15;
+    // (kept for the killcam: it lets the body fall again the same way)
+    this.lastDeath = { dir: dir.clone(), part: info && info.part, point: info && info.point ? info.point.clone() : undefined, strength, vel: p.vel.clone() };
     c.die(dir, { part: info && info.part, point: info && info.point, strength, vel: p.vel.clone() });
   }
 
@@ -644,8 +646,8 @@ export class Game {
     const ds = document.getElementById('death-screen');
     ds.classList.remove('hidden');
     document.getElementById('death-by').textContent = killer && killer !== this.player ? 'von ' + killer.name : '';
-    const kc = this.killcam && !(info && info.staged) && this.killcam.start(killer);
-    this.respawnT = kc ? 4.6 : 3.5;
+    const kc = this.killcam && !(info && info.staged) && this.killcam.start(killer, this.lastDeath);
+    this.respawnT = kc ? 5.7 : 3.5;
     this.weapons.vm.root.visible = false;
     if (this.br) this.br.onPlayerDown(killer);
     this.audio.setMuffle(0);

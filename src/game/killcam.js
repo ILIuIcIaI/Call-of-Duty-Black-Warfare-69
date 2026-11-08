@@ -5,11 +5,12 @@ import { WEAPONS } from '../weapons/defs.js';
 
 // =============================================================================
 // Killcam (Free for All, Team Deathmatch, Gun Game, Search and Destroy): after you fall, a moment of the death
-// cam, then the last seconds before it again through the eyes of whoever got you: his gun in the hands, his shots,
-// you as he saw you. A click skips it. Everybody's last seconds are kept all the time to be able to do that.
+// cam, then the last seconds before it again through the eyes of whoever got you: his gun in the hands walking as
+// he walked, his shots out of it, you as he saw you, every hit showing on you, and you falling the way you fell. A
+// click skips it. Everybody's last seconds are kept all the time to be able to do that.
 // =============================================================================
-const KEEP = 4.5, LEN = 3.2, WAIT = 0.7, HOLD = 0.6, RATE = 1 / 30;
-const _p = new THREE.Vector3(), _q = new THREE.Vector3();
+const KEEP = 4.5, LEN = 3.2, WAIT = 0.7, HOLD = 1.7, RATE = 1 / 30;
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _n = new THREE.Vector3();
 const MODES = new Set(['ffa', 'tdm', 'gun', 'sd']);
 const lerpAng = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
@@ -59,14 +60,19 @@ export class Killcam {
   }
 
   // ---- after your death
-  start(killer) {
+  // death: how the body went down (the same push the real one got), for the replay of the fall
+  start(killer, death) {
     const g = this.game;
     this.stop();
     if (!killer || killer === g.player || !g.match || !Killcam.wanted(g.match.mode)) return false;
     const end = g.time, a = (this.hist.get(killer) || []).filter((s) => s.t >= end - LEN - 0.2);
     const me = (this.hist.get(g.player) || []).filter((s) => s.t >= end - LEN - 0.2);
     if (a.length < 10) return false;
-    this.on = { killer, end, from: Math.max(a[0].t, end - LEN), a, me, shots: this.shots.filter((s) => s.s === killer && s.t >= end - LEN - 0.2), wait: WAIT, u: 0, playing: false, fired: 0 };
+    // (not from before he was put somewhere else: a spawn or a new round would sweep the eyes across the map)
+    let from = Math.max(a[0].t, end - LEN);
+    for (let i = a.length - 1; i > 0; i--) if (Math.hypot(a[i].x - a[i - 1].x, a[i].y - a[i - 1].y, a[i].z - a[i - 1].z) > 2.5) { from = Math.max(from, a[i].t); break; }
+    if (end - from < 0.6) return false;
+    this.on = { killer, end, from, a, me, death: death || null, shots: this.shots.filter((s) => s.s === killer && s.t >= end - LEN - 0.2), wait: WAIT, u: 0, playing: false, fired: 0, bob: 0, lastShot: -9 };
     return true;
   }
 
@@ -96,20 +102,45 @@ export class Killcam {
     const s = this.at(K.a, Math.min(T, K.end));
     cam.position.set(s.x, s.y + s.eye, s.z);
     cam.rotation.set(s.pitch, s.yaw, 0, 'YXZ');
-    // his gun: each of his shots kicks it, with the tracer and the flash it had
-    const W = g.weapons.vm;
+    cam.updateMatrixWorld();
+    // his gun, bobbing as he walked and pushed back while he fired (no smear on it: in a replay it reads as streaks)
+    const W = g.weapons.vm, vs = this.vmState(), sp = (s.st && s.st.speed) || 0;
+    K.bob += dt * (3.2 + Math.min(6, sp) * 1.25);
+    vs.bobPhase = K.bob; vs.bobAmt = Math.min(1, sp / 5); vs.crouch = !!(s.st && s.st.crouch); vs.firing = T - K.lastShot < 0.22;
+    W.update(dt, vs);
+    g.engine.filmShot = 0;
+    // each of his shots: the kick and the flash of his gun, the tracer out of its muzzle; a hit on you shows on you
     while (K.fired < K.shots.length && K.shots[K.fired].t <= T) {
       const sh = K.shots[K.fired++];
+      K.lastShot = sh.t;
       if (K.def) W.onShot(K.def, false);
-      g.fx.tracer(sh.from, sh.to, 420, 0.026);
-      g.fx.muzzleWorld(_p.copy(sh.from), 0.4, 1);
+      g.fx.tracer(this.muzzle(W, cam, _p) || sh.from, sh.to, 420, 0.026);
+      const me = this.at(K.me, sh.t);
+      if (me && this.ghost && !this.ghost.dead && Math.hypot(sh.to.x - me.x, sh.to.z - me.z) < 0.6 && sh.to.y > me.y - 0.1 && sh.to.y < me.y + 2.0) {
+        this.ghost.flinchHit(0.9);
+        g.fx.impact(sh.to, _n.subVectors(sh.from, sh.to).normalize(), 'flesh', 0.9);
+      }
     }
-    W.update(dt, this.vmState());
-    // you, as he saw you, until the moment you fell
-    const me = T < K.end ? this.at(K.me, T) : null;
-    if (me && this.ghost) { this.ghost.setVisible(true); this.ghost.update(dt, me.st, _q.set(me.x, me.y, me.z)); if (g.playerCorpse) g.playerCorpse.setVisible(false); }
-    else { if (this.ghost) this.ghost.setVisible(false); if (g.playerCorpse) g.playerCorpse.setVisible(true); }
+    // you, as he saw you, up to the moment you fell; then you fall as you fell (the body that lies there stays out
+    // of the picture meanwhile)
+    if (this.ghost && T < K.end) {
+      const me = this.at(K.me, T);
+      if (me) { this.ghost.setVisible(true); this.ghost.update(dt, me.st, _q.set(me.x, me.y, me.z)); }
+      if (g.playerCorpse) g.playerCorpse.setVisible(false);
+    } else if (this.ghost && K.death) {
+      if (!this.ghost.dead) { const d = K.death; this.ghost.die(d.dir, { part: d.part, point: d.point, strength: d.strength, vel: d.vel }); }
+      this.ghost.update(dt, null, null);
+      if (g.playerCorpse) g.playerCorpse.setVisible(false);
+    } else { if (this.ghost) this.ghost.setVisible(false); if (g.playerCorpse) g.playerCorpse.setVisible(true); }
     return true;
+  }
+
+  // where the muzzle of the gun in the hands is in the world
+  muzzle(W, cam, out) {
+    const m = W.model;
+    if (!m || !m.anchors || !m.anchors.muzzle) return null;
+    W.root.updateMatrixWorld(true);
+    return m.root.localToWorld(out.copy(m.anchors.muzzle)).applyMatrix4(cam.matrixWorld);
   }
 
   vmState() {
@@ -131,7 +162,7 @@ export class Killcam {
     this.ghost.resetPose();
     if (!this.el) {
       this.el = document.createElement('div'); this.el.id = 'killcam';
-      this.el.innerHTML = '<div class="kc-bar top"></div><div class="kc-bar bottom"></div><div class="kc-tag"><b>KILLCAM</b><span></span></div>';
+      this.el.innerHTML = '<div class="kc-tag"><b>KILLCAM</b><span></span></div>';
       document.getElementById('hud').appendChild(this.el);
     }
     const name = String(K.killer.name || '').replace(/[<>&]/g, '');
@@ -148,7 +179,12 @@ export class Killcam {
     this.on = null;
     if (K.playing) {
       if (K.killer.soldier && K.killer.alive) K.killer.soldier.setVisible(true);
-      if (this.ghost) this.ghost.setVisible(false);
+      if (this.ghost) {
+        this.ghost.setVisible(false);
+        // (the gun it dropped falling goes too)
+        if (this.ghost.weaponDrop) { g.scene.remove(this.ghost.weaponDrop.obj); this.ghost.weaponDrop = null; }
+        this.ghost.resetPose();
+      }
       if (g.playerCorpse) g.playerCorpse.setVisible(true);
       const w = g.weapons.w;
       if (w) { g.weapons.vm.stop(); g.weapons.vm.setWeapon(w.def, w.optic, w.skin); }

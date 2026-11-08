@@ -54,6 +54,8 @@ export class Shop {
     this.clearItems();
     this.close();
     if (this.moneyEl) { this.moneyEl.remove(); this.moneyEl = null; }
+    if (this.view) { this.view.r.dispose(); this.view = null; }
+    if (this.el) { this.el.remove(); this.el = null; }
   }
 
   // ---- money
@@ -249,6 +251,7 @@ export class Shop {
       if (it && WEAPONS[it.id].slot === 'primary') { this.takeItem(it); b.setWeapon(it.id, 'standard', plainOptic(it.id)); }
     }
     if (this.open && !this.canBuy(p)) this.close();
+    if (this.open && this.el) { const t = this.sd.phase === 'live' ? 'NOCH ' + Math.ceil(this.buyLeft) + ' S' : '', e = this.el.querySelector('.sdb-time'); if (e.textContent !== t) e.textContent = t; }
     if (g.input.pressed('buy')) { if (this.open) this.close(); else if (this.canBuy(p)) this.show(); }
     this.hud();
   }
@@ -273,30 +276,140 @@ export class Shop {
     if (this.moneyEl.textContent !== t) this.moneyEl.textContent = t;
   }
 
+  // The menu: big, every gun on a card with its picture, its kind and its price; the one under the mouse (or the
+  // last one looked at) turns in a window on the right with its numbers, and a click on a card or on the button there
+  // buys it. Built once, then only its states change.
   show() {
     const g = this.game;
     this.open = true;
     g.input.unlock();
-    if (!this.el) {
-      this.el = document.createElement('div'); this.el.id = 'sd-buy';
-      document.getElementById('hud').appendChild(this.el);
-      this.el.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-buy]');
-        if (b) { this.buy(b.dataset.buy); return; }
-        if (e.target.closest('[data-close]')) { this.close(); g.input.lock(); }
-      });
-    }
+    if (!this.el) this.build();
     this.el.style.display = '';
+    if (!this.lookId) this.lookId = 'ar';
+    this.look(this.lookId);
+    this.render();
+    this.spin();
+  }
+  build() {
+    const g = this.game;
+    this.el = document.createElement('div'); this.el.id = 'sd-buy';
+    const card = (id) => '<button class="sdb-card" data-buy="' + id + '" data-gun="' + id + '"><canvas></canvas><b>' + WEAPONS[id].name + '</b><i>' + WEAPONS[id].cls + '</i><span></span></button>';
+    this.el.innerHTML = '<div class="sdb-head"><b>KAUFEN</b><span class="sdb-money"></span><span class="sdb-time"></span><button data-close>SCHLIESSEN [B]</button></div>' +
+      '<div class="sdb-body"><div class="sdb-list">' + SHOP.map(([title, ids]) => '<section><h4>' + title + '</h4><div class="sdb-grid">' + ids.map(card).join('') + '</div></section>').join('') + '</div>' +
+      '<div class="sdb-view"><div class="sdb-3d"><canvas></canvas></div><div class="sdb-tag"></div><h3 class="sdb-name"></h3><div class="sdb-stats"></div>' +
+      '<button class="sdb-go" data-buynow></button><div class="sdb-now"></div></div></div>' +
+      '<div class="sdb-hint">Nur die Grundausführung: ohne Visier, ohne Skin. Eine neue Waffe ersetzt die alte im selben Platz, die alte bleibt liegen.</div>';
+    document.getElementById('hud').appendChild(this.el);
+    this.el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-buy]');
+      if (b) { this.buy(b.dataset.buy); return; }
+      if (e.target.closest('[data-buynow]')) { this.buy(this.lookId); return; }
+      if (e.target.closest('[data-close]')) { this.close(); g.input.lock(); }
+    });
+    this.el.addEventListener('mouseover', (e) => { const c = e.target.closest('[data-gun]'); if (c && c.dataset.gun !== this.lookId) this.look(c.dataset.gun); });
+    this.drawIcons();
+  }
+  // the gun that is looked at: its picture turning, its name, kind, numbers and what it costs
+  look(id) {
+    if (!WEAPONS[id] || !this.el) return;
+    this.lookId = id;
+    const d = WEAPONS[id], stat = (n, v) => '<div class="stat"><span>' + n + '</span><i><b style="width:' + v + '%"></b></i></div>';
+    this.el.querySelector('.sdb-tag').textContent = d.cls.toUpperCase() + (d.slot === 'primary' ? ' · PRIMÄRWAFFE' : ' · SEKUNDÄRWAFFE');
+    this.el.querySelector('.sdb-name').textContent = d.name;
+    this.el.querySelector('.sdb-stats').innerHTML = stat('SCHADEN', d.stats.dmg) + stat('FEUERRATE', d.stats.rof) + stat('REICHWEITE', d.stats.rng) + stat('PRÄZISION', d.stats.acc) + stat('MOBILITÄT', d.stats.mob) + stat('HANDLING', d.stats.hnd);
+    for (const c of this.el.querySelectorAll('.sdb-card')) c.classList.toggle('look', c.dataset.gun === id);
+    this.setModel(id);
     this.render();
   }
   render() {
     if (!this.el || !this.open) return;
-    const p = this.game.player, m = this.money(p);
-    this.el.innerHTML = '<div class="sdb-head"><b>KAUFEN</b><span>$ ' + m + '</span><button data-close>SCHLIESSEN [B]</button></div><div class="sdb-cols">' +
-      SHOP.map(([title, ids]) => '<div class="sdb-col"><h4>' + title + '</h4>' + ids.map((id) => {
-        const own = this.owns(id), cant = PRICE[id] > m;
-        return '<button data-buy="' + id + '" class="' + (own ? 'own' : cant ? 'cant' : '') + '"><b>' + WEAPONS[id].name + '</b><span>' + (own ? 'HAST DU' : '$ ' + PRICE[id]) + '</span></button>';
-      }).join('') + '</div>').join('') + '</div><div class="sdb-hint">Nur die Grundausführung: ohne Visier, ohne Skin. Eine neue Waffe ersetzt die alte im selben Platz, die alte bleibt liegen.</div>';
+    const g = this.game, p = g.player, m = this.money(p), W = g.weapons;
+    this.el.querySelector('.sdb-money').textContent = '$ ' + m;
+    this.el.querySelector('.sdb-time').textContent = this.sd.phase === 'live' ? 'NOCH ' + Math.ceil(this.buyLeft) + ' S' : '';
+    for (const c of this.el.querySelectorAll('.sdb-card')) {
+      const id = c.dataset.gun, own = this.owns(id), cant = !own && PRICE[id] > m;
+      c.classList.toggle('own', own); c.classList.toggle('cant', cant);
+      const t = own ? 'HAST DU' : '$ ' + PRICE[id], sp = c.querySelector('span');
+      if (sp.textContent !== t) sp.textContent = t;
+    }
+    const id = this.lookId, own = id && this.owns(id), cant = id && !own && PRICE[id] > m, go = this.el.querySelector('.sdb-go');
+    go.textContent = !id ? '' : own ? 'HAST DU SCHON' : cant ? 'ZU TEUER · $ ' + PRICE[id] : 'KAUFEN · $ ' + PRICE[id];
+    go.disabled = !!(own || cant);
+    const n = (s) => (s ? s.def.name : '—');
+    this.el.querySelector('.sdb-now').innerHTML = '<span>DEINE WAFFEN</span><b>' + n(W.slots[0]) + '</b><b>' + n(W.slots[1]) + '</b>';
+  }
+  // the window: its own small renderer (the guns are built once each for it), the gun turning slowly
+  ensureView() {
+    if (this.view) return this.view;
+    const cv = this.el.querySelector('.sdb-3d canvas');
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.NoToneMapping;
+    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xdde4ee, 0x302820, 1.5));
+    const key = new THREE.DirectionalLight(0xfff0e0, 3); key.position.set(2, 3, 2); scene.add(key);
+    const rim = new THREE.DirectionalLight(0x88aaff, 2); rim.position.set(-3, 1, -2); scene.add(rim);
+    const cam = new THREE.PerspectiveCamera(26, 1, 0.01, 20), holder = new THREE.Group(); scene.add(holder);
+    this.view = { r, scene, cam, holder, models: new Map(), id: '' };
+    return this.view;
+  }
+  model(id) {
+    const V = this.ensureView();
+    let m = V.models.get(id);
+    if (!m) {
+      const w = buildSkinned(WEAPONS[id].model, plainOptic(id), weaponMaterials(this.game.tex), 'standard');
+      w.root.traverse((o) => { if (o.material && o.material.isMeshBasicMaterial && !o.material.map) o.visible = false; });
+      const box = new THREE.Box3().setFromObject(w.root), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      w.root.position.set(-c.x, -c.y, -c.z);
+      m = new THREE.Group(); m.add(w.root); m.userData.len = Math.max(size.z, size.y * 1.6);
+      V.models.set(id, m);
+    }
+    return m;
+  }
+  setModel(id) {
+    const V = this.ensureView();
+    if (V.id === id) return;
+    V.holder.clear(); V.holder.add(this.model(id)); V.id = id;
+  }
+  // every gun's picture on its card, once: side on, filling the card
+  drawIcons() {
+    const V = this.ensureView(), r = V.r, oc = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 30);
+    const W = 360, H = 140;
+    r.setSize(W, H, false);
+    for (const c of this.el.querySelectorAll('.sdb-card')) {
+      const id = c.dataset.gun, m = this.model(id);
+      V.holder.clear(); V.holder.add(m); V.holder.rotation.set(0, Math.PI / 2, 0); V.holder.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(V.holder), size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+      const k = Math.max(size.x / (W / H), size.y) * 0.56;
+      oc.left = -k * W / H; oc.right = k * W / H; oc.top = k; oc.bottom = -k; oc.position.set(mid.x, mid.y, mid.z + 10); oc.lookAt(mid); oc.updateProjectionMatrix();
+      r.setClearColor(0x000000, 0); r.clear(); r.render(V.scene, oc);
+      const cv = c.querySelector('canvas'); cv.width = W; cv.height = H;
+      cv.getContext('2d').drawImage(r.domElement, 0, 0, W, H);
+    }
+    V.holder.clear(); V.id = '';
+  }
+  // the turning, while the menu is open
+  spin() {
+    if (this.spinning) return;
+    this.spinning = true;
+    const step = (now) => {
+      if (!this.open || !this.view) { this.spinning = false; return; }
+      const V = this.view, box = this.el.querySelector('.sdb-3d'), w = box.clientWidth, h = box.clientHeight;
+      if (w > 0 && h > 0) {
+        V.r.setSize(w, h, false);
+        V.cam.aspect = w / h; V.cam.updateProjectionMatrix();
+        const len = (V.holder.children[0] && V.holder.children[0].userData.len) || 1;
+        // (as close as lets the gun fill the window side on, whichever is tighter: its width or its height)
+        const tf = Math.tan((V.cam.fov * Math.PI) / 360), dist = Math.max((len * 0.5) / (0.88 * tf * V.cam.aspect), (len * 0.22) / (0.62 * tf));
+        V.cam.position.set(0, dist * 0.1, dist); V.cam.lookAt(0, 0, 0);
+        const t = now / 1000;
+        // (turning to and fro about the side view, as in the loadout: never end on)
+        V.holder.rotation.set(Math.sin(t * 0.3) * 0.07, Math.PI / 2 + Math.sin(t * 0.45) * 0.65, 0);
+        V.r.setClearColor(0x000000, 0); V.r.clear(); V.r.render(V.scene, V.cam);
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
   close() {
     if (!this.open) return;

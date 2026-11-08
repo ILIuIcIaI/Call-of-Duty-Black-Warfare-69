@@ -405,24 +405,44 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #death-screen.watching .death-title, #death-screen.watching #death-by { display: none; }
 /* S&D: your money (and the buy and pick-up hints) under the minimap, and the shop */
 #sd-money { position: absolute; left: 22px; top: 252px; font-family: var(--head); font-size: 20px; letter-spacing: 1px; color: #7dff6a; text-shadow: 0 2px 6px #000; white-space: nowrap; pointer-events: none; }
-#sd-buy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(980px, 92vw); padding: 16px 18px 12px; background: rgba(8,10,10,.92); border: 1px solid rgba(255,255,255,.14); color: #fff; pointer-events: auto; z-index: 30; }
-#sd-buy .sdb-head { display: flex; align-items: baseline; gap: 18px; margin-bottom: 12px; font-family: var(--head); letter-spacing: 3px; }
-#sd-buy .sdb-head b { font-size: 26px; font-weight: 400; }
-#sd-buy .sdb-head span { font-size: 22px; color: #7dff6a; }
-#sd-buy .sdb-head button { margin-left: auto; background: none; border: 1px solid rgba(255,255,255,.3); color: #fff; padding: 4px 10px; font-family: var(--head); letter-spacing: 2px; cursor: pointer; }
-#sd-buy .sdb-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-#sd-buy h4 { margin: 0 0 6px; font-family: var(--head); font-weight: 400; font-size: 15px; letter-spacing: 3px; color: rgba(255,255,255,.6); }
-#sd-buy .sdb-col button { display: flex; justify-content: space-between; width: 100%; margin-bottom: 6px; padding: 8px 10px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); color: #fff; font-size: 13px; letter-spacing: 1px; cursor: pointer; text-align: left; }
-#sd-buy .sdb-col button:hover { background: rgba(255,208,74,.18); border-color: #ffd04a; }
-#sd-buy .sdb-col button span { color: #7dff6a; }
-#sd-buy .sdb-col button.cant { opacity: .4; } #sd-buy .sdb-col button.cant span { color: var(--enemy); }
-#sd-buy .sdb-col button.own { opacity: .55; } #sd-buy .sdb-col button.own span { color: #fff; }
-#sd-buy .sdb-hint { margin-top: 6px; font-size: 12px; color: rgba(255,255,255,.55); letter-spacing: 1px; }
+/* the S&D shop: nearly the whole screen; cards on the left, the gun under the mouse turning on the right */
+#sd-buy { position: absolute; inset: 4vh 3.5vw; display: flex; flex-direction: column; padding: clamp(12px, 1.6vh, 26px) clamp(16px, 1.6vw, 30px); box-sizing: border-box; background: linear-gradient(160deg, rgba(14,17,18,.985), rgba(6,8,9,.985)); border: 1px solid rgba(255,255,255,.16); color: #fff; pointer-events: auto; z-index: 30; font-size: clamp(13px, 1.25vh, 18px); }
+#sd-buy .sdb-head { display: flex; align-items: baseline; gap: 1.4em; margin-bottom: 1em; font-family: var(--head); letter-spacing: 3px; }
+#sd-buy .sdb-head b { font-size: 2.6em; font-weight: 400; }
+#sd-buy .sdb-head .sdb-money { font-size: 2.2em; color: #7dff6a; }
+#sd-buy .sdb-head .sdb-time { font-size: 1.4em; color: #ffd04a; }
+#sd-buy .sdb-head button { margin-left: auto; background: none; border: 1px solid rgba(255,255,255,.35); color: #fff; padding: .4em 1em; font-family: var(--head); font-size: 1.2em; letter-spacing: 2px; cursor: pointer; }
+#sd-buy .sdb-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 1.6em; }
+#sd-buy .sdb-list { overflow-y: auto; padding-right: .4em; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent; }
+#sd-buy .sdb-list::-webkit-scrollbar { width: 6px; } #sd-buy .sdb-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); }
+#sd-buy section { margin-bottom: .8em; }
+#sd-buy h4 { margin: 0 0 .5em; font-family: var(--head); font-weight: 400; font-size: 1.35em; letter-spacing: 3px; color: rgba(255,255,255,.6); }
+#sd-buy .sdb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 12vw, 230px), 1fr)); gap: .7em; }
+#sd-buy .sdb-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: .1em; padding: .45em .8em .55em; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.13); color: #fff; text-align: left; cursor: pointer; font: inherit; transition: background .12s, border-color .12s, transform .12s; }
+#sd-buy .sdb-card canvas { width: 100%; aspect-ratio: 360 / 112; height: auto; object-fit: contain; filter: brightness(1.25) drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+#sd-buy .sdb-card b { font-family: var(--head); font-weight: 400; font-size: 1.3em; letter-spacing: 1.5px; }
+#sd-buy .sdb-card i { font-style: normal; font-size: .85em; color: rgba(255,255,255,.55); letter-spacing: 1px; }
+#sd-buy .sdb-card span { position: absolute; right: .7em; top: .5em; font-family: var(--head); font-size: 1.25em; letter-spacing: 1px; color: #7dff6a; }
+#sd-buy .sdb-card:hover, #sd-buy .sdb-card.look { background: rgba(255,208,74,.14); border-color: #ffd04a; }
+#sd-buy .sdb-card.cant { opacity: .45; } #sd-buy .sdb-card.cant span { color: var(--enemy); }
+#sd-buy .sdb-card.own span { color: #fff; } #sd-buy .sdb-card.own { border-color: rgba(125,255,106,.55); }
+#sd-buy .sdb-view { display: flex; flex-direction: column; min-height: 0; padding: 1em 1.2em; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.1); }
+#sd-buy .sdb-3d { flex: 1; min-height: 140px; position: relative; background: radial-gradient(ellipse at 50% 60%, rgba(255,255,255,.08), rgba(255,255,255,0) 70%); }
+#sd-buy .sdb-3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#sd-buy .sdb-tag { margin-top: .6em; font-size: .9em; font-weight: 700; letter-spacing: 2px; color: #ffd04a; }
+#sd-buy .sdb-name { margin: .1em 0 .5em; font-family: var(--head); font-weight: 400; font-size: 2.4em; letter-spacing: 2px; }
+#sd-buy .sdb-stats .stat { font-size: 1em; margin-top: .45em; }
+#sd-buy .sdb-stats .stat span { width: 8.5em; }
+#sd-buy .sdb-stats .stat i { height: .45em; }
+#sd-buy .sdb-go { margin-top: 1em; padding: .7em 1em; background: #ffd04a; border: none; color: #111; font-family: var(--head); font-size: 1.5em; letter-spacing: 3px; cursor: pointer; }
+#sd-buy .sdb-go:disabled { background: rgba(255,255,255,.12); color: rgba(255,255,255,.55); cursor: default; }
+#sd-buy .sdb-now { display: flex; flex-wrap: wrap; gap: .4em 1em; align-items: baseline; margin-top: .9em; font-size: .95em; color: rgba(255,255,255,.7); letter-spacing: 1px; }
+#sd-buy .sdb-now span { font-weight: 700; color: rgba(255,255,255,.45); letter-spacing: 2px; }
+#sd-buy .sdb-now b { font-family: var(--head); font-weight: 400; font-size: 1.15em; color: #fff; }`,
+#sd-buy .sdb-hint { margin-top: .8em; font-size: .9em; color: rgba(255,255,255,.55); letter-spacing: 1px; }
 /* the killcam: black bars, KILLCAM and whose eyes these are; the death screen waits until it is over */
 #killcam { position: absolute; inset: 0; pointer-events: none; }
-#killcam .kc-bar { position: absolute; left: 0; right: 0; height: 9%; background: #000; }
-#killcam .kc-bar.top { top: 0; } #killcam .kc-bar.bottom { bottom: 0; }
-#killcam .kc-tag { position: absolute; left: 50%; top: 10.5%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; text-shadow: 0 2px 6px #000; }
+#killcam .kc-tag { position: absolute; left: 50%; top: 4%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; text-shadow: 0 2px 6px #000; }
 #killcam .kc-tag b { font-family: var(--head); font-weight: 400; font-size: 26px; letter-spacing: 6px; color: var(--enemy); }
 #killcam .kc-tag span { font-size: 13px; letter-spacing: 3px; font-weight: 700; color: #fff; }
 #death-screen.kc { display: none; }
