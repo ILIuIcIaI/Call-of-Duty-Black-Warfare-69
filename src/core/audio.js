@@ -1,28 +1,16 @@
 import { mulberry32, clamp } from './math.js';
+import { GUNS as GUN_SOUNDS, renderGun } from './gunsound.js';
 
 // =============================================================================
 // Procedural audio: every sound is synthesized at load time (no audio files).
-// Gunshots are layered: transient crack + filtered noise body + sub "boom"
-// + mechanical action, soft-clipped for punch, then sent into a generated
-// convolution reverb (outdoor slapback / indoor room) for the tail.
+// Gunshots have their own engine (gunsound.js): every gun its own voice, in three takes (your own in stereo, near and
+// far for everybody else), made in small steps after the audio starts so nothing stalls. Everything goes through a
+// generated convolution reverb (outdoor slapback / indoor room) for the space around it.
 // =============================================================================
 
-const GUN = {
-  ar: { crack: 0.9, bodyCut: 5200, bodyDecay: 0.07, body: 1.0, boom: 0.95, f0: 150, f1: 48, boomDecay: 0.12, mech: 0.22, drive: 2.6, len: 0.7 },
-  smg: { crack: 0.85, bodyCut: 6800, bodyDecay: 0.045, body: 0.95, boom: 0.6, f0: 175, f1: 60, boomDecay: 0.075, mech: 0.3, drive: 2.3, len: 0.55 },
-  lmg: { crack: 0.9, bodyCut: 4300, bodyDecay: 0.09, body: 1.05, boom: 1.05, f0: 125, f1: 44, boomDecay: 0.15, mech: 0.2, drive: 3.0, len: 0.8 },
-  dmr: { crack: 1.0, bodyCut: 4700, bodyDecay: 0.11, body: 1.1, boom: 1.15, f0: 115, f1: 42, boomDecay: 0.19, mech: 0.18, drive: 3.1, len: 0.9 },
-  sniper: { crack: 1.0, bodyCut: 3900, bodyDecay: 0.16, body: 1.15, boom: 1.35, f0: 95, f1: 36, boomDecay: 0.3, mech: 0.0, drive: 3.6, len: 1.3 },
-  shotgun: { crack: 1.0, bodyCut: 3300, bodyDecay: 0.14, body: 1.25, boom: 1.45, f0: 100, f1: 38, boomDecay: 0.23, mech: 0.0, drive: 3.6, len: 1.0 },
-  pistol: { crack: 0.9, bodyCut: 6200, bodyDecay: 0.05, body: 0.9, boom: 0.62, f0: 185, f1: 62, boomDecay: 0.075, mech: 0.25, drive: 2.1, len: 0.5 },
-  revolver: { crack: 1.0, bodyCut: 4300, bodyDecay: 0.12, body: 1.1, boom: 1.25, f0: 105, f1: 40, boomDecay: 0.2, mech: 0.0, drive: 3.3, len: 0.9 },
-  burst: { crack: 0.95, bodyCut: 5000, bodyDecay: 0.08, body: 1.05, boom: 1.0, f0: 140, f1: 46, boomDecay: 0.13, mech: 0.24, drive: 2.8, len: 0.75 },
-  pdw: { crack: 0.8, bodyCut: 7600, bodyDecay: 0.035, body: 0.85, boom: 0.45, f0: 200, f1: 75, boomDecay: 0.05, mech: 0.32, drive: 2.0, len: 0.42 },
-  amr: { crack: 1.0, bodyCut: 3200, bodyDecay: 0.22, body: 1.25, boom: 1.6, f0: 78, f1: 30, boomDecay: 0.42, mech: 0.0, drive: 4.0, len: 1.7 },
-  autoshot: { crack: 1.0, bodyCut: 3600, bodyDecay: 0.11, body: 1.2, boom: 1.3, f0: 108, f1: 40, boomDecay: 0.17, mech: 0.25, drive: 3.4, len: 0.85 },
-  handcannon: { crack: 1.0, bodyCut: 3900, bodyDecay: 0.14, body: 1.15, boom: 1.35, f0: 96, f1: 38, boomDecay: 0.24, mech: 0.18, drive: 3.5, len: 1.0 },
-  mpistol: { crack: 0.8, bodyCut: 7200, bodyDecay: 0.04, body: 0.9, boom: 0.5, f0: 190, f1: 70, boomDecay: 0.06, mech: 0.3, drive: 2.1, len: 0.45 },
-};
+// the old simple gunshot (a crack, a filtered noise body, a sub boom, soft-clipped): only its anti-materiel take is left,
+// pitched down it is still the bottom of the bomb's and the vehicles' explosions ('gun_amr')
+const OLD_AMR = { crack: 1.0, bodyCut: 3200, bodyDecay: 0.22, body: 1.25, boom: 1.6, f0: 78, f1: 30, boomDecay: 0.42, mech: 0.0, drive: 4.0, len: 1.7 };
 
 function softclip(x, d) { return Math.tanh(x * d) / Math.tanh(d); }
 function normalize(a, peak = 0.95) {
@@ -219,12 +207,37 @@ export class Audio {
     b.copyToChannel(data, 0);
     return b;
   }
+  buf2(l, r) {
+    const b = this.ctx.createBuffer(2, l.length, this.ctx.sampleRate);
+    b.copyToChannel(l, 0); b.copyToChannel(r, 1);
+    return b;
+  }
+
+  // Every gun's takes, one at a time on a timer, so the page never stalls (all of them take about a second in all):
+  // three shots and two tails of your own, two near, two far (the far ones made as loud as the near ones, since their
+  // peaks are not what you hear). The guns people start with come first.
+  genGuns() {
+    const sr = this.ctx.sampleRate, B = this.buffers, add = (name, b) => { (B[name] || (B[name] = [])).push(b); };
+    const first = ['ar', 'pistol', 'smg', 'burst', 'shotgun', 'sniper'], ids = [...first, ...Object.keys(GUN_SOUNDS).filter((k) => !first.includes(k))];
+    const energy = (a) => { const n = Math.min(a.length, Math.floor(sr * 0.4)); let s = 0; for (let i = 0; i < n; i++) s += a[i] * a[i]; return Math.sqrt(s / n); };
+    const jobs = [];
+    ids.forEach((id, k) => {
+      const G = GUN_SOUNDS[id], base = 7000 + k * 101;
+      let nearE = 0;
+      for (let v = 0; v < 3; v++) jobs.push(() => { const r = renderGun(sr, G, 'fp', base + v, { noTail: v === 2 }); add('gfp_' + id, this.buf2(r.L, r.R)); if (r.tL) add('gft_' + id, this.buf2(r.tL, r.tR)); });
+      for (let v = 0; v < 2; v++) jobs.push(() => { const r = renderGun(sr, G, 'near', base + 10 + v); nearE += energy(r.M) / 2; add('gnear_' + id, this.buf(r.M)); });
+      for (let v = 0; v < 2; v++) jobs.push(() => { const r = renderGun(sr, G, 'far', base + 20 + v), g = Math.min(1, nearE / (energy(r.M) || 1)); for (let i = 0; i < r.M.length; i++) r.M[i] *= g; add('gfar_' + id, this.buf(r.M)); });
+    });
+    const run = () => { const job = jobs.shift(); if (!job || !this.ctx) return; job(); setTimeout(run, 0); };
+    setTimeout(run, 0);
+  }
 
   generate() {
     const sr = this.ctx.sampleRate;
     const B = this.buffers;
     const add = (name, arr) => { (B[name] || (B[name] = [])).push(this.buf(arr)); };
-    for (const [k, p] of Object.entries(GUN)) for (let v = 0; v < 3; v++) add('gun_' + k, synthGun(sr, p, 1000 + v * 77 + k.length * 13));
+    for (let v = 0; v < 3; v++) add('gun_amr', synthGun(sr, OLD_AMR, 1000 + v * 77 + 3 * 13));
+    this.genGuns();
     // hit feedback
     add('hit', concat(sr, [[synthMetalClick(sr, 0.05, [2600, 4100], 0.012, 0.6, 5), 0, 1], [synthNoiseHit(sr, 0.03, 3000, 0.006, 1.5, 'bp', 6), 0, 0.5]]));
     add('hitHead', concat(sr, [[synthMetalClick(sr, 0.18, [3300, 4950, 6600], 0.05, 0.3, 7), 0, 1], [synthNoiseHit(sr, 0.04, 2500, 0.01, 1, 'bp', 8), 0, 0.6]]));
@@ -447,10 +460,26 @@ export class Audio {
     return b;
   }
 
+  // A gunshot. Your own (no pos): the stereo shot, and its tail, thinner while you keep firing so a long burst does not
+  // drown in its own echo. Everybody else's: the near and the far take crossfaded by the distance, through the 3D
+  // panner; and sound takes its time: from 15 m on it comes in later, as far as it has to travel (at 343 m/s).
   gunshot(sound, opts = {}) {
-    const own = !opts.pos;
-    this.play('gun_' + sound, { ...opts, vol: (opts.vol ?? 1) * (own ? 0.85 : 1.25), rev: own ? 0.9 : 1.1, rateVar: 0.07, ref: 9, rolloff: 0.85, maxDist: 400 });
+    if (!this.ready) return;
+    const id = GUN_SOUNDS[sound] ? sound : 'ar', vol = (opts.vol ?? 1) * (GUN_SOUNDS[id].vol ?? 1);
+    if (!opts.pos) {
+      const now = this.ctx.currentTime, gap = now - (this.lastOwnShot ?? -9);
+      this.lastOwnShot = now;
+      this.play('gfp_' + id, { ...opts, vol: vol * 0.85, rev: 0.3, rateVar: 0.035 });
+      this.play('gft_' + id, { ...opts, vol: vol * 0.85 * (gap > 0.3 ? 1 : 0.35 + 0.65 * gap / 0.3), rev: 0, rateVar: 0.03 });
+      return;
+    }
+    const p = opts.pos, d = Math.hypot(p.x - this.listener.x, p.y - this.listener.y, p.z - this.listener.z);
+    const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+    const near = 1 - ss(25, 90, d), far = ss(12, 60, d);
+    const o = { ...opts, rateVar: 0.05, ref: 9, rolloff: 0.85, maxDist: 450, delay: (opts.delay || 0) + Math.max(0, d - 15) / 343 };
+    if (near > 0.01) this.play('gnear_' + id, { ...o, vol: vol * 1.25 * near, rev: 0.7 });
+    if (far > 0.01) this.play('gfar_' + id, { ...o, vol: vol * 1.25 * far, rev: 0.35 });
   }
 }
 
-export { GUN as GUN_SOUNDS, clamp as _clamp };
+export { clamp as _clamp };
