@@ -360,6 +360,26 @@ export class SearchDestroy {
     this.shop = new Shop(this);
   }
 
+  // whose eyes the screen is: yours, or (out of the round) the teammate's you watch in his
+  viewer() { const g = this.game; return g.player.alive ? g.player : (g.watch && g.watch.who) || g.player; }
+  // the work those eyes are at (his here, or someone's on another computer as it comes over)
+  viewWork() {
+    const v = this.viewer(), w = this.work, rw = this.remoteWork;
+    if (w && w.ent === v) return w;
+    if (rw && rw.ent === v && rw.ent.alive) {
+      const P = this.planted, at = rw.at || (P && P.pos), yaw = rw.yaw ?? (P && P.yaw);
+      if (!at) return null;
+      return { ent: v, kind: rw.kind, t: rw.t || 0, need: rw.kind === 'plant' ? SD.PLANT : SD.DEFUSE, at, yaw, from: rw.from };
+    }
+    return null;
+  }
+  // the hands at work in front of those eyes (new eyes: nothing carried over from the last ones)
+  updateHands(dt) {
+    const g = this.game, v = this.viewer();
+    if (v !== this.lastViewer) { this.lastViewer = v; this.hands.k = 0; this.hands.kc = 0; this.camFrom = null; this.camFollow = null; }
+    this.hands.update(dt, this.viewWork(), this.bomb, v, g.engine.camera);
+  }
+
   // while you plant or defuse (until the eyes are back up): no gun in your hands, and your eyes on the bomb
   hidesGun() { return this.hands.root.visible || (this.hands.kc || 0) > 0; }
   // Kneeling at it: the eyes go down onto the spot while the case comes down, then lean in over it as the lid opens,
@@ -368,7 +388,7 @@ export class SearchDestroy {
     const k = this.hands.kc || 0, e = k * k * k * (k * (k * 6 - 15) + 10);
     if (k <= 0) { this.camFrom = null; this.camFollow = null; return; }
     // (once your work is over, or broken off, the eyes go back from where they were then: the same spot and lean)
-    const w = this.work && this.work.ent === this.game.player ? this.work : null;
+    const w = this.viewWork();
     if (w && w.at) (this.camAt || (this.camAt = new THREE.Vector3())).copy(w.at);
     const at = w && w.at ? w.at : this.camAt || this.bomb.root.position, yaw = w && w.yaw !== undefined ? w.yaw : this.hands.yaw || 0;
     const t = this.game.time, cy = Math.cos(yaw), sy = Math.sin(yaw);
@@ -848,7 +868,7 @@ export class SearchDestroy {
         if (!P.done && !(this.work && this.work.kind === 'defuse')) { const rw = this.remoteWork; if (rw && rw.kind === 'defuse') this.bomb.screen('defuse', P.left, (rw.t || 0) / SD.DEFUSE); else this.bomb.screen('count', P.left); }
         if (this.phase === 'planted' && P.left <= 0 && auth) { this.stopWork(); this.explode(); this.endRound(this.attack, 'boom', P.by); this.sync(dt); return; }
       }
-      if (this.phase === 'post' || !auth) { this.sync(dt); this.showCarried(); this.lookAtWork(dt); this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera); return; }
+      if (this.phase === 'post' || !auth) { this.sync(dt); this.showCarried(); this.lookAtWork(dt); this.updateHands(dt); return; }
       if (this.aliveOf(1 - this.attack) === 0) { this.endRound(this.attack, 'elim'); return; }
       if (this.phase === 'live' && this.aliveOf(this.attack) === 0) { this.endRound(1 - this.attack, 'elim'); return; }
       if (this.phase === 'live' && this.left <= 0) { this.endRound(1 - this.attack, 'time'); return; }
@@ -861,7 +881,7 @@ export class SearchDestroy {
     this.sync(dt);
     this.showCarried();
     this.lookAtWork(dt);
-    this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera);
+    this.updateHands(dt);
   }
 
   // the bomb on the carrier's back, or on the floor where he fell; somebody on another computer planting: in front of him
@@ -870,7 +890,7 @@ export class SearchDestroy {
     if (rw && rw.kind === 'plant' && rw.ent && rw.ent.alive && this.phase === 'live' && !this.work) { R.visible = false; return; }
     if (this.phase === 'live' && !this.work && !this.pending && !this.planted) this.bomb.root.visible = false;
     if (c && c.alive && !(this.work && this.work.kind === 'plant')) {
-      if (c === this.game.player) { R.visible = false; return; }
+      if (c === this.game.player || c === this.viewer()) { R.visible = false; return; }
       const ch = c.soldier && c.soldier.chest;
       if (ch) {
         ch.updateWorldMatrix(true, false);
@@ -1033,7 +1053,10 @@ export class SearchDestroy {
     if (this.workingCss !== working) { this.workingCss = working; document.getElementById('hud').classList.toggle('sd-working', working); } // (no crosshair over the bomb)
     const live = this.phase === 'planted' && !this.planted.done;
     if (this.timerLive !== live) { this.timerLive = live; document.getElementById('sb-timer').classList.toggle('bomb', live); }
-    const role = (mine === 'attack' ? 'ANGRIFF' : 'VERTEIDIGUNG') + ' · ' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNG' : 'RUNDE ' + Math.max(1, this.round) + '/' + SD.ROUNDS) + (this.carrier === p ? ' · DU HAST DIE BOMBE' : '');
+    // (and where the bomb is: who carries it or that it lies, for the attackers; that it is down and where, for all)
+    const P0 = this.planted, car = this.carrier;
+    const where = P0 && !P0.done ? ' · BOMBE LIEGT AUF ' + P0.site.id : mine !== 'attack' || this.phase === 'post' || this.phase === 'over' ? '' : car === p ? ' · DU HAST DIE BOMBE' : car && car.alive ? ' · BOMBE: ' + car.name.toUpperCase() : this.dropped ? ' · BOMBE LIEGT' : '';
+    const role = (mine === 'attack' ? 'ANGRIFF' : 'VERTEIDIGUNG') + ' · ' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNG' : 'RUNDE ' + Math.max(1, this.round) + '/' + SD.ROUNDS) + where;
     if (this.roleEl.textContent !== role) this.roleEl.textContent = role;
     const dots = (n) => '&#9679;'.repeat(n);
     const af = this.aliveOf(p.team), ae = this.aliveOf(1 - p.team), ak = af + '|' + ae;
@@ -1043,14 +1066,15 @@ export class SearchDestroy {
     let text = '', fill = 0;
     if (w && w.ent === p) { text = w.kind === 'plant' ? 'BOMBE WIRD GELEGT' : 'BOMBE WIRD ENTSCHÄRFT'; fill = w.t / w.need; }
     else if (k) text = k === 'plant' ? '[F] HALTEN · BOMBE LEGEN' : '[F] HALTEN · BOMBE ENTSCHÄRFEN';
+    else if (!p.alive && this.viewWork()) { const vw = this.viewWork(); text = vw.ent.name.toUpperCase() + (vw.kind === 'plant' ? ' LEGT DIE BOMBE' : ' ENTSCHÄRFT'); fill = vw.t / vw.need; }
     else if (w && w.kind === 'defuse' && w.ent.team === p.team) { text = w.ent.name.toUpperCase() + ' ENTSCHÄRFT'; fill = w.t / w.need; }
     else if (this.carrier === p && this.phase === 'live') text = 'BRING DIE BOMBE ZU A ODER B';
     this.workEl.style.display = text ? '' : 'none';
     if (text) { if (this.workEl.firstChild.textContent !== text) this.workEl.firstChild.textContent = text; this.workEl.lastChild.firstChild.style.transform = 'scaleX(' + Math.min(1, fill).toFixed(3) + ')'; this.workEl.classList.toggle('bar', fill > 0); }
     // markers: the two sites always; the bomb once it is down, and for the attackers where it was dropped
     const cam = g.engine.camera, Wd = window.innerWidth, Hd = window.innerHeight;
-    const put = (M, P, label, cls) => {
-      _v.set(P.x, P.y + 1.4, P.z).project(cam);
+    const put = (M, P, label, cls, lift = 1.4) => {
+      _v.set(P.x, P.y + lift, P.z).project(cam);
       const behind = _v.z > 1;
       let sx = behind ? -_v.x : _v.x, sy = behind ? -_v.y : _v.y;
       const edge = Math.max(Math.abs(sx) / 0.9, Math.abs(sy) / 0.8);
@@ -1067,10 +1091,25 @@ export class SearchDestroy {
       if (show && !hot) put(this.marks[i], s, Math.round(flat(view, s)) + ' m', 'sdmark site ' + (mine === 'attack' ? 'att' : 'def'));
       else this.marks[i].style.display = 'none';
     });
-    const B = this.planted ? this.planted.pos : this.dropped && mine === 'attack' ? this.dropped : null;
-    if (show && B) put(this.marks[2], B, this.planted ? (this.planted.done ? 'ENTSCHÄRFT' : 'BOMBE ' + this.planted.site.id) : 'BOMBE', 'sdmark bomb' + (this.planted && !this.planted.done ? ' live' : ''));
+    // the bomb: down (for all: on which site, how far), lying where its carrier fell, or on the back of the one who
+    // carries it (for the attackers: his name over his head, how far; not over your own, nor over the one whose eyes
+    // you are watching through)
+    const P = P0, me = this.viewer(), far = (q) => ' · ' + Math.round(flat(view, q)) + ' m';
+    if (show && P) put(this.marks[2], P.pos, P.done ? 'ENTSCHÄRFT' : 'BOMBE ' + P.site.id + far(P.pos), 'sdmark bomb' + (P.done ? '' : ' live'));
+    else if (show && mine === 'attack' && this.dropped) put(this.marks[2], this.dropped, 'BOMBE LIEGT' + far(this.dropped), 'sdmark bomb');
+    else if (show && mine === 'attack' && car && car.alive && car !== me && this.phase !== 'post') put(this.marks[2], car.pos, car.name.toUpperCase() + far(car.pos), 'sdmark bomb carrier', 2.15);
     else this.marks[2].style.display = 'none';
     void dt;
+  }
+
+  // where the bomb is on the minimap, as the markers: down for all, lying or carried for the attackers (null: not shown)
+  mapMark() {
+    const p = this.game.player, P = this.planted;
+    if (P) return P.done ? null : { x: P.pos.x, z: P.pos.z, live: true };
+    if (this.role(p.team) !== 'attack' || this.phase === 'post' || this.phase === 'over' || this.phase === 'wait') return null;
+    if (this.dropped) return { x: this.dropped.x, z: this.dropped.z };
+    const c = this.carrier;
+    return c && c.alive ? { x: c.pos.x, z: c.pos.z, carried: true } : null;
   }
 
   // the clock under the score: the freeze, the round, then the bomb
@@ -1081,7 +1120,7 @@ export class SearchDestroy {
     return 0;
   }
 
-  // ---- dead until the next round: watch a teammate who is still in it (click: the next one)
+  // ---- dead until the next round: watch a teammate who is still in it, in his own eyes (click: the next one)
   watch(cam, dt) {
     const g = this.game, p = g.player;
     this.specT += dt;
@@ -1091,13 +1130,11 @@ export class SearchDestroy {
       const i = this.spectate ? (mates.indexOf(this.spectate) + 1) % mates.length : 0;
       this.spectate = mates[Math.max(0, i)]; this.specT = 0;
     }
-    const c = this.spectate, yaw = c.isPlayer ? c.yaw : c.aimYaw;
-    const hx = c.pos.x, hy = c.pos.y + 1.65, hz = c.pos.z;
-    let bx = hx + Math.sin(yaw) * 2.6, by = hy + 0.55, bz = hz + Math.cos(yaw) * 2.6;
-    const hit = g.col.raycast(hx, hy, hz, bx - hx, by - hy, bz - hz, 1, this._ray || (this._ray = {}));
-    if (hit && hit.t < 1) { const k = Math.max(0.15, hit.t - 0.08); bx = hx + (bx - hx) * k; by = hy + (by - hy) * k; bz = hz + (bz - hz) * k; }
-    cam.position.set(bx, by, bz);
-    cam.lookAt(hx - Math.sin(yaw) * 6, hy - 0.4, hz - Math.cos(yaw) * 6);
+    // (in his own eyes: where he looks, his gun in his hands doing what he does; at the bomb, his hands on it)
+    const c = this.spectate;
+    g.watch.follow(c);
+    g.watch.update(dt, cam);
+    if (this.hidesGun()) this.workCam(cam);
     const box = document.getElementById('death-timer');
     document.getElementById('death-screen').classList.add('watching'); // (the big GETÖTET goes, the line under it stays)
     const t = 'DU SIEHST ' + c.name.toUpperCase() + ' · KLICKEN: NÄCHSTER';

@@ -263,9 +263,11 @@ export class HUD {
     x.save();
     x.translate(W / 2, H / 2);
     const zoom = this.mmZoom * (1 + 1.7 * (this.mmIn || 0)); // minimap px per image px
-    x.rotate(p.yaw);
+    // (around the one whose eyes are on screen: you, or the teammate you watch in his)
+    const wv = !p.alive && g.watch && g.watch.on ? g.watch : null, me = wv ? wv.who : p;
+    x.rotate(wv ? wv.yaw : p.yaw);
     x.scale(zoom, zoom);
-    x.translate(-(p.pos.x - this.mmOx) * this.mmS, -(p.pos.z - this.mmOz) * this.mmS);
+    x.translate(-(me.pos.x - this.mmOx) * this.mmS, -(me.pos.z - this.mmOz) * this.mmS);
     x.globalAlpha = 0.95;
     x.drawImage(this.mmImg, 0, 0);
     x.globalAlpha = 1;
@@ -277,13 +279,23 @@ export class HUD {
     }
     // combatants
     for (const c of g.combatants) {
-      if (c === p || !c.alive) continue;
+      if (c === p || c === me || !c.alive) continue;
       const friendly = g.isFriendly(c, p);
       if (!friendly && !(g.time - c.lastRadar < 1.6)) continue;
       const px = (c.pos.x - this.mmOx) * this.mmS, pz = (c.pos.z - this.mmOz) * this.mmS;
       x.fillStyle = friendly ? '#48b8ff' : '#ff3a2a';
       x.beginPath(); x.arc(px, pz, 3.6 / zoom, 0, Math.PI * 2); x.fill();
       x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 1 / zoom; x.stroke();
+    }
+    // S&D: the bomb, a yellow diamond (carried: with a ring round it), red and pulsing once it is down
+    const bm = g.match && g.match.sd && g.match.sd.mapMark();
+    if (bm) {
+      const px = (bm.x - this.mmOx) * this.mmS, pz = (bm.z - this.mmOz) * this.mmS, s = (bm.live ? 6 + Math.sin(g.time * 8) * 1.2 : 5.5) / zoom;
+      x.save(); x.translate(px, pz); x.rotate(Math.PI / 4);
+      x.fillStyle = bm.live ? '#ff3a2a' : '#ffd04a'; x.strokeStyle = 'rgba(0,0,0,0.75)'; x.lineWidth = 1.4 / zoom;
+      x.fillRect(-s / 2, -s / 2, s, s); x.strokeRect(-s / 2, -s / 2, s, s);
+      x.restore();
+      if (bm.carried) { x.strokeStyle = '#ffd04a'; x.lineWidth = 1.2 / zoom; x.beginPath(); x.arc(px, pz, 6.5 / zoom, 0, Math.PI * 2); x.stroke(); }
     }
     // Wingman: the circle in the colour of whoever holds the flag, a little flag upright in it
     const pts = g.match && g.match.points;
@@ -354,8 +366,10 @@ export class HUD {
   update(dt) {
     const g = this.game, p = g.player, wpn = g.weapons;
     // ---- crosshair
-    const ads = wpn ? wpn.adsAmount : 0;
-    const spread = wpn ? wpn.currentSpread(p) : 2;
+    // (out of an S&D round, watching a teammate in his eyes: his gun's)
+    const wv = !p.alive && g.watch && g.watch.on ? g.watch : null;
+    const ads = wv ? wv.ads : wpn ? wpn.adsAmount : 0;
+    const spread = wv ? wv.spread() : wpn ? wpn.currentSpread(p) : 2;
     const vfov = g.engine.camera.fov * Math.PI / 180;
     const px = Math.tan(spread * Math.PI / 180 * 0.5) * (window.innerHeight / 2) / Math.tan(vfov / 2);
     const gap = Math.round((4 + px) * 2) / 2;
@@ -365,7 +379,7 @@ export class HUD {
       t.style.transform = `translateY(${-gap - 9}px)`; b.style.transform = `translateY(${gap}px)`;
       l.style.transform = `translateX(${-gap - 9}px)`; r.style.transform = `translateX(${gap}px)`;
     }
-    const hideCh = ads > 0.35 || p.sprinting || !p.alive || (wpn && (wpn.state === 'inspect' || wpn.state === 'melee' || wpn.stowed)) || (g.br && (g.br.hideViewmodel || g.br.playerState === 'downed'));
+    const hideCh = wv ? ads > 0.35 || wv.sprinting(wv.who) || wv.hidden || wv.scoped || !!(wv.def && wv.def.melee) : ads > 0.35 || p.sprinting || !p.alive || (wpn && (wpn.state === 'inspect' || wpn.state === 'melee' || wpn.stowed)) || (g.br && (g.br.hideViewmodel || g.br.playerState === 'downed'));
     css(this.el.cross, 'opacity', hideCh ? '0' : '1');
     // ---- docked to cover
     const mk = p.alive && p.mount ? p.mount.kind : '';
@@ -378,9 +392,19 @@ export class HUD {
       css(this.el.hit, 'transform', `scale(${this.hitScale.toFixed(3)})`);
     } else css(this.el.hit, 'opacity', '0');
     // ---- ammo (hidden while dead)
-    css(this.el.ammo || (this.el.ammo = $('ammo')), 'opacity', p.alive && !(g.br && g.br.playerState === 'downed') ? '1' : '0');
+    css(this.el.ammo || (this.el.ammo = $('ammo')), 'opacity', (p.alive || (wv && wv.def)) && !(g.br && g.br.playerState === 'downed') ? '1' : '0');
     this.updateGunPanel();
-    if (wpn && wpn.w && wpn.w.def.melee) {
+    if (wv && wv.def) {
+      // (his gun: its name, and what is in it, where that is known here: a bot's, not a person's on another computer)
+      const c = wv.who, d = wv.def, n = c.remote || d.melee ? '' : c.mag, s = 'w|' + n + '|' + d.name;
+      if (s !== this.lastAmmo) {
+        this.lastAmmo = s;
+        this.el.ammoMag.textContent = n; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = d.name;
+        this.el.ammoMag.classList.toggle('low', n !== '' && n <= Math.ceil(d.mag * 0.25));
+        this.el.ammoBar.style.transform = `scaleX(${n === '' ? 1 : n / d.mag})`;
+      }
+      txt(this.el.ammoHint, wv.reloading(c) ? 'NACHLADEN...' : '');
+    } else if (wpn && wpn.w && wpn.w.def.melee) {
       // (the knife never runs out; the fists have nothing to count)
       const fists = !!wpn.w.def.fists, key = fists ? 'fists' : 'knife';
       if (this.lastAmmo !== key) { this.lastAmmo = key; this.el.ammoMag.textContent = fists ? '' : '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = fists ? 'scaleX(0)' : 'scaleX(1)'; this.el.ammoHint.textContent = ''; }

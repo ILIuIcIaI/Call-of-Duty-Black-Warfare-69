@@ -544,7 +544,9 @@ export class Bot {
     const ads = dist > 12 && !moving;
     const spreadDeg = (ads ? def.adsSpread + 0.35 : def.hip * 0.55 + (moving ? def.moveSpread * 0.4 : 0)) * D.spreadMul;
     const pellets = def.pellets || 1;
-    const muzzle = this.soldier.muzzleWorld(new THREE.Vector3());
+    // (watched in his own eyes: the tracer comes out of the gun on screen, the shot sounds as your own would)
+    const mine = !!(g.watch && g.watch.who === this);
+    const muzzle = (mine && g.watch.muzzle(new THREE.Vector3())) || this.soldier.muzzleWorld(new THREE.Vector3());
     for (let i = 0; i < pellets; i++) {
       const yaw = this.aimYaw + this.errYaw, pitch = this.aimPitch + this.errPitch;
       const dir = _d.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
@@ -558,8 +560,8 @@ export class Bot {
     // recoil pushes their aim; better bots compensate more
     this.errPitch += def.recoil.up * DEG * (1 - D.comp) * 0.9;
     this.errYaw += (Math.random() - 0.5) * def.recoil.side * DEG * (1 - D.comp);
-    g.audio.gunshot(def.sound, { pos: this.pos.clone().setY(this.pos.y + 1.4) });
-    g.fx.muzzleWorld(muzzle, def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
+    g.audio.gunshot(def.sound, mine ? undefined : { pos: this.pos.clone().setY(this.pos.y + 1.4) });
+    if (mine) g.watch.shot(this); else g.fx.muzzleWorld(muzzle, def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
     g.onBotShot(this);
   }
 

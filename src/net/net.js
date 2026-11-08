@@ -368,10 +368,12 @@ export class Net {
   onShot(m) {
     const g = this.game, c = this.byId.get(m.b || m.from), def = WEAPONS[m.w];
     if (!c || !c.remote || !def || g.netWait) return;
-    const muzzle = c.soldier.muzzleWorld(new THREE.Vector3()), o = new THREE.Vector3(m.o[0], m.o[1], m.o[2]), d = new THREE.Vector3(m.d[0], m.d[1], m.d[2]);
+    // (watched in his own eyes: out of the gun on screen, and as loud as your own)
+    const mine = !!(g.watch && g.watch.who === c);
+    const muzzle = (mine && g.watch.muzzle(new THREE.Vector3())) || c.soldier.muzzleWorld(new THREE.Vector3()), o = new THREE.Vector3(m.o[0], m.o[1], m.o[2]), d = new THREE.Vector3(m.d[0], m.d[1], m.d[2]);
     g.fireBullet(o, d, def, c, muzzle, true, true);
-    g.audio.gunshot(def.sound, { pos: c.pos.clone().setY(c.pos.y + 1.4) });
-    g.fx.muzzleWorld(muzzle, def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
+    g.audio.gunshot(def.sound, mine ? undefined : { pos: c.pos.clone().setY(c.pos.y + 1.4) });
+    if (mine) g.watch.shot(c); else g.fx.muzzleWorld(muzzle, def.heavy || def.id === 'shotgun' || def.id === 'sniper' ? 0.8 : 0.5);
     c.lastRadar = g.time;
     g.recentAction = { pos: c.pos.clone(), t: g.time };
     for (const b of g.bots) if (!b.remote && b !== c) b.hear(c.pos, c);

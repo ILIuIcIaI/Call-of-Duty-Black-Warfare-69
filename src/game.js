@@ -13,6 +13,7 @@ import { MAPS } from './world/maps/index.js';
 import { Effects } from './fx/effects.js';
 import { HUD } from './ui/hud.js';
 import { PlayerWeapons } from './weapons/playerWeapons.js';
+import { Watch } from './game/watch.js';
 import { damageAt, GUN_TIERS, WEAPONS } from './weapons/defs.js';
 import { weaponMaterials } from './weapons/models.js';
 import { prewarmSkins, setSkinDetail, skinMaterials, tickSkins, warmSkinPrograms } from './weapons/skins.js';
@@ -165,6 +166,7 @@ export class Game {
       this.hud.message(`<span style="font-size:19px">Das Spiel läuft hier langsam: ab dem nächsten Start mit Grafikstufe ${QUALITY[id].label}</span>`, 5);
     };
     this.weapons = new PlayerWeapons(this);
+    this.watch = new Watch(this); // (out of an S&D round: a teammate seen in his own eyes, his gun in his hands)
     this.menu = new Menu(this);
     this.net = new Net(this);
     this.lobby = new Lobby(this);
@@ -807,30 +809,40 @@ export class Game {
     // ---- camera
     this.shake.update(dt);
     const cam = this.engine.camera;
-    const optic = W.vm.model && W.vm.model.optic;
-    const adsE = W.adsAmount * W.adsAmount * (3 - 2 * W.adsAmount);
-    const wz = W.vm.model ? W.vm.model.zoom : 1.2;
+    // (the gun on screen: yours, or, out of an S&D round, the one of the teammate you see in his own eyes)
+    const Wv = !p.alive && this.watch.on ? this.watch : null, V = Wv ? Wv.vm : W.vm, adsA = Wv ? Wv.ads : W.adsAmount;
+    const optic = V.model && V.model.optic;
+    const adsE = adsA * adsA * (3 - 2 * adsA);
+    const wz = V.model ? V.model.zoom : 1.2;
     const targetZoom = 1 + (wz - 1) * adsE;
     this.currentZoom = targetZoom;
     let baseV = this.engine.hfovToV(this.settings.fov);
     // FOV kick when tac sprinting / sliding
-    this.fovKick = damp(this.fovKick || 0, (p.tac ? 6 : p.sprinting ? 2 : 0) + (p.mode === 'slide' ? 4 : 0), 6, dt);
+    const kick = Wv ? (Wv.tac(Wv.who) ? 6 : Wv.sprinting(Wv.who) ? 2 : 0) + (Wv.sliding(Wv.who) ? 4 : 0) : (p.tac ? 6 : p.sprinting ? 2 : 0) + (p.mode === 'slide' ? 4 : 0);
+    this.fovKick = damp(this.fovKick || 0, kick, 6, dt);
     baseV += this.fovKick * (1 - adsE);
-    cam.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / targetZoom) / DEG + W.fovPunch.x;
+    cam.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / targetZoom) / DEG + (Wv ? Wv.fovPunch.x : W.fovPunch.x);
     cam.updateProjectionMatrix();
     const punch = W.punch;
     if (this.finale && this.finale.on) this.finale.camera(cam);
     else if (p.alive && br && br.cameraOverride) br.applyCamera(cam, dt);
     else if (p.alive) { p.applyCamera(cam, punch, this.shake); cam.rotation.z += punch.roll; if (sdm && sdm.hidesGun()) sdm.workCam(cam); }
     else if (br && br.watchOn) br.watchCam(cam, dt);
-    else if (sdm && (this.deathCamT || 0) > 2.4 && sdm.watch(cam, dt)) { /* watching a teammate */ }
+    else if (sdm && (this.deathCamT || 0) > 2.4 && sdm.watch(cam, dt)) { /* watching a teammate, in his own eyes */ }
     else this.deathCam(dt);
+    this.watch.endFrame();
+    const watching = !p.alive && this.watch.on;
     // sniper scope sway + overlay
-    const scoped = optic && optic.overlay && W.adsAmount > 0.92 && p.alive;
+    const scoped = optic && optic.overlay && adsA > 0.92 && (p.alive || watching);
     this.hud.setScope(scoped ? optic.overlay : null);
     W.vm.root.visible = (p.alive && !scoped && !(br && br.hideViewmodel) && !(this.finale && this.finale.on) && !(sdm && sdm.hidesGun()));
     W.vm.smoke.points.visible = W.vm.root.visible;
     if (!W.vm.root.visible) W.vm.smoke.update(dt); // (the smoke of the last shots goes on without the gun, out of sight)
+    const WV = this.watch.vm;
+    this.watch.hidden = !!(watching && sdm && sdm.hidesGun()); this.watch.scoped = !!(watching && scoped);
+    WV.root.visible = watching && !scoped && !this.watch.hidden;
+    WV.smoke.points.visible = WV.root.visible;
+    if (!WV.root.visible) WV.smoke.update(dt);
     if (scoped) {
       const t = this.time, k = (optic.sway ?? 1) * (p.mount ? 0.3 : 1);
       cam.rotation.x += (Math.sin(t * 0.9) * 0.0018 + Math.sin(t * 2.3) * 0.0006) * k;
@@ -840,7 +852,7 @@ export class Game {
     // viewmodel camera FOV (narrower when aiming for a bigger sight picture)
     const vmc = this.engine.vmCamera;
     vmc.fov = lerp(58, 48, adsE); vmc.updateProjectionMatrix();
-    if (p.alive) W.vm.updateLedgeHands(cam);
+    if (p.alive) W.vm.updateLedgeHands(cam); else if (watching) WV.updateLedgeHands(cam);
 
     // ---- sun direction in camera space, shadow check for the viewmodel light
     const sd = this.envObjs.sunDir;
@@ -884,12 +896,12 @@ export class Game {
     this.hud.update(dt);
     this.hud.showScoreboard(inp.down('scoreboard'));
 
-    this.updateLod(cam, optic && optic.lens && W.adsAmount > 0.02 && p.alive ? 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG : 0);
+    this.updateLod(cam, optic && optic.lens && adsA > 0.02 && (p.alive || watching) ? 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG : 0);
 
     // ---- render (PIP scope first)
     if (optic && optic.lens) {
       // the lens only shows a live picture while aiming, otherwise it's dark glass
-      const live = W.adsAmount > 0.02 && p.alive;
+      const live = adsA > 0.02 && (p.alive || watching);
       if (live !== optic._live) {
         optic._live = live;
         optic.pipMat.map = live ? this.pipRT.texture : null;
@@ -902,11 +914,12 @@ export class Game {
         pc.fov = 2 * Math.atan(Math.tan(baseV * DEG / 2) / (optic.pipZoom || 3)) / DEG;
         pc.updateProjectionMatrix();
         const r = this.engine.renderer;
-        W.vm.root.visible = false;
+        const vis = W.vm.root.visible, visW = WV.root.visible;
+        W.vm.root.visible = false; WV.root.visible = false;
         r.setRenderTarget(this.pipRT);
         if (optic.thermal) this.renderThermal(pc); else { r.clear(); r.render(this.scene, pc); }
         r.setRenderTarget(null);
-        W.vm.root.visible = true;
+        W.vm.root.visible = vis; WV.root.visible = visW;
       }
     }
     if (scoped && optic.thermal) { this.engine.renderer.info.reset(); this.renderThermal(cam); }

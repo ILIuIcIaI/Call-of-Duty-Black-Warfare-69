@@ -86,7 +86,9 @@ function flashSideTexture() {
 }
 
 export class Viewmodel {
-  constructor(game) {
+  // opts.lightsFrom: another viewmodel whose lights this one shares (watching a teammate in his own eyes: the second pair
+  // of hands is lit by the same lights, none are added)
+  constructor(game, opts = {}) {
     this.game = game;
     this.scene = game.vmScene;
     this.mats = weaponMaterials(game.tex, true);
@@ -133,14 +135,18 @@ export class Viewmodel {
     this.root.add(this.plateArm);
 
     // lights (camera space); key light follows the world sun direction
-    this.hemi = new THREE.HemisphereLight(0xe8e6e0, 0x5a5044, 1.7);
-    this.key = new THREE.DirectionalLight(0xffffff, 2.0);
-    this.fill = new THREE.DirectionalLight(0x9aa8b8, 0.5);
-    this.fill.position.set(-1, -0.3, 0.6);
-    this.rim = new THREE.DirectionalLight(0xc6d8ff, 0.5);
-    this.rim.position.set(-1.3, 1.1, -0.9);
-    this.scene.add(this.rim);
-    this.scene.add(this.hemi, this.key, this.key.target, this.fill);
+    const Lf = opts.lightsFrom;
+    if (Lf) { this.hemi = Lf.hemi; this.key = Lf.key; this.fill = Lf.fill; this.rim = Lf.rim; }
+    else {
+      this.hemi = new THREE.HemisphereLight(0xe8e6e0, 0x5a5044, 1.7);
+      this.key = new THREE.DirectionalLight(0xffffff, 2.0);
+      this.fill = new THREE.DirectionalLight(0x9aa8b8, 0.5);
+      this.fill.position.set(-1, -0.3, 0.6);
+      this.rim = new THREE.DirectionalLight(0xc6d8ff, 0.5);
+      this.rim.position.set(-1.3, 1.1, -0.9);
+      this.scene.add(this.rim);
+      this.scene.add(this.hemi, this.key, this.key.target, this.fill);
+    }
     this.shadowAmt = 1;
 
     // ---- springs (physical units: meters / radians)
@@ -566,7 +572,7 @@ export class Viewmodel {
     c.obj.rotation.set(0, Math.random() * Math.PI, 0);
     // out to the right and away, falling as brass falls: aimed, the port sits right under the eye, and casings thrown up slowly
     // (and a little toward the face) hung big over the middle of the picture, as if parts of the gun were flying about
-    const ads = this.game.weapons ? this.game.weapons.adsAmount : 0;
+    const ads = this.adsOverride ?? (this.game.weapons ? this.game.weapons.adsAmount : 0);
     c.vel.set(rand(1.7, 2.3) + ads * 0.5, rand(0.35, 0.75) * (1 - ads * 0.45), rand(-0.05, 0.15));
     if (w.revolver) c.vel.set(rand(-0.3, 0.3), rand(-0.6, -0.2), rand(0.3, 0.6));
     c.spin.set(rand(-25, 25), rand(-25, 25), rand(-25, 25));
