@@ -477,6 +477,8 @@ class HandsAtWork {
 
   // w: the work under way (or null), bomb: the BombModel, p: the player, cam: the camera
   update(dt, w, bomb, p, cam) {
+    // (fallen: gone at once, not floating on in front of the camera that shows how)
+    if (!p.alive) { this.k = 0; this.kc = 0; this.root.visible = false; return; }
     const on = !!(w && w.ent === p);
     // (the hands come in and go in four tenths of a second; the eyes go down to it and back up a little slower)
     this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.4 : -dt / 0.4)));
@@ -561,17 +563,22 @@ export class SearchDestroy {
   workCam(cam) {
     const k = this.hands.kc || 0, e = k * k * k * (k * (k * 6 - 15) + 10);
     if (k <= 0) { this.camFrom = null; this.camFollow = null; return; }
-    const w = this.work, at = w && w.at ? w.at : this.bomb.root.position, yaw = w && w.yaw !== undefined ? w.yaw : this.hands.yaw || 0;
+    // (once your work is over, or broken off, the eyes go back from where they were then: the same spot and lean)
+    const w = this.work && this.work.ent === this.game.player ? this.work : null;
+    if (w && w.at) (this.camAt || (this.camAt = new THREE.Vector3())).copy(w.at);
+    const at = w && w.at ? w.at : this.camAt || this.bomb.root.position, yaw = w && w.yaw !== undefined ? w.yaw : this.hands.yaw || 0;
     const t = this.game.time, cy = Math.cos(yaw), sy = Math.sin(yaw);
     // (down from where the eyes were and the way they looked when it began, not from where crouching drops them and
     // turning them onto the bomb points them, which is quick; back up to wherever they are by then, taken over in a
     // third of a second)
     const dtc = Math.min(0.05, Math.max(0, t - (this.camT ?? t))); this.camT = t;
     if (!this.camFrom) { this.camFrom = cam.position.clone(); this.camFromQ = cam.quaternion.clone(); this.camBack = 0; }
-    this.camBack = w && w.ent === this.game.player ? 0 : Math.min(1, (this.camBack || 0) + dtc / 0.3);
+    // (and if F is held again on the way back, back down from there)
+    this.camBack = Math.max(0, Math.min(1, (this.camBack || 0) + (w ? -dtc : dtc) / 0.3));
     const from = _cf.copy(this.camFrom).lerp(cam.position, sm(this.camBack)), fromQ = _cq.copy(this.camFromQ).slerp(cam.quaternion, sm(this.camBack));
     const loc = (x, y, z, out) => out.set(at.x + x * cy + z * sy, at.y + y, at.z - x * sy + z * cy);
-    const s = w ? seqScale(w.need) : 1, lean = !w ? 1 : w.kind === 'plant' ? sm((w.t - 1.2 * s) / (0.8 * s)) : sm(w.t / 0.5);
+    const s = w ? seqScale(w.need) : 1, lean = !w ? this.camLean ?? 1 : w.kind === 'plant' ? sm((w.t - 1.2 * s) / (0.8 * s)) : sm(w.t / 0.5);
+    if (w) this.camLean = lean;
     const br = Math.sin(t * 1.3) * 0.003, bu = Math.sin(t * 0.9 + 1) * 0.004;
     loc(br + 0.025 * lean, 0.66 - 0.16 * lean + bu, 0.44 - 0.18 * lean, _v);
     loc(0.035 * lean, 0.07 + 0.1 * lean, -0.01 - 0.09 * lean, _w);
@@ -942,7 +949,8 @@ export class SearchDestroy {
     if (e.isBot) e.busy = true;
     if (e === g.player) {
       this.work.stance = e.stance;
-      if (!this.camFrom) { this.camFrom = g.engine.camera.position.clone(); this.camFromQ = g.engine.camera.quaternion.clone(); } // (before the crouch drops the eyes)
+      // (where the eyes are now, before the crouch drops them; kept while they are still on their way back from the last)
+      if (!this.camFrom || !(this.hands.kc > 0)) { this.camFrom = g.engine.camera.position.clone(); this.camFromQ = g.engine.camera.quaternion.clone(); this.camFollow = null; }
       if (e.stance === 'stand') e.stance = 'crouch';
     }
     if (kind === 'plant') { const at = this.plantedAt(e); this.work.at = at.pos.clone(); this.work.yaw = at.yaw; this.work.from = this.carryFrom(at.pos, at.yaw); this.bomb.reset(); this.bomb.root.visible = true; }
