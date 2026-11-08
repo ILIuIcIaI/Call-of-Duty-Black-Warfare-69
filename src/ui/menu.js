@@ -84,7 +84,7 @@ export class Menu {
       : '<div class="hint">Die beiden Karten für Search and Destroy entstehen gerade.</div>';
     return `<div class="section-title">KARTE</div><div class="row">${maps}</div>
       <div class="section-title">TEAMS</div>
-      <div class="seg" data-sdsize>${[4, 5, 6].map((n) => `<button data-v="${n}" class="${sd.size === n ? 'on' : ''}">${n} GEGEN ${n}</button>`).join('')}</div>
+      <div class="seg" data-sdsize>${[1, 4, 5, 6].map((n) => `<button data-v="${n}" class="${sd.size === n ? 'on' : ''}">${n} GEGEN ${n}</button>`).join('')}</div>
       <div class="hint">Zwei Teams, eine Bombe. Die Angreifer legen sie auf Platz A oder B, die Verteidiger halten die Plätze und entschärfen sie. Kein Respawn innerhalb einer Runde. Ein Match hat 6 Runden, nach 3 Runden werden die Seiten getauscht; wer 4 Runden gewinnt, hat gewonnen, bei 3 : 3 entscheidet eine siebte Runde. Bots füllen beide Teams auf. Bombe legen und entschärfen: F gedrückt halten.</div>
       <div class="opt"><label>Schwierigkeit der Bots</label><div class="seg" data-seg="difficulty">${DIFFS.map(([k, n]) => `<button data-v="${k}" class="${m.difficulty === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
       <div style="margin-top:22px"><button class="btn" id="sd-start"${list.length ? '' : ' disabled'}>MATCH STARTEN</button></div>`;

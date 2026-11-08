@@ -27,7 +27,7 @@ const WING_MAPS = ['millrace', 'cornice', 'nightline', 'sirocco', 'atrium', 'dyn
 // Search and Destroy has maps of its own, the same as SD_MAP_LIST in src/world/maps/index.js; BW69_SD_MAPS adds some
 // to try it out on
 const SD_MAPS = ['qanat', 'lindenhof', ...(process.env.BW69_SD_MAPS || '').split(',').filter(Boolean)];
-const SD_SIZES = ['4', '5', '6'];
+const SD_SIZES = ['1', '4', '5', '6'];
 const TEAMS = (mode) => mode === 'tdm' || mode === 'wing' || mode === 'sd';
 const BOT_NAMES = ['Ghost', 'Viper', 'Havoc', 'Reaper', 'Nomad', 'Saber', 'Raptor', 'Blitz', 'Wolf', 'Hunter', 'Specter', 'Cobra', 'Rook', 'Jackal', 'Falcon', 'Onyx', 'Kodiak', 'Mako', 'Talon', 'Vandal', 'Bishop', 'Echo', 'Fuchs', 'Bär', 'Krähe', 'Mamba', 'Nox', 'Orca', 'Puma', 'Quill'];
 const WEAPON_WEIGHTS = { ar: 26, burst: 14, smg: 20, pdw: 14, shotgun: 10, autoshot: 8, lmg: 10, dmr: 12, sniper: 9, amr: 4 };

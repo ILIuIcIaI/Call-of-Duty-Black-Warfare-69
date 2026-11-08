@@ -16,7 +16,7 @@ import { Shop, ECON } from './sdshop.js';
 export const SD = {
   // (the user's times: 5 s to plant, 20 s on the clock once it is down, 5 s to defuse)
   FREEZE: 8, ROUND: 105, BOMB: 20, PLANT: 5, DEFUSE: 5, POST: 5, ROUNDS: 6, HALF: 3,
-  BLAST: 9, BLAST_FAR: 22, SIZES: [4, 5, 6],
+  BLAST: 9, BLAST_FAR: 22, SIZES: [1, 4, 5, 6],
 };
 const SITES = ['A', 'B'];
 const SIT_OUT = 'AB DER NÄCHSTEN RUNDE BIST DU DABEI';

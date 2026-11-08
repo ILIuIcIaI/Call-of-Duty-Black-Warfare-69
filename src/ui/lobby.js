@@ -152,7 +152,7 @@ export class Lobby {
     let opts = '';
     if (L.stage === 'mode') opts = MODES.filter(([k]) => k !== 'sd' || SD_MAP_LIST.length).map(([k, n, d]) => `<button class="mp-opt ${mine === k ? 'on' : ''}" data-vote="${k}"><h4>${n}</h4><p>${d}</p>${bar(k)}</button>`).join('');
     else if (L.stage === 'map' && L.choice && L.choice.mode === 'sd') opts = SD_MAP_LIST.map((m) => `<button class="mp-opt ${mine === m.id ? 'on' : ''}" data-vote="${m.id}"><h4>${esc(m.name)}</h4><p>${esc(m.desc)}</p>${bar(m.id)}</button>`).join('');
-    else if (L.stage === 'size') opts = ['4', '5', '6'].map((n) => `<button class="mp-opt ${mine === n ? 'on' : ''}" data-vote="${n}"><h4>${n} GEGEN ${n}</h4><p>${n} Spieler pro Team, Bots füllen auf, wenn ihr das wollt.</p>${bar(n)}</button>`).join('');
+    else if (L.stage === 'size') opts = ['1', '4', '5', '6'].map((n) => `<button class="mp-opt ${mine === n ? 'on' : ''}" data-vote="${n}"><h4>${n} GEGEN ${n}</h4><p>${n === '1' ? 'Ein Duell, einer gegen einen. Ein Bot springt ein, wenn ihr das wollt.' : n + ' Spieler pro Team, Bots füllen auf, wenn ihr das wollt.'}</p>${bar(n)}</button>`).join('');
     else if (L.stage === 'map') opts = MAP_LIST.filter((m) => !m.large && (!L.choice || L.choice.mode !== 'wing' || pointsOf(m))).map((m) => `<button class="mp-opt ${mine === m.id ? 'on' : ''}" data-vote="${m.id}"><h4>${esc(m.name)}</h4><p>${esc(m.desc)}</p>${bar(m.id)}</button>`).join('');
     else {
       // Wingman: with bots it is 2 against 2, without them just you (two of you: 1 against 1)
