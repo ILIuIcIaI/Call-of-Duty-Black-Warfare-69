@@ -34,6 +34,11 @@ export class BRHud {
     this.alt = add('br-alt');
     this.veh = add('br-veh'); this.veh.innerHTML = '<div class="na"></div><div class="sp"><b>0</b> km/h</div><i><u></u></i>';
     this.pops = add('br-pops');
+    // the inventory, bottom right: two long guns (1, 2) and the sidearm (3) in one strip; the slot in your hands lit up
+    this.inv = add('br-inv');
+    this.inv.innerHTML = [1, 2, 3].map((n) => '<div class="s' + (n === 3 ? ' q' : '') + '"><canvas></canvas><b>' + n + '</b></div>').join('');
+    this.invSlots = [...this.inv.children].map((d) => ({ el: d, c: d.querySelector('canvas'), key: '-' }));
+    this.invSel = -1;
     this.mapWrap = el('div', 'br-map', document.getElementById('app')); this.nodes.push(this.mapWrap);
     this.mapWrap.innerHTML = '<canvas></canvas><div class="legend"><span class="lz">Sichere Zone</span><span class="ln">Nächste Zone</span><span class="lp">Du</span><span class="lv">Fahrzeug</span>  ·  [M] schließen</div>';
     this.mapC = this.mapWrap.querySelector('canvas');
@@ -162,7 +167,7 @@ export class BRHud {
       na.textContent = d.name; cl.textContent = d.cls + ' · ' + R.name.charAt(0) + R.name.slice(1).toLowerCase();
       op.textContent = o.optic === 'iron' ? '' : O.name + (O.power === '1x' ? '' : ' ' + O.power);
       if (o.skin && o.skin !== 'standard' && SKINS[o.skin]) sk.textContent = 'Skin: ' + SKINS[o.skin].name; // (the other corner: the magazine hangs down in the middle)
-      this.cardKey.textContent = W.slots[d.slot === 'primary' ? 0 : 1] ? 'TAUSCHEN' : 'AUFHEBEN';
+      this.cardKey.textContent = W.slots[W.slotFor(d)] ? 'TAUSCHEN' : 'AUFHEBEN';
     } else {
       const plate = o.kind === 'plate';
       this.card.style.setProperty('--rar', plate ? '#3aa8c0' : '#c8b060');
@@ -174,11 +179,60 @@ export class BRHud {
     this.drawIcon(o, f.kind);
   }
 
+  // the inventory: a picture of what is in each slot (the same one the loot card shows), the rarity's colour, the slot in
+  // your hands lit up; redrawn only when something changes
+  updateInv() {
+    const W = this.game.weapons;
+    if (!W.inv) { this.inv.classList.add('hidden'); return; }
+    this.inv.classList.remove('hidden');
+    W.slots.forEach((s, i) => {
+      const S = this.invSlots[i];
+      if (!S) return;
+      const key = s ? s.def.id + '|' + s.optic + '|' + (s.skin || 'standard') + '|' + (s.def.rarity || 0) : '';
+      if (key === S.key) return;
+      S.key = key;
+      S.el.classList.toggle('empty', !s);
+      S.el.style.setProperty('--rar', s ? RARITY[s.def.rarity || 0].color : 'transparent');
+      const c = S.c, w = Math.round(S.el.clientWidth * 2) || 200, h = Math.round(S.el.clientHeight * 2) || 110;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      const x = c.getContext('2d');
+      x.clearRect(0, 0, w, h);
+      if (!s) return;
+      const img = this.iconImage({ kind: 'weapon', weaponId: s.def.id, optic: s.optic, rarity: s.def.rarity || 0, skin: s.skin }, 'item');
+      // (side on, as large as fits with a little room, the pistol's square as well)
+      const sc = Math.min((w * 0.9) / img.width, (h * 0.86) / img.height);
+      x.drawImage(img, (w - img.width * sc) / 2, (h - img.height * sc) / 2 + h * 0.03, img.width * sc, img.height * sc);
+    });
+    const sel = W.stowed ? -1 : W.cur;
+    if (sel !== this.invSel) { this.invSel = sel; this.invSlots.forEach((S, i) => S.el.classList.toggle('on', i === sel)); }
+  }
+
+  // a picture of a thing for the card or the inventory, as a canvas (rendered once per kind)
+  iconImage(o, kind) {
+    const key = kind === 'chest' ? 'chest' : o.kind === 'weapon' ? o.weaponId + '|' + o.optic + '|' + (o.skin || 'standard') : o.kind;
+    let cv = this.iconCanvases && this.iconCanvases.get(key);
+    if (cv) return cv;
+    const img = this.renderIcon(o, kind, key);
+    // (cut to the thing itself, so it fills a slot)
+    let x0 = img.width, y0 = img.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) if (img.data[(y * img.width + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < x0) { x0 = 0; y0 = 0; x1 = img.width - 1; y1 = img.height - 1; }
+    const full = document.createElement('canvas'); full.width = img.width; full.height = img.height; full.getContext('2d').putImageData(img, 0, 0);
+    cv = document.createElement('canvas'); cv.width = x1 - x0 + 1; cv.height = y1 - y0 + 1;
+    cv.getContext('2d').drawImage(full, x0, y0, cv.width, cv.height, 0, 0, cv.width, cv.height);
+    (this.iconCanvases || (this.iconCanvases = new Map())).set(key, cv);
+    return cv;
+  }
+
   // the picture on the card: rendered once per kind of thing, side on, in nothing but its own light
   drawIcon(o, kind) {
     const key = kind === 'chest' ? 'chest' : o.kind === 'weapon' ? o.weaponId + '|' + o.optic + '|' + (o.skin || 'standard') : o.kind;
     const c = this.cardIc, W = 520, H = 200;
     if (c.width !== W) { c.width = W; c.height = H; }
+    c.getContext('2d').putImageData(this.renderIcon(o, kind, key), 0, 0);
+  }
+  renderIcon(o, kind, key) {
+    const W = 520, H = 200;
     let img = this.icons.get(key);
     if (!img) {
       const r = this.game.engine.renderer, rt = this.icRT || (this.icRT = new THREE.WebGLRenderTarget(W, H)), h = this.icHolder, cam = this.icCam;
@@ -204,7 +258,7 @@ export class BRHud {
       }
       this.icons.set(key, img);
     }
-    c.getContext('2d').putImageData(img, 0, 0);
+    return img;
   }
 
   // where a point in the world is on the screen; false when it's behind the camera
@@ -250,6 +304,8 @@ export class BRHud {
     // ---- fading messages
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT < 0.6) this.bannerEl.style.opacity = Math.max(0, this.bannerT / 0.6); }
     if (this.hintT > 0) { this.hintT -= dt; if (this.hintT < 0.6) this.hintEl.style.opacity = Math.max(0, this.hintT / 0.6); }
+    // ---- the inventory
+    this.updateInv();
     // ---- weapon rarity on the ammo counter
     const W = g.weapons, rw = W.w && W.w.def.rarity;
     const ammoName = document.getElementById('ammo-weapon');

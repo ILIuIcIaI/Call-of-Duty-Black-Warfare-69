@@ -381,7 +381,9 @@ export class HUD {
     css(this.el.ammo || (this.el.ammo = $('ammo')), 'opacity', p.alive && !(g.br && g.br.playerState === 'downed') ? '1' : '0');
     this.updateGunPanel();
     if (wpn && wpn.w && wpn.w.def.melee) {
-      if (this.lastAmmo !== 'knife') { this.lastAmmo = 'knife'; this.el.ammoMag.textContent = '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = 'scaleX(1)'; this.el.ammoHint.textContent = ''; }
+      // (the knife never runs out; the fists have nothing to count)
+      const fists = !!wpn.w.def.fists, key = fists ? 'fists' : 'knife';
+      if (this.lastAmmo !== key) { this.lastAmmo = key; this.el.ammoMag.textContent = fists ? '' : '∞'; this.el.ammoRes.textContent = ''; this.el.ammoW.textContent = wpn.w.def.name; this.el.ammoMag.classList.remove('low'); this.el.ammoBar.style.transform = fists ? 'scaleX(0)' : 'scaleX(1)'; this.el.ammoHint.textContent = ''; }
     } else if (wpn && wpn.w) {
       const w = wpn.w;
       const res = wpn.infiniteAmmo ? '∞' : w.reserve, s = w.mag + '|' + res + '|' + w.def.name;

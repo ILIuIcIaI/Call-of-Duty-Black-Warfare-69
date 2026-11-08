@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WEAPONS } from './defs.js';
 import { Viewmodel } from './viewmodel.js';
-import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise, plateClip, meleeClip } from './anim.js';
+import { magReload, boxReload, pistolReload, revolverReload, shotgunStart, shotgunShell, shotgunEnd, pumpCycle, boltCycle, drawClip, holsterClip, inspectClip, firstRaise, plateClip, meleeClip, punchClip } from './anim.js';
 import { makeWeaponDef } from '../game/loot.js';
 import { skinOf } from './skins.js';
 import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
@@ -12,6 +12,8 @@ import { clamp, damp, DEG, rand, Spring, smooth } from '../core/math.js';
 // trace bullets.
 // =============================================================================
 export const PLATE_TIME = 1.15;
+// (Warzone: what is in your hands when the slot you picked is empty)
+const FISTS = { def: WEAPONS.fists, optic: 'iron', skin: 'standard', mag: 0, reserve: 0, chambered: true };
 const _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _v = new THREE.Vector3();
 
 export class PlayerWeapons {
@@ -35,7 +37,9 @@ export class PlayerWeapons {
     this.needsChamber = false;
   }
 
-  get w() { return this.slots[this.cur]; }
+  get w() { return this.slots[this.cur] || FISTS; }
+  // the sidearm's slot (the last one)
+  get side() { return this.slots.length - 1; }
   get def() { return this.w.def; }
   get busy() { return this.state !== 'idle'; }
 
@@ -56,7 +60,7 @@ export class PlayerWeapons {
       return { def, optic: def.optics.includes(optic) ? optic : def.optics[0], skin: this.skinFor(id), mag: def.mag, reserve: def.reserve, chambered: true };
     };
     this.slots = [mk(lo.primary, lo.primaryOptic), mk(lo.secondary, lo.secondaryOptic)];
-    this.cur = 0;
+    this.cur = 0; this.inv = false;
     this.equip(true);
   }
 
@@ -82,25 +86,52 @@ export class PlayerWeapons {
   setGunWeapon(id, skin, sight) {
     const def = WEAPONS[id], optic = sight && def.optics.includes(sight) ? sight : def.optics.includes('reflex') ? 'reflex' : def.optics[0];
     clearTimeout(this._boltDelay);
-    this.slots = [{ def, optic, skin, mag: def.mag, reserve: def.reserve, chambered: true }, null];
+    this.slots = [{ def, optic, skin, mag: def.mag, reserve: def.reserve, chambered: true }, null]; this.inv = false;
     this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0; this.lunge = null; this.lockSlot = -1;
     this.cur = 0;
     this.equip(false);
   }
 
-  // Warzone: you land with nothing but a plain pistol
-  setStartLoadout() {
-    const def = WEAPONS.pistol;
-    this.slots = [null, { def, optic: 'iron', mag: def.mag, reserve: def.mag * 2, chambered: true }];
-    this.cur = 1; this.lockSlot = -1; this.state = 'idle'; this.adsAmount = 0; this.burstLeft = 0; this.stowed = false; this.lunge = null;
+  // Nothing but a plain pistol (Warzone, landing; Search and Destroy, a round). In Warzone (inv) two long guns and the
+  // sidearm fit (keys 1, 2, 3), and a slot with nothing in it is your fists.
+  setStartLoadout(inv = false) {
+    const def = WEAPONS.pistol, pistol = { def, optic: 'iron', mag: def.mag, reserve: def.mag * 2, chambered: true };
+    this.inv = inv;
+    this.slots = inv ? [null, null, pistol] : [null, pistol];
+    this.cur = this.slots.length - 1; this.lastLong = 0; this.punchNext = false; this.lockSlot = -1; this.state = 'idle'; this.adsAmount = 0; this.burstLeft = 0; this.stowed = false; this.lunge = null;
     this.vm.stop(); this.vm.endFree();
     this.vm.setWeapon(def, 'iron');
+  }
+
+  // Where a found weapon goes: a sidearm into the sidearm's slot; a long gun into its slot, in Warzone into a free one
+  // of the two, or (both full) in place of the long gun in your hands, or of the one you had last.
+  slotFor(def) {
+    if (!this.inv) return def.slot === 'primary' ? 0 : 1;
+    if (def.slot !== 'primary') return this.side;
+    if (!this.slots[0]) return 0;
+    if (!this.slots[1]) return 1;
+    return this.cur < this.side ? this.cur : this.lastLong || 0;
+  }
+  // Q or the wheel: the next slot with something in it; with nothing else to go to, the fists (an empty slot) and back
+  nextSlot(dir) {
+    if (!this.inv) return 1 - this.cur;
+    const n = this.slots.length;
+    for (let k = 1; k < n; k++) { const i = (this.cur + dir * k + n * 3) % n; if (this.slots[i]) return i; }
+    return this.slots[this.cur] ? this.slots.findIndex((x) => !x) : -1;
+  }
+  // the slot to come back to after a jump: the one you had, unless that was the sidearm and a long gun is there; else
+  // a long gun, else the sidearm
+  backSlot() {
+    const S = this.slots, side = this.side, p = this.prevCur;
+    if (p !== undefined && p <= side && S[p] && !(p === side && S.slice(0, side).some(Boolean))) return p;
+    const i = S.findIndex((x, k) => x && k < side);
+    return i >= 0 ? i : side;
   }
 
   // a found weapon goes into its slot; what was there comes back to be dropped
   pickup(it) {
     const def = makeWeaponDef(it.weaponId, it.rarity);
-    const i = def.slot === 'primary' ? 0 : 1, old = this.slots[i];
+    const i = this.slotFor(def), old = this.slots[i];
     this.slots[i] = { def, optic: it.optic, skin: skinOf(it.skin), mag: it.mag ?? def.mag, reserve: it.reserve ?? def.mag * 3, chambered: true };
     this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1;
     this.cur = i;
@@ -137,6 +168,7 @@ export class PlayerWeapons {
 
   equip(first) {
     const w = this.w;
+    if (this.inv && this.cur < this.side && this.slots[this.cur]) this.lastLong = this.cur;
     this.vm.setWeapon(w.def, w.optic, w.skin);
     this.adsAmount = 0; this.burstLeft = 0;
     this.state = 'draw';
@@ -160,15 +192,20 @@ export class PlayerWeapons {
     let want = -1;
     if (input.pressed('weapon1')) want = 0;
     if (input.pressed('weapon2')) want = 1;
-    if (input.pressed('swap') || input.wheel !== 0) want = 1 - this.cur;
-    if (want >= 0 && want !== this.cur && this.state !== 'holster' && this.state !== 'plate' && this.slots[want] && !(this.lockSlot >= 0)) {
+    if (this.inv && input.pressed('weapon3')) want = 2;
+    if (input.pressed('swap') || input.wheel !== 0) want = this.nextSlot(input.wheel < 0 ? -1 : 1);
+    // (Warzone: an empty slot can be picked too, it is the fists)
+    if (want >= 0 && want !== this.cur && this.state !== 'holster' && this.state !== 'plate' && (this.slots[want] || this.inv) && !(this.lockSlot >= 0)) {
       this.cancelReload();
       this.state = 'holster'; this.pendingSlot = want;
       this.vm.play(holsterClip(0.2));
     }
 
-    // ---- knife
-    if ((input.pressed('melee') || (def.melee && input.firePressed)) && !player.gliding && player.mode !== 'mantle' && player.mode !== 'dive' && this.state !== 'holster' && this.state !== 'plate' && this.state !== 'melee') this.startMelee(player);
+    // ---- knife (and the fists: a click during a punch throws the next one after it, holding throws one after another)
+    const meleeIn = input.pressed('melee') || (def.melee && input.firePressed);
+    this.heldFire = !!(def.fists && input.fire);
+    if (meleeIn && def.fists && this.state === 'melee') this.punchNext = true;
+    if (meleeIn && this.canMelee(player) && this.state !== 'holster' && this.state !== 'plate' && this.state !== 'melee') this.startMelee(player);
     if (this.lunge) this.updateLunge(dt, player);
 
     // ---- sprint / movement restrictions
@@ -355,6 +392,8 @@ export class PlayerWeapons {
     return best;
   }
 
+  canMelee(player) { return player.alive && !player.gliding && player.mode !== 'mantle' && player.mode !== 'dive'; }
+
   startMelee(player) {
     const g = this.game;
     this.vm.stop(); this.shellLoop = false; this.pendingSlot = -1; this.burstLeft = 0;
@@ -362,6 +401,14 @@ export class PlayerWeapons {
     // Warzone: from behind, on someone already hurt, it turns into a finisher
     if (g.br && g.br.tryFinisher(player)) return;
     this.state = 'melee';
+    if (this.def.fists) {
+      // the fists: left and right in turn, a short step toward whoever is just out of reach
+      this.punchSide = this.punchSide === 'L' ? 'R' : 'L';
+      this.vm.play(punchClip(0.42, this.punchSide));
+      const c = this.meleeTarget(player, 2.8);
+      this.lunge = c ? { c, t: 0.1 } : null;
+      return;
+    }
     this.vm.play(meleeClip(0.62));
     // a short lunge toward whoever is close enough
     const c = this.meleeTarget(player, 3.6);
@@ -378,20 +425,20 @@ export class PlayerWeapons {
   }
 
   meleeStrike(player) {
-    const g = this.game, c = this.meleeTarget(player, 2.45, 0.95), cam = g.engine.camera;
+    const g = this.game, fists = !!this.def.fists, c = this.meleeTarget(player, fists ? 2.1 : 2.45, 0.95), cam = g.engine.camera;
     cam.getWorldDirection(_dir);
     if (c) {
       const dx = c.pos.x - player.pos.x, dz = c.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
       // its own facing against the direction we are coming from: from behind, the knife kills a bot outright. Another player only gets hurt.
       const back = c.isBot && (-Math.sin(c.aimYaw) * dx + -Math.cos(c.aimYaw) * dz) / d > 0.35;
-      const dmg = back && !g.br ? 400 : 105; // Warzone has the finisher for this
+      const dmg = fists ? this.def.damage[0] : back && !g.br ? 400 : 105; // (Warzone has the finisher for this)
       const dir = new THREE.Vector3(dx / d, 0.1, dz / d);
       const point = new THREE.Vector3(c.pos.x - dx / d * 0.25, c.pos.y + 1.15, c.pos.z - dz / d * 0.25);
-      g.fx.impact(point, _v.copy(dir).negate(), 'flesh', 1.4);
-      g.audio.play('stab', { vol: 1 });
-      g.shake.add(0.16);
-      this.vm.jolt(0, 0, 0.05, 0.5, -0.5, -0.4);
-      g.applyDamage(c, dmg, player, { part: 'chest', dir, weapon: { name: 'MESSER', damage: [dmg, dmg] }, point });
+      g.fx.impact(point, _v.copy(dir).negate(), 'flesh', fists ? 0.5 : 1.4);
+      g.audio.play(fists ? 'punch' : 'stab', { vol: 1 });
+      g.shake.add(fists ? 0.1 : 0.16);
+      this.vm.jolt(0, 0, fists ? 0.09 : 0.05, 0.5, -0.5, -0.4);
+      g.applyDamage(c, dmg, player, { part: 'chest', dir, weapon: { id: fists ? 'fists' : 'knife', name: fists ? 'FÄUSTE' : 'MESSER', damage: [dmg, dmg] }, point });
       return;
     }
     // a wall? you hear it
@@ -468,6 +515,11 @@ export class PlayerWeapons {
     }
     if (c === 'draw' || c === 'raise') { this.state = 'idle'; return; }
     if (c === 'inspect' || c === 'plate' || c === 'melee') { this.state = 'idle'; return; }
+    if (c === 'punch') {
+      this.state = 'idle';
+      if ((this.punchNext || this.heldFire) && this.def.fists && this.canMelee(g.player)) { this.punchNext = false; this.startMelee(g.player); } else this.punchNext = false;
+      return;
+    }
     if (c === 'pump') { this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
     if (c === 'bolt') { w.chambered = true; this.state = 'idle'; if (w.mag === 0 && w.reserve > 0) this.tryReload(); return; }
     if (c === 'rstart') { this.vm.play(shotgunShell(def.reload)); return; }

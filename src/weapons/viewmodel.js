@@ -4,6 +4,7 @@ import { buildWeapon, buildHands, weaponMaterials, basisQuat, buildPlate, evenUV
 import { applySkin, skinMaterials } from './skins.js';
 import { sampleKeys, sampleScalar, stateAt } from './anim.js';
 import { Particles } from '../fx/effects.js';
+import { buildArm, curlHand, reachArm } from './arms.js';
 
 // =============================================================================
 // First-person viewmodel: weapon + gloved hands rendered in their own scene
@@ -42,6 +43,18 @@ const tmpA = [0, 0, 0, 0, 0, 0], tmpB = [0, 0, 0];
 const tmpC = [0, 0, 0, 0, 0, 0];
 const KNIFE_ARM = new THREE.Vector3(-0.5, -0.55, 0.9).normalize(); // where the forearm of the left fist points
 const ZERO6 = [0, 0, 0, 0, 0, 0];
+// The fists (Warzone, a slot with nothing in it), the same arms as at the bomb: up in a guard, the right a little lower
+// and further back, knuckles forward, half turned (thumbs up and in). In the pivot's space, so whatever moves a gun
+// (walking, the sway, drawing and putting away) moves them. [x, y, z, pitch, yaw, roll]
+const FIST_R = [0.025, 0.028, 0.01, 0.38, 0.28, -0.78], FIST_L = [-0.265, 0.042, -0.035, 0.42, -0.26, 0.78];
+const FIST = [1.15, 1.3, 1.32, 1.34, 1.36]; // (past 1: the fingers right in, the thumb across them)
+// a punch, the punching fist: a little back, straight out to the middle at arm's length while it turns over, a moment
+// there, back up into the guard. The other fist tucks in.
+const FIST_OUT = [[0, 0], [0.12, -0.07], [0.22, 0.55], [0.36, 1], [0.5, 1], [0.78, 0.22], [1, 0]];
+const FIST_TUCK = [[0, 0], [0.3, 1], [0.62, 1], [1, 0]];
+// the shoulders the arms reach back to, and which way the elbows go (camera space)
+const SH_R = new THREE.Vector3(0.2, -0.28, 0.1), SH_L = new THREE.Vector3(-0.2, -0.28, 0.1);
+const POLE_R = new THREE.Vector3(0.65, -0.75, 0.15), POLE_L = new THREE.Vector3(-0.65, -0.75, 0.15);
 
 function flashTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
@@ -214,6 +227,9 @@ export class Viewmodel {
       this.lHome = { pos: r.pos.clone().add(_v.set(-0.012, -0.022, -0.004)), quat: r.quat.clone().multiply(_q.setFromEuler(_e.set(0.1, 0.0, 0.15))) };
     }
     this.lhand.visible = !def.melee;
+    this.fists = !!def.fists;
+    if (this.fists) this.ensureFists();
+    if (this.fistRoot) this.fistRoot.visible = false;
     if (w.parts.mag) {
       const magRest = new THREE.Matrix4().compose(this.rest.mag.pos, new THREE.Quaternion().setFromEuler(this.rest.mag.rot), new THREE.Vector3(1, 1, 1));
       const a = this.resolveAnchor('mag', true, {});
@@ -339,6 +355,7 @@ export class Viewmodel {
   // kind: 'fall' arms spread in free fall, 'deploy' the parachute opening, 'chute' hands up on the lines, 'crawl' pulling along the ground, 'revive' on the wound
   updateFree(dt, kind, t, amount = 1, enter = 1) {
     this.pivot.visible = false;
+    if (this.fistRoot) this.fistRoot.visible = false;
     this.ripcord.visible = false; this.freeLines.visible = false;
     const L = this.lhandOpen, R = this.rhandOpen;
     L.visible = R.visible = true;
@@ -387,6 +404,44 @@ export class Viewmodel {
     }
     L.position.set(lp[0], lp[1], lp[2]); R.position.set(rp[0], rp[1], rp[2]);
     L.rotation.set(lr[0], lr[1], lr[2], 'YXZ'); R.rotation.set(rr[0], rr[1], rr[2], 'YXZ');
+  }
+  // -------------------------------------------------------------- fists
+  ensureFists() {
+    if (this.fistArms) return;
+    const g = this.fistRoot = new THREE.Group();
+    this.root.add(g);
+    this.fistGeos = [];
+    const L = buildArm(this.mats, -1, g, this.fistGeos), R = buildArm(this.mats, 1, g, this.fistGeos);
+    curlHand(L, FIST); curlHand(R, FIST);
+    this.fistArms = { L, R };
+    g.visible = false;
+  }
+  updateFists(dt, st, c) {
+    this.fistRoot.visible = this.pivot.visible;
+    this.rhand.visible = false; this.lhand.visible = false; this.lhandOpen.visible = false; this.knifeArm.visible = false;
+    if (this.model) this.model.root.visible = false;
+    const punch = c && c.name === 'punch' ? c : null, u = punch ? Math.min(1, this.clipT) : 0;
+    const out = punch ? sampleScalar(FIST_OUT, u) : 0, tuck = punch ? sampleScalar(FIST_TUCK, u) : 0;
+    // (running: the fists come down a little and swing against each other, as arms do)
+    const run = Math.max(this.poseVals.sprint, this.poseVals.tac), ph = st.bobPhase || 0, sw = Math.sin(ph);
+    for (const H of [this.fistArms.R, this.fistArms.L]) {
+      const right = H.mirror > 0, G = right ? FIST_R : FIST_L, mine = !!punch && (punch.side === 'R') === right, sg = right ? 1 : -1;
+      const k = mine ? out : 0, t = punch && !mine ? tuck : 0, sws = sw * sg;
+      _v3.set(G[0], G[1] - 0.05 * run + 0.035 * run * sws, G[2] + 0.04 * run - 0.1 * run * sws);
+      _q.setFromEuler(_e.set(G[3] - 0.45 * run, G[4], G[5], 'YXZ'));
+      _m.compose(_v3, _q, ONE3).premultiply(this.pivot.matrix);
+      _m.decompose(H.g.position, H.g.quaternion, _s3);
+      H.g.position.z += 0.025 * t; H.g.position.y += 0.012 * t; H.g.position.x -= 0.015 * t * sg;
+      if (k !== 0) {
+        // out to the middle of the picture, a little low, the fist turning flat; (before it, k < 0: drawn back a little)
+        _v2.set(0.03 * sg, -0.045, -0.58);
+        if (k > 0) H.g.position.lerp(_v2, k); else H.g.position.z -= k * 0.05;
+        _q2.setFromEuler(_e.set(0.12, 0.1 * sg, -0.3 * sg, 'YXZ'));
+        H.g.quaternion.slerp(_q2, Math.max(0, k));
+      }
+      H.g.updateMatrix();
+      reachArm(H, right ? SH_R : SH_L, right ? POLE_R : POLE_L);
+    }
   }
   endFree() { this.pivot.visible = true; this.lhandOpen.visible = false; this.rhandOpen.visible = false; this.ripcord.visible = false; this.freeLines.visible = false; }
 
@@ -630,9 +685,9 @@ export class Viewmodel {
     let rx = 0, ry = 0, rz = 0;
     // hip: slight inward cant like CoD
     ry += 0.025 * noAds; rz += 0.02 * noAds;
-    const pistol = this.isPistol ? 1 : 0;
-    const rifleSprint = P.sprint * (1 - pistol), rifleTac = P.tac * (1 - pistol);
-    const prun = Math.max(P.sprint, P.tac) * pistol;
+    const pistol = this.isPistol ? 1 : 0, gun = this.fists ? 0 : 1;
+    const rifleSprint = P.sprint * (1 - pistol) * gun, rifleTac = P.tac * (1 - pistol) * gun;
+    const prun = Math.max(P.sprint, P.tac) * pistol * gun;
     const ph = st.bobPhase;
     // sprint: lowered and canted across the body
     pos.x += -0.035 * rifleSprint; pos.y += -0.035 * rifleSprint; pos.z += 0.035 * rifleSprint;
@@ -852,6 +907,9 @@ export class Viewmodel {
       this.lhandOpen.quaternion.copy(this.pivot.quaternion).multiply(_q);
       this.lhandOpen.visible = true; this.lhand.visible = false;
     }
+
+    // ---- nothing in the hands: the fists
+    if (this.fists) this.updateFists(dt, st, c);
 
     // ---- muzzle flash + light
     if (this.flash.visible) { this.flashT -= dt; if (this.flashT <= 0) { this.flash.visible = false; this.wings.visible = false; } }

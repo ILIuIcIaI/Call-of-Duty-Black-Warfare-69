@@ -303,6 +303,16 @@ export function meleeClip(dur = 0.62) {
     S: {}, E: [[0.05, 'swing'], [0.27, 'meleeHit']],
   };
 }
+// The fists: one punch, left or right. Here only the body going a little with it (a turn into the punch); the fist's
+// own way out and back is in the viewmodel (FIST_OUT). The hit lands at full stretch.
+export function punchClip(dur = 0.42, side = 'R') {
+  const s = side === 'R' ? 1 : -1;
+  return {
+    name: 'punch', dur, side,
+    W: [[0, ...Z6], [0.14, 0, -0.004, 0.006, -0.02, -0.03 * s, 0.02 * s], [0.42, -0.008 * s, 0.003, -0.01, 0.03, 0.05 * s, -0.035 * s], [0.62, -0.006 * s, 0.002, -0.006, 0.02, 0.035 * s, -0.025 * s], [1, ...Z6]],
+    S: {}, E: [[0.08, 'swing'], [0.4, 'meleeHit']],
+  };
+}
 export function inspectClip(dur = 3.2) {
   return {
     name: 'inspect', dur,

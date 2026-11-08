@@ -1335,8 +1335,21 @@ function buildKnife(m) {
   };
 }
 
+// Nothing in the hands: the fists. No model; a grip where the right fist closes (in third person the hand rests there).
+function buildFists() {
+  return {
+    root: new THREE.Group(), parts: {}, ironY: 0.05, railY: 0.045, opticZ: 0.0,
+    anchors: {
+      rhand: rhandGrip(0, -0.04, 0.032, 0.32), lhand: null,
+      muzzle: new THREE.Vector3(0, 0.05, -0.1), eject: new THREE.Vector3(0.02, 0.04, -0.03),
+      magGrab: new THREE.Vector3(0, -0.06, 0.02), charge: new THREE.Vector3(0.0, 0.04, 0.03),
+    },
+    casing: 'pistol', sightZ: 0.05, eyeRelief: 0.3, pistol: true, fists: true,
+  };
+}
+
 const BUILDERS = {
-  knife: buildKnife,
+  knife: buildKnife, fists: buildFists,
   ar: buildAR, smg: buildSMG, lmg: buildLMG, dmr: buildDMR, sniper: buildSniper, shotgun: buildShotgun,
   pistol: (m, o) => buildPistol(m, o), mpistol: (m, o) => buildPistol(m, o, 'auto'), revolver: buildRevolver,
   burst: buildBurst, pdw: buildPDW, amr: buildAMR, autoshot: buildAutoshot, handcannon: buildHandcannon,

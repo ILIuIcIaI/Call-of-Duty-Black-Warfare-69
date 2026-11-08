@@ -11,6 +11,7 @@ export const BINDINGS = {
   reload: ['KeyR'],
   weapon1: ['Digit1'],
   weapon2: ['Digit2'],
+  weapon3: ['Digit3'],
   swap: ['KeyQ'],
   inspect: ['KeyI'],
   melee: ['KeyV', 'KeyE'],

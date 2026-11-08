@@ -259,6 +259,18 @@ body.hoverlook #game-canvas { cursor: none; }
 #br-progress { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); width: 240px; text-align: center; font-weight: 700; letter-spacing: 2px; font-size: 13px; text-shadow: 0 1px 3px #000; }
 #br-progress i { display: block; height: 5px; margin-top: 4px; background: rgba(0,0,0,.5); }
 #br-progress b { display: block; height: 100%; width: 0; background: #5ac8ff; }
+/* the Warzone inventory, bottom right: two long guns and the sidearm, one strip; the ammo counter sits above it */
+#br-inv { --h: clamp(44px, 5.6vh, 64px); position: absolute; right: 30px; bottom: 24px; display: flex; gap: 3px; pointer-events: none; }
+#br-inv .s { position: relative; width: calc(var(--h) * 1.8); height: var(--h); box-sizing: border-box; background: linear-gradient(180deg, rgba(10,12,14,.38), rgba(10,12,14,.62)), linear-gradient(0deg, color-mix(in srgb, var(--rar, transparent) 34%, transparent), transparent 70%); border: 1px solid rgba(255,255,255,.2); border-bottom: 3px solid var(--rar, rgba(255,255,255,.12)); transition: border-color .12s, transform .12s, background-color .12s; }
+#br-inv .s.q { width: var(--h); }
+#br-inv .s.empty { border-bottom-color: rgba(255,255,255,.12); }
+#br-inv .s.on { border-color: rgba(255,255,255,.95); border-bottom-color: var(--rar, rgba(255,255,255,.95)); transform: translateY(-3px); background-color: rgba(255,255,255,.08); }
+#br-inv .s.on.empty { border-bottom-color: rgba(255,255,255,.95); }
+#br-inv canvas { position: absolute; inset: 0; width: 100%; height: 100%; filter: brightness(1.35) drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+#br-inv b { position: absolute; left: 4px; top: 1px; font-family: var(--head); font-size: calc(var(--h) * .28); line-height: 1.1; color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
+#br-inv .s.on b { color: #fff; }
+#br-inv.hidden { display: none; }
+#hud.br #ammo { bottom: calc(24px + clamp(44px, 5.6vh, 64px) + 14px); }
 #br-gas { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(255,110,30,.12) 25%, rgba(255,70,10,.5) 100%); }
 #br-gas div { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font-family: var(--head); font-size: 34px; letter-spacing: 3px; color: #ffb27a; text-align: center; text-shadow: 0 2px 8px #000; white-space: nowrap; }
 #br-gas small { display: block; font-family: var(--font); font-size: 16px; font-weight: 700; letter-spacing: 1px; color: #fff; }

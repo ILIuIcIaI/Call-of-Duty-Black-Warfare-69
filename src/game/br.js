@@ -282,7 +282,7 @@ export class BRMatch {
     p.reset(); p.alive = true; p.armor = 0; p.plates = 0;
     p.pos.copy(this.flight.a); p.vel.set(0, 0, 0);
     p.yaw = Math.atan2(-this.flight.dir.x, -this.flight.dir.z); p.pitch = -0.25;
-    W.setStartLoadout();
+    W.setStartLoadout(true);
     g.hud.setScope(null);
     W.vm.root.visible = false;
     const mine = this.cfg.net ? OUTFITS[this.cfg.roster.find((r) => r.id === g.net.you).outfit] : null;
@@ -779,7 +779,7 @@ export class BRMatch {
     // the gun works up here like everywhere else, once it is out
     if (W.stowed) {
       if (T < 1.2) W.vm.updateFree(dt, 'deploy', g.time, T); else W.vm.updateFree(dt, 'chute', g.time);
-      if (T >= 1.2 && (inp.pressed('weapon1') || inp.pressed('weapon2') || inp.pressed('swap') || inp.wheel !== 0)) { W.unstow(1); this.hud.hint('[Linke Maustaste] Schießen   ·   [Strg] Gleiter kappen', 3); }
+      if (T >= 1.2 && (inp.pressed('weapon1') || inp.pressed('weapon2') || inp.pressed('weapon3') || inp.pressed('swap') || inp.wheel !== 0)) { W.unstow(W.side); this.hud.hint('[Linke Maustaste] Schießen   ·   [Strg] Gleiter kappen', 3); }
     } else W.update(dt, inp, p);
     if (inp.pressed('crouch') && p.pos.y - this.groundBelow(p) > 30) { this.cutChute(); return; }
     if (land) this.landChute();
@@ -810,7 +810,7 @@ export class BRMatch {
     this.playerState = 'ground';
     W.lockSlot = -1;
     // back on your feet: whatever you carried comes back into the hands
-    if (W.stowed) W.unstow(W.prevCur !== undefined && W.slots[W.prevCur] ? (W.prevCur === 1 && W.slots[0] ? 0 : W.prevCur) : 1);
+    if (W.stowed) W.unstow(W.backSlot());
     p.onGround = true; p.airTime = 0; p.groundTime = 0;
     p.vel.y = 0; p.vel.x *= 0.4; p.vel.z *= 0.4;
     p.onLand(9);

@@ -177,7 +177,7 @@ export class Menu {
       ['C / Strg', 'Ducken · halten = Hinlegen · beim Sprint: tippen = Slide, halten = Slide + Hechtsprung · in der Luft = in die Luft legen, landet liegend'],
       ['Z / X', 'Hinlegen · beim Sprint = Dive (rückwärts = Rückenlage)'],
       ['Shift (liegend)', 'Sofort aufstehen und losrennen'], ['Umsehen (liegend)', '360° · hinter dich schauen = auf den Rücken rollen'],
-      ['Springen im Slide', 'Slide-Cancel (behält Schwung, lädt Taktik-Sprint auf)'], ['R', 'Nachladen'], ['1 / 2 / Q / Mausrad', 'Waffe wechseln'], ['V / E', 'Nahkampf'],
+      ['Springen im Slide', 'Slide-Cancel (behält Schwung, lädt Taktik-Sprint auf)'], ['R', 'Nachladen'], ['1 / 2 / Q / Mausrad', 'Waffe wechseln'], ['1 / 2 / 3', 'Warzone: zwei Primärwaffen, eine Sekundärwaffe (leerer Platz: Fäuste)'], ['V / E', 'Nahkampf'],
       ['Zielen + W gegen Kante', 'Andocken: Waffe auflegen, weniger Rückstoß, an Ecken lehnst du dich heraus'], ['T', 'Andocken von Hand an / aus'],
       ['I', 'Waffe inspizieren'], ['Tab', 'Punktetafel'], ['L', 'Loadout ändern (auch mitten in der Runde)'], ['Esc', 'Pause'],
       ['F', 'Warzone: aufheben, Kiste öffnen, ein- und aussteigen'], ['G', 'Warzone: Platte einsetzen'], ['M', 'Warzone: große Karte'], ['V', 'Warzone, im Fahrzeug: Kamera wechseln'],
