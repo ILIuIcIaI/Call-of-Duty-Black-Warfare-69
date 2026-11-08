@@ -69,7 +69,9 @@ export class BombModel {
     box(g, P.shell, W, HB, WALL, 0, HB / 2, D / 2 - WALL / 2);
     box(g, P.shell, W, HB, WALL, 0, HB / 2, -D / 2 + WALL / 2);
     for (const s of [-1, 1]) box(g, P.shell, WALL, HB, D, s * (W / 2 - WALL / 2), HB / 2, 0);
-    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(g, P.shellEdge, 0.034, HB + 0.004, 0.034, x * (W / 2 - 0.012), HB / 2, z * (D / 2 - 0.012));
+    // (rounded rubber corners, and a lip all round where the lid sits on it)
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) cyl(g, P.shellEdge, 0.019, HB + 0.004, x * (W / 2 - 0.01), HB / 2, z * (D / 2 - 0.01));
+    for (const s of [-1, 1]) { box(g, P.shellEdge, W - 0.03, 0.01, 0.008, 0, HB - 0.012, s * (D / 2 + 0.002)); box(g, P.shellEdge, 0.008, 0.01, D - 0.03, s * (W / 2 + 0.002), HB - 0.012, 0); }
     this.latches = [-0.15, 0.15].map((x) => box(g, P.grayDark, 0.05, 0.03, 0.012, x, HB - 0.006, D / 2 + 0.005));
     const handle = this.handle = new THREE.Group(); handle.position.set(0, HB - 0.012, D / 2 + 0.008); g.add(handle);
     cyl(handle, P.grayDark, 0.009, 0.13, 0, 0, 0.032, 'x');
@@ -82,7 +84,9 @@ export class BombModel {
     box(lid, P.shell, W, HL, WALL, 0, HL / 2, WALL / 2);
     for (const s of [-1, 1]) box(lid, P.shell, WALL, HL, D, s * (W / 2 - WALL / 2), HL / 2, D / 2);
     for (let i = 0; i < 6; i++) box(lid, P.rib, 0.014, 0.005, D - 0.07, -0.175 + i * 0.07, HL + 0.0025, D / 2);
-    for (const [x, z] of [[-1, 0], [1, 0], [-1, 1], [1, 1]]) box(lid, P.shellEdge, 0.034, HL + 0.004, 0.034, x * (W / 2 - 0.012), HL / 2, 0.012 + z * (D - 0.024));
+    // (a raised rim round the top, rounded corners)
+    for (const s of [-1, 1]) { box(lid, P.shellEdge, W - 0.02, 0.008, 0.014, 0, HL + 0.004, D / 2 + s * (D / 2 - 0.007)); box(lid, P.shellEdge, 0.014, 0.008, D - 0.02, s * (W / 2 - 0.007), HL + 0.004, D / 2); }
+    for (const [x, z] of [[-1, 0], [1, 0], [-1, 1], [1, 1]]) cyl(lid, P.shellEdge, 0.019, HL + 0.006, x * (W / 2 - 0.01), HL / 2 + 0.001, 0.01 + z * (D - 0.02));
     for (const x of [-0.17, 0.17]) cyl(lid, P.metal, 0.008, 0.07, x, 0.004, 0.0, 'x'); // (the hinges)
     this.simple = simple;
     if (!simple) this.inside(P);
@@ -104,13 +108,14 @@ export class BombModel {
     tab.rotation.x = -Math.PI / 2; tab.position.set(-0.165, F + 0.0225, -0.07); g.add(tab);
     // middle left: the module with the three arming switches, each with its lamp
     box(g, P.module, 0.055, 0.045, 0.15, -0.068, F + 0.0225, 0.02);
+    const st = new THREE.Mesh(P.ledG, P.ledOn); st.scale.setScalar(0.0035); st.position.set(-0.068, F + 0.046, 0.083); g.add(st); // (its own lamp: power)
     this.levers = []; this.lamps = [];
     for (let i = 0; i < 3; i++) {
       const z = -0.03 + i * 0.045;
       box(g, P.metal, 0.03, 0.004, 0.022, -0.068, F + 0.047, z);
       const lv = new THREE.Group(); lv.position.set(-0.068, F + 0.049, z); g.add(lv);
       cyl(lv, P.steel, 0.0035, 0.024, 0, 0.012, 0);
-      box(lv, P.steel, 0.008, 0.006, 0.008, 0, 0.025, 0);
+      box(lv, P.wireY, 0.009, 0.008, 0.009, 0, 0.026, 0); // (yellow caps)
       this.levers.push(lv);
       const lamp = new THREE.Mesh(P.ledG, P.ledOff); lamp.scale.setScalar(0.004); lamp.position.set(-0.049, F + 0.048, z); g.add(lamp);
       this.lamps.push(lamp);
@@ -133,7 +138,9 @@ export class BombModel {
     for (const z of [-0.06, 0.07]) box(g, P.tape, 0.238, 0.054, 0.026, 0.082, F + 0.026, z);
     // right: the trigger box, its button and lamp, the blue cable up into the lid
     box(g, P.gray, 0.048, 0.04, 0.16, 0.208, F + 0.02, 0.025);
-    box(g, P.grayDark, 0.05, 0.006, 0.05, 0.208, F + 0.043, -0.025);
+    // (its keypad: nine keys in a dark frame)
+    box(g, P.grayDark, 0.046, 0.004, 0.05, 0.208, F + 0.041, -0.025);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) box(g, P.steel, 0.009, 0.004, 0.009, 0.196 + c * 0.012, F + 0.044, -0.04 + r * 0.014);
     this.button = cyl(g, P.btn, 0.012, 0.012, 0.208, F + 0.046, 0.06);
     this.led = new THREE.Mesh(P.ledG, P.ledOff); this.led.scale.setScalar(0.005); this.led.position.set(0.222, F + 0.043, 0.01); g.add(this.led);
     this.geos.push(tube(g, P.wireB, [[0.208, F + 0.03, -0.06], [0.205, F + 0.06, -0.12], [0.19, HB - 0.01, -D / 2 + 0.03]], 0.004).geometry);
@@ -148,9 +155,13 @@ export class BombModel {
     // (it faces down while the lid is shut; the canvas' top toward the lid's front edge, which is up when open)
     scr.rotation.x = Math.PI / 2; scr.position.set(0.035, iy - 0.0125, D / 2 + 0.01); lid.add(scr);
     this.geos.push(scr.geometry);
-    box(lid, P.module, 0.085, 0.03, 0.12, -0.185, iy - 0.015, D - 0.09);
-    box(lid, P.sticker, 0.05, 0.002, 0.03, -0.19, iy - 0.031, D - 0.06);
-    cyl(lid, P.fan, 0.022, 0.004, -0.185, iy - 0.031, D - 0.115);
+    // upper left: a hard disk in a bracket, its platter showing, a label on it
+    box(lid, P.module, 0.09, 0.02, 0.125, -0.185, iy - 0.01, D - 0.09);
+    box(lid, P.metal, 0.08, 0.004, 0.105, -0.185, iy - 0.022, D - 0.095);
+    cyl(lid, P.steel, 0.03, 0.003, -0.185, iy - 0.0245, D - 0.105);
+    cyl(lid, P.grayDark, 0.007, 0.004, -0.185, iy - 0.026, D - 0.105);
+    box(lid, P.grayDark, 0.005, 0.003, 0.045, -0.165, iy - 0.026, D - 0.125);
+    box(lid, P.sticker, 0.05, 0.002, 0.026, -0.19, iy - 0.0245, D - 0.052);
     this.geos.push(tube(lid, P.wireY, [[-0.145, iy - 0.02, D - 0.06], [-0.13, iy - 0.03, D - 0.03], [-0.215, iy - 0.025, D - 0.03]], 0.0025).geometry);
     this.geos.push(tube(lid, P.wire, [[-0.145, iy - 0.02, D - 0.13], [-0.13, iy - 0.035, D - 0.17], [-0.215, iy - 0.02, D - 0.17]], 0.0025).geometry);
     box(lid, P.module, 0.035, 0.02, 0.03, 0.19, iy - 0.01, D - 0.07);
