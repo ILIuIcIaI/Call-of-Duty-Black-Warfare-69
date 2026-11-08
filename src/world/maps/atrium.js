@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { wallX, wallZ, stairs, car, truck, railing, lampPost, tree, forklift, mtx } from '../props.js';
+import { groundRing, streetRow } from './surround.js';
 
 // =============================================================================
 // ATRIUM — an office building on a weekday evening. Small-medium, two floors
@@ -158,7 +159,13 @@ export default {
     B.box(-44, 9, 21, 44, 30, 22.5, 'brickDark', { visual: false });
     for (let x = -28; x <= 28; x += 4) for (const y of [3.2, 6.4]) B.box(x - 0.6, y, 20.98, x + 0.6, y + 1.4, 21.0, 'black', flat);
     B.box(-44, 0, -22.4, 44, 30, -22.0, 'concrete', { visual: false }); // the fence along the street keeps everyone in
-    railing(B, -31, -22.1, 31, -22.1, 1.2, 'metalDark', false);
+    railing(B, -31, -22.1, 31, -22.1, 2.2, 'metalDark', false);   // (as high as the one in the west: it reads as the end of the yard)
+    // across the streets houses to look at, and the town going on out to the haze
+    streetRow(B, '+z', -30.4, 6, [[-44, -27, 9.5, 'brickDark'], [-27, -12, 12.4, 'plasterGrey'], [-12, 4, 8.2, 'brick'], [4, 20, 11, 'plasterOchre'], [20, 44, 9.4, 'brickDark']]);
+    for (const s of [-1, 1]) streetRow(B, s < 0 ? '+x' : '-x', s * 44.6, 6, [[-36.4, -12, 10.4, 'brick'], [-12, 8, 8.6, 'plasterGrey'], [8, 22.5, 12, 'brickDark']]);
+    groundRing(B, [-44, -34, 44, 32], 'asphalt');
+    for (const [x, z, w, d, h, m] of [[-90, -80, 20, 16, 34, 'concrete'], [-40, -110, 26, 18, 46, 'plasterGrey'], [30, -100, 18, 18, 28, 'brick'], [95, -70, 22, 16, 38, 'concrete'], [110, 10, 18, 26, 30, 'plasterGrey'],
+      [90, 90, 24, 18, 42, 'brickDark'], [10, 110, 30, 20, 26, 'concrete'], [-80, 95, 20, 20, 36, 'plasterGrey'], [-120, 10, 18, 24, 30, 'brick']]) B.box(x - w / 2, 0, z - d / 2, x + w / 2, h, z + d / 2, m, { collide: false, ao: false });
 
     // ------------------------------------------------------------- the lobby
     B.box(-10, 0, -IZ, 10, 0.012, 10, 'marbleFloor', flat);

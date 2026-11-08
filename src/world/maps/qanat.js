@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { stairs, crate, barrel, palm, mtx, boundary, truck } from '../props.js';
+import { stairs, crate, barrel, mtx, boundary, truck } from '../props.js';
 import { BASE, PLAIN, subtract } from '../kit.js';
-import { H, DECO, seeded, houses, wall, block, siteLetter, cart } from './sdparts.js';
+import { H, DECO, seeded, houses, wall, block, siteLetter, cart, roundCol, domeCol } from './sdparts.js';
 
 // =============================================================================
 // QANAT — an old oasis town in the desert at morning, made for Search and Destroy (4 vs 4 up to 6 vs 6).
@@ -54,11 +54,18 @@ function desert(b) {
     [50, -51], [52, -43], [-58, -64], [57, -57], [-12, -82], [24, -81]];
   for (const [x, z] of out) palm(b, x, z, 6 + ((Math.round(x * 3 + z) % 4) + 4) % 4);
 }
+// a date palm, its trunk straight up so that what you bump into is where the trunk is
+const LEAF = new THREE.BoxGeometry(0.5, 0.04, 2.6).translate(0, 0, 1.3);
+function palm(b, x, z, h = 7) {
+  roundCol(b, x, z, 0, h / 2, 0.19, 0.19, 'bark'); roundCol(b, x, z, h / 2, h, 0.15, 0.15, 'bark');
+  b.geom(new THREE.CylinderGeometry(0.13, 0.2, h, 7), 'bark', mtx(x, h / 2, z));
+  for (let i = 0; i < 8; i++) b.geom(LEAF, 'foliage', mtx(x, h, z, i * Math.PI / 4, 1, 1, 1, 0.45));
+}
 const VAT = new THREE.CylinderGeometry(0.85, 0.95, 0.8, 18);
 const DYE = new THREE.CylinderGeometry(0.72, 0.72, 0.04, 18);
 // a dye vat, waist high, coloured water in it
 function vat(b, x, z, colour) {
-  b.box(x - 0.78, 0, z - 0.78, x + 0.78, 0.8, z + 0.78, 'clay', { visual: false });
+  roundCol(b, x, z, 0, 0.8, 0.9, 0.9, 'clay');
   b.geom(VAT, 'clay', mtx(x, 0.4, z));
   b.geom(DYE, colour, mtx(x, 0.74, z));
 }
@@ -72,18 +79,17 @@ function dryRack(b, x0, z, x1, cloths) {
 const KILN = new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2);
 // a potter's kiln: a squat dome of clay with a fire hole and a chimney
 function kiln(b, x, z, r = 1.9) {
-  b.box(x - r * 0.8, 0, z - r * 0.8, x + r * 0.8, r * 1.15, z + r * 0.8, 'clay', { visual: false });
-  b.box(x - r * 0.95, 0, z - r * 0.5, x + r * 0.95, r * 0.75, z + r * 0.5, 'clay', { visual: false });
-  b.box(x - r * 0.5, 0, z - r * 0.95, x + r * 0.5, r * 0.75, z + r * 0.95, 'clay', { visual: false });
+  // (what you bump into follows the base and the dome)
+  roundCol(b, x, z, 0, 0.5, r, r, 'clay'); domeCol(b, x, 0.5, z, r, r * 0.95, r, 'clay', 4);
   b.geom(new THREE.CylinderGeometry(r, r * 1.05, 0.5, 20), 'clay', mtx(x, 0.25, z));
   b.geom(KILN, 'clay', mtx(x, 0.5, z, 0, r, r * 0.95, r));
   b.box(x - 0.45, 0.25, z + r - 0.2, x + 0.45, 1.0, z + r + 0.02, 'black', DECO);
   b.geom(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 10), 'brickDark', mtx(x + r * 0.35, r * 1.1 + 0.3, z - r * 0.2));
-  b.box(x + r * 0.35 - 0.3, r * 0.9, z - r * 0.2 - 0.3, x + r * 0.35 + 0.3, r * 1.1 + 0.75, z - r * 0.2 + 0.3, 'brickDark', { visual: false });
+  roundCol(b, x + r * 0.35, z - r * 0.2, r * 0.9, r * 1.1 + 0.75, 0.3, 0.3, 'brickDark');
 }
 const JAR = new THREE.LatheGeometry([[0, 0], [0.16, 0.02], [0.26, 0.2], [0.29, 0.42], [0.22, 0.66], [0.1, 0.78], [0.12, 0.86], [0.09, 0.88]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
 function jar(b, x, z, s = 1, y = 0, solid = true) {
-  if (solid) b.box(x - 0.26 * s, y, z - 0.26 * s, x + 0.26 * s, y + 0.85 * s, z + 0.26 * s, 'clay', { visual: false });
+  if (solid) { roundCol(b, x, z, y, y + 0.62 * s, 0.27 * s, 0.27 * s, 'clay'); b.box(x - 0.11 * s, y + 0.62 * s, z - 0.11 * s, x + 0.11 * s, y + 0.86 * s, z + 0.11 * s, 'clay', { visual: false }); }
   b.geom(JAR, 'clay', mtx(x, y, z, 0, s, s, s));
 }
 // shelves of pots against a wall (along x at z, the depth toward +z (dir 1) or -z (dir -1))
@@ -172,8 +178,8 @@ export default {
     // ------------------------------------------------------------- outside: the palm grove (attackers)
     const grove = [[-40, -55], [-34, -49], [-27, -56], [-22, -46], [-14, -57], [-12, -44], [9, -58], [12, -50], [22, -55], [26, -45], [33, -52], [39, -57], [-40, -43], [38, -43], [-11, -64], [4, -44], [-36, -63], [-24, -65], [14, -65], [30, -64], [40, -66], [-42, -66]];
     for (const [x, z] of grove) palm(B, x, z, 6.5 + ((Math.round(x * 7 + z) % 3) + 3) % 3);
-    B.box(-24, 0, -54, -18, 2.4, -50, 'canvasYellow'); B.box(-24.3, 2.4, -54.3, -17.7, 2.7, -49.7, 'canvasRed', DECO);
-    B.box(24, 0, -59, 30, 2.2, -55, 'canvasGreen'); B.box(23.7, 2.2, -59.3, 30.3, 2.5, -54.7, 'canvasYellow', DECO);
+    B.box(-24, 0, -54, -18, 2.4, -50, 'canvasYellow'); B.box(-24.3, 2.4, -54.3, -17.7, 2.7, -49.7, 'canvasRed', { ao: false });
+    B.box(24, 0, -59, 30, 2.2, -55, 'canvasGreen'); B.box(23.7, 2.2, -59.3, 30.3, 2.5, -54.7, 'canvasYellow', { ao: false });
     truck(B, 10, -46.5, 'x', 'carPaintWhite', 1);
     crate(B, -10, -47, 1.2); crate(B, -9, -45.6, 1.0); crate(B, 7.5, -52.5, 1.2); barrel(B, 8.6, -53.6, 'metalRed'); crate(B, -14, -51, 1.2); crate(B, 5, -48, 1.0);
     for (const [x0, z0, x1, z1] of [[-30, -44.2, -22, -43.6], [-17, -41.5, -12, -40.9], [3, -41.6, 8.5, -41], [-38, -48, -37.4, -42], [30, -48.5, 30.6, -42.5]]) wall(B, x0, z0, x1, z1, 1.15, 'adobeLight');
@@ -183,7 +189,7 @@ export default {
     B.box(14.4, 3.1, -47.8, 19.6, 3.35, -39.4, 'clay');
     B.geom(new THREE.SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'adobeLight', mtx(17, 3.3, -43.6, 0, 1, 0.55, 1.7));
     // the dome in steps you can stand on
-    for (const [h0, h1, f] of [[3.3, 3.7, 0.94], [3.7, 4.1, 0.75], [4.1, 4.42, 0.32]]) B.box(17 - 2.2 * f, h0, -43.6 - 3.74 * f, 17 + 2.2 * f, h1, -43.6 + 3.74 * f, 'adobeLight', { visual: false });
+    domeCol(B, 17, 3.3, -43.6, 2.2, 1.21, 3.74, 'adobeLight', 4);
 
     // ------------------------------------------------------------- the qanat
     this.qanat(B);
@@ -249,7 +255,7 @@ export default {
     shade(B, -2.5, -31.5, 2.5, -27, 3.0, 'awningOchre'); shade(B, -2.5, -26, 2.5, -21.5, 3.05, 'awningBlue'); shade(B, -2.5, -20.5, 2.5, -16.5, 3.0, 'awningRed');
     stall(B, -1.4, -24, 'z', 'canvasYellow'); stall(B, 1.4, -19.2, 'z', 'canvasGreen');
     // the well in the middle of the square, under a roof on four posts
-    B.box(-1.3, 0, -10.3, 1.3, 0.9, -7.7, 'sandstone', { visual: false });
+    roundCol(B, 0, -9, 0, 0.9, 1.4, 1.4, 'sandstone');
     B.geom(new THREE.CylinderGeometry(1.35, 1.45, 0.9, 20), 'sandstone', mtx(0, 0.45, -9));
     B.geom(new THREE.CylinderGeometry(1.1, 1.1, 0.04, 20), 'water', mtx(0, 0.8, -9));
     for (const [x, z] of [[-1.7, -10.7], [1.7, -10.7], [-1.7, -7.3], [1.7, -7.3]]) B.box(x - 0.13, 0, z - 0.13, x + 0.13, 3.0, z + 0.13, 'woodDark');

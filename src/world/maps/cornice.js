@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { projectUV } from '../textures.js';
 import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
-import { rockWall } from './surround.js';
+import { rockWall, roofCap } from './surround.js';
 
 // =============================================================================
 // CORNICE: the top station of a cable car and a mountain hut on a snowy saddle, at sunset. Made for the 2 vs 2
@@ -169,7 +169,7 @@ export default {
     B.box(-7.6, HUT, HZ0 + 0.4, 7.6, HUT + 0.02, HZ1 - 0.4, 'pinewood', flat);
     B.box(-8, HUT, 5.2, 8, HUT + 0.02, HZ0, 'pinewood', flat);
     for (const x of [-4.6, 4.6]) B.box(x - 0.8, 0, 4.8, x + 0.8, HUT / 2, 5.2, 'pinewood');             // half steps up
-    B.box(-8, 5.6, HZ0, 8, 12, HZ1, 'concrete', noStand);                                             // nobody on the walls: the roof is only drawn
+    roofCap(B, -8, 8, HZ0, HZ1, 5.6, 5.6 + 2.8, { top: 12 });   // nobody on the walls or the roof (it is only drawn); under it the room stays free up to the roof you see
     // the parlour is open up to the roof: tie beams and a ridge beam
     for (const z of [10.6, 12.2, 16.6]) B.box(-7.7, 4.0, z - 0.12, 7.7, 4.26, z + 0.12, 'woodDark', noCol);   // (clear of the flag)
     B.box(-7.7, 7.9, 13.88, 7.7, 8.16, 14.12, 'woodDark', noCol);

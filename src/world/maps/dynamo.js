@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { wallX, wallZ, stairs, crate, barrel, barrier, car, lampPost, railing, mtx } from '../props.js';
 import { projectUV } from '../textures.js';
+import { roundCol } from './surround.js';
 
 // =============================================================================
 // DYNAMO — a coal-fired power station at dusk. Small-medium, built for 8-10
@@ -43,12 +44,11 @@ function transformer(b, x0, z0, x1, z1) {
   }
 }
 function tank(b, x, z, r = 2.2, h = 4.6) {
-  b.box(x - r, 0, z - r * 0.7, x + r, h, z + r * 0.7, 'metalWhite', { visual: false, pen: 0.3 });
-  b.box(x - r * 0.7, 0, z - r, x + r * 0.7, h, z + r, 'metalWhite', { visual: false, pen: 0.3 });
+  roundCol(b, x, z, 0, h, r, r, 'metalWhite', { pen: 0.3 });   // (round, as the tank: its corners stuck out half a metre)
   b.geom(new THREE.CylinderGeometry(r, r, h, 24), 'metalWhite', mtx(x, h / 2, z));
   b.geom(new THREE.CylinderGeometry(r + 0.05, r + 0.05, 0.15, 24), 'metalDark', mtx(x, h - 0.1, z));
   b.geom(new THREE.CylinderGeometry(r * 0.96, r, 0.5, 24), 'metalWhite', mtx(x, h + 0.25, z));
-  b.box(x - r * 0.68, h, z - r * 0.68, x + r * 0.68, h + 0.5, z + r * 0.68, 'metalWhite', { visual: false, pen: 0.3 });   // (the lid holds you)
+  roundCol(b, x, z, h, h + 0.5, r * 0.97, r * 0.97, 'metalWhite', { pen: 0.3 });   // (the lid holds you)
   for (const y of [0.2, h - 0.2]) b.box(x + r - 0.02, 0.2, z - 0.25, x + r + 0.08, h, z - 0.21, 'metalDark', flat);
   for (let y = 0.4; y < h; y += 0.35) b.box(x + r + 0.02, y, z - 0.25, x + r + 0.06, y + 0.04, z + 0.25, 'metalDark', flat);
   b.box(x + r + 0.02, 0.2, z + 0.21, x + r + 0.08, h, z + 0.25, 'metalDark', flat);

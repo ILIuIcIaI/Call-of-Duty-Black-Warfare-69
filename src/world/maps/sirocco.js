@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { wallX, wallZ, stairs, crate, palm, mtx } from '../props.js';
+import { wallX, wallZ, stairs, crate, mtx } from '../props.js';
+import { palm, roundCol } from './surround.js';
 import { MATERIALS } from '../mapBuilder.js';
 import { projectUV } from '../textures.js';
 
@@ -163,7 +164,7 @@ function flight(b, x, z, dir, width, rise, run, mat, n) {
 
 // ------------------------------------------------------------------ market things
 function jar(b, x, z, s = 1, y = 0) {
-  b.box(x - 0.27 * s, y, z - 0.27 * s, x + 0.27 * s, y + 0.86 * s, z + 0.27 * s, 'clay', { visual: false, pen: 0.8 });
+  roundCol(b, x, z, y, y + 0.62 * s, 0.27 * s, 0.27 * s, 'clay', { pen: 0.8 }); b.box(x - 0.11 * s, y + 0.62 * s, z - 0.11 * s, x + 0.11 * s, y + 0.86 * s, z + 0.11 * s, 'clay', { visual: false, pen: 0.8 });   // (round, as the jar)
   b.geom(JAR, 'clay', mtx(x, y, z, x * 3.1 + z, s, s, s));
 }
 function sack(b, x, z, k, y = 0, solid = true) {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MATERIALS } from '../mapBuilder.js';
 import { projectUV } from '../textures.js';
 import { mtx, wallX, wallZ, stairs, railing, boundary } from '../props.js';
-import { groundRing, hills, rockWall } from './surround.js';
+import { groundRing, hills, rockWall, roofCap } from './surround.js';
 
 // =============================================================================
 // MILLRACE: a sawmill on a mill brook in a pine forest, early morning. Made for the 2 vs 2 capture mode (and small
@@ -153,7 +153,7 @@ export default {
     B.box(-8.2, LOFT - 0.2, MZ0 + 0.3, 8.2, LOFT, -16.0, 'woodDark');                 // loft along the north wall
     railing(B, -6.8, -16.0, 6.8, -16.0, 1.0, 'woodDark', true, LOFT);
     for (const x of [-4.2, 4.2]) B.box(x - 0.11, 0, -16.11, x + 0.11, LOFT - 0.2, -15.89, 'woodDark');
-    B.box(-8.5, EAVES, MZ0, 8.5, 12, MZ1, 'concrete', noStand);                 // nobody on the walls: the roof is only drawn
+    roofCap(B, -8.5, 8.5, MZ0, MZ1, EAVES, RIDGE, { top: 12 });   // nobody on the walls or the roof (it is only drawn); under it the hall stays free up to the roof you see
     // roof: two slopes up to a ridge along x, gable ends in the side walls (half() builds those)
     const zr = (MZ0 + MZ1) / 2, run = MZ1 - zr + 0.45, rise = RIDGE - EAVES + 0.25, len = Math.hypot(run, rise), ang = Math.atan2(rise, run);
     for (const s of [-1, 1]) {

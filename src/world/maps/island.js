@@ -5,7 +5,8 @@ import {
   Kit, rnd, PLAIN, WALL, sideRail, cottage, townhouse, row, stadthaus, villa, apartments, galleryBlock, courtyard, shop, bar, officeTower, townHall, hotel, school, parking,
   warehouse, garage, gasStation, ruin, church, bunker, barracks, controlTower, fisherHut, bungalow, farmhouse, radioShack, coverPile, stepFlight,
 } from '../buildings.js';
-import { container, barrel, sandbags, barrier, truck, lampPost, stairs, tree, palm, mtx } from '../props.js';
+import { container, barrel, sandbags, barrier, truck, lampPost, stairs, tree, mtx } from '../props.js';
+import { palm } from './surround.js';
 
 // =============================================================================
 // SERENA — the Warzone island, small enough that the next place is always in reach.

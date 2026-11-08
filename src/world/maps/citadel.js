@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { wallX, wallZ, stairs, crate, barrel, railing, lampPost, tree, palm, car, mtx, sandbags } from '../props.js';
+import { wallX, wallZ, stairs, crate, barrel, railing, lampPost, tree, car, mtx, sandbags } from '../props.js';
+import { palm } from './surround.js';
 
 // =============================================================================
 // CITADEL — Mediterranean old town at midday. Small-medium, very vertical,
@@ -106,7 +107,7 @@ export default {
     }
     b.box(-38, 8, -32, -31.7, 8.4, 0, 'rooftile', { collide: false });
     b.box(34, 0, -32, 38, 9, 0, facade);
-    b.box(-38, 9, -36, 38, 30, 0, 'concrete', { visual: false });
+    b.box(-38, 9, -36, 38, 30, -32, 'concrete', { visual: false });   // (over the facade only: no lid over the town)
     b.box(-38, 8, -32, -32, 30, 0, 'concrete', { visual: false });
     b.box(34, 9, -32, 38, 30, 0, 'concrete', { visual: false });
 

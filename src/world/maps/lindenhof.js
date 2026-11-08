@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { crate, barrel, tree, mtx, boundary, truck, stairs, railing } from '../props.js';
 import { PLAIN } from '../kit.js';
-import { H, DECO, seeded, houses, wall, block, siteLetter, cart } from './sdparts.js';
+import { H, DECO, seeded, houses, wall, block, siteLetter, cart, roundCol, domeCol, logCol } from './sdparts.js';
 
 // =============================================================================
 // LINDENHOF — a village in summer, afternoon, made for Search and Destroy (4 vs 4 up to 6 vs 6).
@@ -46,11 +46,11 @@ const KEG = new THREE.CylinderGeometry(0.42, 0.42, 0.95, 14);
 const HOOP = new THREE.CylinderGeometry(0.44, 0.44, 0.06, 14);
 function keg(b, x, z, y = 0, lying = false) {
   if (lying) {
-    b.box(x - 0.48, y, z - 0.42, x + 0.48, y + 0.84, z + 0.42, 'woodDark', { visual: false });
+    logCol(b, x, z, y, 0.96, 0.42, 'x');   // (round: what you bump into follows the keg)
     b.geom(KEG, 'wood', mtx(x, y + 0.42, z, 0, 1, 1, 1, 0, Math.PI / 2));
     for (const dx of [-0.32, 0.32]) b.geom(HOOP, 'metalDark', mtx(x + dx, y + 0.42, z, 0, 1, 1, 1, 0, Math.PI / 2));
   } else {
-    b.box(x - 0.42, y, z - 0.42, x + 0.42, y + 0.95, z + 0.42, 'woodDark', { visual: false });
+    roundCol(b, x, z, y, y + 0.95, 0.42, 0.42, 'woodDark');
     b.geom(KEG, 'wood', mtx(x, y + 0.475, z));
     for (const dy of [0.15, 0.8]) b.geom(HOOP, 'metalDark', mtx(x, y + dy, z));
   }
@@ -63,7 +63,7 @@ function kegStack(b, x, z, n, along = 'z') {
 // a round bale of hay
 const BALE = new THREE.CylinderGeometry(0.75, 0.75, 1.2, 16);
 function bale(b, x, z, along = 'x', y = 0) {
-  b.box(x - (along === 'x' ? 0.6 : 0.72), y, z - (along === 'x' ? 0.72 : 0.6), x + (along === 'x' ? 0.6 : 0.72), y + 1.45, z + (along === 'x' ? 0.72 : 0.6), 'hay', { visual: false });
+  logCol(b, x, z, y, 1.2, 0.73, along, 'hay');   // (round: what you bump into follows the bale)
   b.geom(BALE, 'hay', along === 'x' ? mtx(x, y + 0.75, z, 0, 1, 1, 1, 0, Math.PI / 2) : mtx(x, y + 0.75, z, 0, 1, 1, 1, Math.PI / 2, 0));
 }
 // a glasshouse: a frame of white posts, glass that breaks on the sides and the roof, a door in the middle of each end
@@ -89,7 +89,7 @@ function glasshouse(b, x0, z0, x1, z1, h = 2.6, doors = ['n', 's']) {
   for (const s of [-1, 1]) b.geom(g, 'carGlass', mtx(cx, h + 0.45, (z0 + z1) / 2 + s * (z1 - z0) / 4, 0, 1, 1, 1, s * 0.42));
   const half = (z1 - z0) / 2, sl = ((half + 0.25) / 2) * Math.sin(0.42), lo = 0.45 - sl, hi = 0.45 + sl;   // the glass at the eaves and at the ridge, over h
   for (let i = 0; i < 4; i++) {
-    const ins = half * i / 4, bot = i ? h + lo + (hi - lo) * i / 4 : h, top = h + lo + (hi - lo) * (i + 1) / 4;
+    const ins = half * i / 4, bot = i ? h + lo + (hi - lo) * (i - 0.5) / 4 : h, top = h + lo + (hi - lo) * (i + 0.5) / 4;   // (the slope through the middle of each step)
     b.box(x0, bot, z0 + ins, x1, Math.max(top, bot + 0.03), z1 - ins, 'carGlass', { visual: false, noBullet: true });
   }
   // tables of pots inside, along both long sides
@@ -219,7 +219,7 @@ export default {
     B.geom(new THREE.TorusGeometry(0.9, 0.12, 6, 18), 'pine', mtx(4, 16.5, 0, 0, 1, 1, 1, Math.PI / 2));
     for (let i = 0; i < 4; i++) B.box(4 + Math.cos(i * 1.57) * 0.25 - 0.3, 11 - i * 2.2, Math.sin(i * 1.57) * 0.25 - 0.02, 4 + Math.cos(i * 1.57) * 0.25 + 0.3, 11.5 - i * 2.2, Math.sin(i * 1.57) * 0.25 + 0.02, ['paintYellow', 'canvasBlue', 'canvasRed', 'paintWhite'][i], DECO);
     // the fountain: a stone basin, a column with a spout
-    B.box(-1.8, 0, -11.8, 1.8, 0.7, -8.2, 'fieldstone', { visual: false });
+    roundCol(B, 0, -10, 0, 0.7, 1.9, 1.9, 'fieldstone');
     B.geom(new THREE.CylinderGeometry(1.95, 2.05, 0.7, 8), 'fieldstone', mtx(0, 0.35, -10));
     B.geom(new THREE.CylinderGeometry(1.7, 1.7, 0.04, 8), 'waterFountain', mtx(0, 0.62, -10));
     B.box(-0.3, 0, -10.3, 0.3, 2.2, -9.7, 'fieldstone');
@@ -237,7 +237,7 @@ export default {
     hedge(B, -38, -22.4, -30.5, -21.4, 1.5); hedge(B, -42.5, -14.6, -36, -13.6, 1.5); hedge(B, -33, -4.6, -27, -3.6, 1.5);
     // the beehives and the tool shed
     for (const z of [-30, -28.6, -27.2]) B.box(-43.4, 0, z - 0.45, -42.6, 0.95, z + 0.45, 'paintYellow');
-    B.box(-34, 0, -46, -30, 2.6, -43, 'woodDark'); B.box(-34.3, 2.6, -46.3, -29.7, 2.75, -42.7, 'roofBrown', DECO);
+    B.box(-34, 0, -46, -30, 2.6, -43, 'woodDark'); B.box(-34.3, 2.6, -46.3, -29.7, 2.75, -42.7, 'roofBrown', { ao: false });
     B.box(-27.5, 0, -6, -26.6, 2.4, -5, 'woodDark'); // a ladder against the wall (to look at)
 
     // ------------------------------------------------------------- A: the brewery yard (x -40..-26, z 8..24)
@@ -258,7 +258,7 @@ export default {
     glasshouse(B, 20.4, 18, 25.6, 25.6); glasshouse(B, 31.6, 9.0, 38.4, 14.6, 2.6, ['n']);
     for (const z of [10.5, 13.5]) bed(B, 20.6, z, 26.4, z + 1.4);
     bed(B, 30.6, 19.2, 32, 25.4); bed(B, 33.6, 19.2, 35, 25.4);
-    B.geom(new THREE.CylinderGeometry(1.1, 1.1, 2.0, 16), 'metalDark', mtx(29.2, 1.0, 9.4)); B.box(28.25, 0, 8.45, 30.15, 2.0, 10.35, 'metalDark', { visual: false }); // water tank
+    B.geom(new THREE.CylinderGeometry(1.1, 1.1, 2.0, 16), 'metalDark', mtx(29.2, 1.0, 9.4)); roundCol(B, 29.2, 9.4, 0, 2.0, 1.1, 1.1, 'metalDark'); // water tank
     for (const [x, z] of [[27.4, 23.2], [36.6, 17.2]]) crate(B, x, z, 1.1);
     cart(B, 22.6, 15.6, 'z', 'woodPale');                                               // a handcart of pots
     siteLetter(B, 'B', 39.97, 2.0, 18.4, -1, 0, 2.6);
@@ -285,7 +285,15 @@ export default {
     wall(B, x1 - t, z0 + t, x1, z1 - t, h, m, [], null);
     // the roof: two slopes on a ridge along x, solid so nobody walks in over the walls
     for (const s of [-1, 1]) B.geom(new THREE.BoxGeometry(x1 - x0 + 0.8, 0.2, (z1 - z0) / 2 / Math.cos(0.5) + 0.5), 'roofBrown', mtx((x0 + x1) / 2, h + 1.85, (z0 + z1) / 2 + s * (z1 - z0) / 4, 0, 1, 1, 1, s * 0.5));
-    B.box(x0, h, z0, x1, h + 3.6, z1, 'roofBrown', { visual: false });
+    // what you bump into follows the slopes in strips you walk up (the room under the roof stays free), the gable ends
+    // closed up to them
+    const slope = Math.tan(0.5), half = (z1 - z0) / 2, ns = 10, ws = half / ns;
+    for (const s of [-1, 1]) for (let i = 0; i < ns; i++) {
+      const za = s < 0 ? z0 + i * ws : z1 - (i + 1) * ws;
+      const mid = h + slope * (i + 0.5) * ws;   // (the slope through the middle of each strip: walk up it, and under it no ceiling you can't see)
+      B.box(x0 - 0.4, mid - 0.3, za, x1 + 0.4, mid + 0.1, za + ws, 'roofBrown', { visual: false });
+    }
+    for (const x of [x0, x1 - 0.04]) for (let i = 0; i < 8; i++) B.box(x, h, z0 + half * i / 8, x + 0.04, h + slope * half * i / 8 + 0.05, z1 - half * i / 8, m, { visual: false });   // (in the plane of the gable triangles)
     // the gable ends (the ridge runs along x): a triangle on each short wall, both faces
     for (const x of [x0 + 0.02, x1 - 0.02]) for (const flip of [false, true]) { const g = new THREE.BufferGeometry(), y = h, yr = h + 3.75, zm = (z0 + z1) / 2; const v = flip ? [x, y, z0, x, yr, zm, x, y, z1] : [x, y, z0, x, y, z1, x, yr, zm]; g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(flip ? [0, 0, (zm - z0) / 1.2, (yr - y) / 1.2, (z1 - z0) / 1.2, 0] : [0, 0, (z1 - z0) / 1.2, 0, (zm - z0) / 1.2, (yr - y) / 1.2], 2)); g.computeVertexNormals(); B.geom(g, m); }
     B.box(x0 + t, -0.02, z0 + t, x1 - t, 0.02, z1 - t, 'woodDark', { collide: false, ao: false });
@@ -317,10 +325,9 @@ export default {
   brewery(B) {
     // copper kettles in front of the brew house, their domes in steps you can stand on
     // (either side of the brew house's door, which stays free)
-    const z = 22.5;
-    for (const x of [-38.4, -31.6]) {
-      B.box(x - 0.85, 0, z - 0.85, x + 0.85, 1.6, z + 0.85, 'metalYellow', { visual: false });
-      for (const [h0, h1, f] of [[1.6, 2.0, 0.8], [2.0, 2.36, 0.45]]) B.box(x - 0.86 * f, h0, z - 0.86 * f, x + 0.86 * f, h1, z + 0.86 * f, 'metalYellow', { visual: false });
+    // (clear of the door and of both windows: you can look and climb out of them; and outside the circle of A)
+    for (const [x, z] of [[-39.1, 21.9], [-30.4, 22.5]]) {
+      roundCol(B, x, z, 0, 1.6, 0.88, 0.88, 'metalYellow'); domeCol(B, x, 1.6, z, 0.86, 0.86, 0.86, 'metalYellow', 3);
       B.geom(new THREE.CylinderGeometry(0.85, 0.9, 1.6, 16), 'metalYellow', mtx(x, 0.8, z)); B.geom(new THREE.SphereGeometry(0.86, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'metalYellow', mtx(x, 1.6, z));
     }
   },
