@@ -101,7 +101,8 @@ function strike(out, sr, t0, f, d, a, thud, R) {
 // crk (crackle), crkRate, crkDecay   siz (hiss), sizCut, sizDecay   mech: [time, Hz, decay, level, thud], mechLvl
 // spring: [Hz, decay, level, time]   ring: [Hz, decay, level]
 // world: slap [[delay, level]], tail, tDecay, tCut, rum (rumble), rumCut, rumDecay
-// drive: how hard the gas and the kick are pushed, vol: how loud the gun plays against the others, len: seconds
+// drive: how hard the gas and the kick are pushed, vol: how loud the gun plays against the others (the small ones stay
+// a little quieter by their nature, about 6 LU from the shotgun in the first 100 ms), len: seconds
 export const GUNS = {
   // the reference: sharp and punchy, a crisp crack, the bolt carrier's "chk-chk" and the buffer spring's ping
   ar: {
@@ -112,7 +113,7 @@ export const GUNS = {
     crk: 0.3, crkRate: 1600, crkDecay: 0.025, siz: 0.22, sizCut: 6000, sizDecay: 0.009,
     mech: [[0.014, 2300, 0.010, 0.55, 0], [0.038, 1700, 0.016, 0.45, 0.4]], spring: [520, 0.03, 0.12, 0.016],
     slap: [[0.06, 0.3], [0.17, 0.18], [0.33, 0.1]], tail: 0.5, tDecay: 0.55, tCut: 2600, rum: 0.25, rumCut: 170, rumDecay: 0.3,
-    drive: 2.4, vol: 0.95, len: 1.4,
+    drive: 2.4, vol: 1, len: 1.4,
   },
   // 9 mm: snappy and tight, less low end, more spit; a blowback bolt clacking back and forth
   smg: {
@@ -123,7 +124,7 @@ export const GUNS = {
     crk: 0.35, crkRate: 2000, crkDecay: 0.018, siz: 0.26, sizCut: 6500, sizDecay: 0.007,
     mech: [[0.009, 1500, 0.010, 0.5, 0.6], [0.026, 1250, 0.014, 0.5, 0.5]],
     slap: [[0.05, 0.28], [0.14, 0.14]], tail: 0.4, tDecay: 0.4, tCut: 2800, rum: 0.15, rumCut: 190, rumDecay: 0.2,
-    knee: 0.58, drive: 2.3, vol: 0.9, len: 1.0,
+    knee: 0.58, drive: 2.3, vol: 1, len: 1.0,
   },
   // belt-fed 7.62: heavy and chesty, a deep clunk and the belt's links rattling after it
   lmg: {
@@ -157,7 +158,7 @@ export const GUNS = {
     crk: 0.35, crkRate: 1400, crkDecay: 0.035, siz: 0.24, sizCut: 5500, sizDecay: 0.013,
     mech: [], ring: [1900, 0.09, 0.06],
     slap: [[0.09, 0.4], [0.24, 0.3], [0.48, 0.2], [0.8, 0.12]], tail: 0.8, tDecay: 1.3, tCut: 2100, rum: 0.45, rumCut: 140, rumDecay: 0.8,
-    drive: 3.0, vol: 1.05, len: 2.8,
+    drive: 3.0, vol: 0.95, len: 2.8,
   },
   // 12 gauge pump: wide and boomy, a rough roar of gas (lots of crackle), little crack; the pump plays on its own
   shotgun: {
@@ -168,7 +169,7 @@ export const GUNS = {
     crk: 0.7, crkRate: 3200, crkDecay: 0.04, siz: 0.2, sizCut: 4500, sizDecay: 0.014,
     mech: [], ring: [900, 0.08, 0.05],
     slap: [[0.08, 0.38], [0.21, 0.26], [0.42, 0.15]], tail: 0.75, tDecay: 1.0, tCut: 1900, rum: 0.45, rumCut: 150, rumDecay: 0.6,
-    drive: 3.0, vol: 1, len: 2.2,
+    drive: 3.0, vol: 0.92, len: 2.2,
   },
   // 9 mm pistol: a snappy pop, short, the slide going "tick-tack"
   pistol: {
@@ -179,7 +180,7 @@ export const GUNS = {
     crk: 0.3, crkRate: 1800, crkDecay: 0.015, siz: 0.26, sizCut: 7000, sizDecay: 0.006,
     mech: [[0.006, 3100, 0.007, 0.65, 0], [0.019, 2500, 0.01, 0.5, 0.3]],
     slap: [[0.045, 0.26], [0.12, 0.12]], tail: 0.36, tDecay: 0.35, tCut: 3000, rum: 0.12, rumCut: 200, rumDecay: 0.18,
-    knee: 0.58, drive: 2.2, vol: 0.88, len: 0.9,
+    knee: 0.58, drive: 2.2, vol: 1, len: 0.9,
   },
   // .44 revolver: a round boom with a bright bark (the gas spitting out of the cylinder gap) and the frame ringing
   revolver: {
@@ -201,7 +202,7 @@ export const GUNS = {
     crk: 0.3, crkRate: 1800, crkDecay: 0.013, siz: 0.28, sizCut: 7500, sizDecay: 0.005,
     mech: [[0.005, 3400, 0.006, 0.55, 0], [0.015, 2900, 0.008, 0.42, 0.2]],
     slap: [[0.04, 0.24], [0.11, 0.1]], tail: 0.3, tDecay: 0.3, tCut: 3200, rum: 0.1, rumCut: 210, rumDecay: 0.15,
-    knee: 0.56, drive: 2.1, vol: 0.85, len: 0.75,
+    knee: 0.56, drive: 2.1, vol: 1, len: 0.75,
   },
   // burst rifle: an AR's voice, tighter and more modern, a sharper "chk"
   burst: {
@@ -212,7 +213,7 @@ export const GUNS = {
     crk: 0.25, crkRate: 1500, crkDecay: 0.022, siz: 0.24, sizCut: 6500, sizDecay: 0.008,
     mech: [[0.012, 2700, 0.009, 0.62, 0], [0.033, 2000, 0.013, 0.5, 0.35]], spring: [600, 0.025, 0.1, 0.014],
     slap: [[0.06, 0.3], [0.16, 0.18], [0.31, 0.1]], tail: 0.5, tDecay: 0.55, tCut: 2700, rum: 0.25, rumCut: 170, rumDecay: 0.3,
-    drive: 2.5, vol: 0.95, len: 1.4,
+    drive: 2.5, vol: 1, len: 1.4,
   },
   // PDW: a small fast round, zippy and high, with its own little supersonic crack
   pdw: {
@@ -223,7 +224,7 @@ export const GUNS = {
     crk: 0.25, crkRate: 1600, crkDecay: 0.012, siz: 0.3, sizCut: 8000, sizDecay: 0.005,
     mech: [[0.005, 3600, 0.005, 0.45, 0], [0.014, 3000, 0.007, 0.4, 0.2]],
     slap: [[0.04, 0.22], [0.1, 0.1]], tail: 0.3, tDecay: 0.3, tCut: 3400, rum: 0.08, rumCut: 220, rumDecay: 0.15,
-    knee: 0.56, drive: 2.0, vol: 0.85, len: 0.75,
+    knee: 0.56, drive: 2.0, vol: 1, len: 0.75,
   },
   // .50 anti-materiel: the muzzle brake throws the blast sideways, the ground shakes, the thunder rolls; a massive clank
   amr: {
@@ -234,7 +235,7 @@ export const GUNS = {
     crk: 0.45, crkRate: 2000, crkDecay: 0.045, siz: 0.26, sizCut: 5000, sizDecay: 0.016,
     mech: [[0.025, 800, 0.03, 0.55, 1.0], [0.07, 1300, 0.03, 0.45, 0.6]], ring: [1500, 0.12, 0.05],
     slap: [[0.1, 0.44], [0.27, 0.32], [0.55, 0.22], [0.9, 0.14]], tail: 0.9, tDecay: 1.6, tCut: 1800, rum: 0.55, rumCut: 130, rumDecay: 1.1,
-    drive: 3.2, vol: 1.05, len: 3.2,
+    drive: 3.2, vol: 0.95, len: 3.2,
   },
   // semi-auto shotgun: the shotgun's roar, a little tighter, and a heavy action clanking after every shot
   autoshot: {
@@ -245,7 +246,7 @@ export const GUNS = {
     crk: 0.65, crkRate: 3000, crkDecay: 0.035, siz: 0.2, sizCut: 4800, sizDecay: 0.012,
     mech: [[0.016, 1150, 0.018, 0.55, 0.8], [0.045, 1450, 0.02, 0.5, 0.6]],
     slap: [[0.08, 0.36], [0.2, 0.24], [0.4, 0.14]], tail: 0.7, tDecay: 0.95, tCut: 2000, rum: 0.4, rumCut: 150, rumDecay: 0.55,
-    drive: 2.9, vol: 1, len: 2.0,
+    drive: 2.9, vol: 0.92, len: 2.0,
   },
   // .50 pistol: huge and barking, brighter than the revolver, a heavy slide clanking back and home
   handcannon: {
