@@ -299,6 +299,23 @@ export class Audio {
     add('stim', concat(sr, [[clk([2900, 4300], 0.01, 0.3, 310), 0, 1], [sweepNoise(sr, 0.22, 3600, 1400, (t) => 1 - t, 311, 2), 0.02, 0.5]]));
     add('punch', concat(sr, [[synthNoiseHit(sr, 0.18, 320, 0.04, 0.9, 'lp', 320, 1.1, 68), 0, 1], [synthNoiseHit(sr, 0.05, 1500, 0.01, 1, 'bp', 321), 0, 0.6]]));
     add('thud', concat(sr, [[synthNoiseHit(sr, 0.34, 170, 0.08, 0.8, 'lp', 322, 1.1, 50), 0, 1], [synthNoiseHit(sr, 0.22, 800, 0.05, 0.8, 'bp', 323), 0.012, 0.4]]));
+    // the S&D bomb: the case set down, its latches, the lid, the arming switches, the device's beeps
+    const tone = (len, freqs, decay, attack = 0.004) => {
+      const n = Math.floor(sr * len), a = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const t = i / sr; let s = 0; freqs.forEach((f, k) => { s += Math.sin(2 * Math.PI * f * t) / (k + 1); }); a[i] = s * Math.min(1, t / attack) * Math.exp(-t / decay); }
+      fadeOut(a, sr, 6);
+      return normalize(a, 0.8);
+    };
+    add('caseDown', concat(sr, [[synthNoiseHit(sr, 0.22, 240, 0.05, 0.8, 'lp', 400, 1.0, 85), 0, 1], [clk([700, 1300, 2100], 0.025, 0.5, 401), 0.004, 0.6]]));
+    add('latch', concat(sr, [[clk([1900, 3100], 0.008, 0.6, 402), 0, 1], [clk([2100, 3400], 0.008, 0.6, 403), 0.07, 0.9]]));
+    add('lidOpen', concat(sr, [[sweepNoise(sr, 0.22, 700, 1500, (t) => Math.sin(t * Math.PI) * 0.7, 404, 1.1), 0, 0.8], [clk([600, 1100, 1900], 0.03, 0.5, 405), 0.2, 1]]));
+    add('toggle', concat(sr, [[clk([2600, 4100, 5600], 0.006, 0.5, 406), 0, 1], [clk([1800, 3000], 0.01, 0.3, 407), 0.012, 0.6]]));
+    add('bootBeep', tone(0.1, [1650, 3300], 0.05));
+    add('holdBeep', tone(0.07, [1400, 2800], 0.03));
+    add('armTone', concat(sr, [[tone(0.12, [1200, 2400], 0.08), 0, 1], [tone(0.2, [1800, 3600], 0.1), 0.11, 1]]));
+    add('bombBeep', tone(0.09, [2300, 4600], 0.045));
+    add('detPull', concat(sr, [[sweepNoise(sr, 0.18, 900, 2600, (t) => t * (1 - t) * 3.2, 408, 1.4), 0, 0.8], [clk([1400, 2600], 0.015, 0.6, 409), 0.15, 1]]));
+    add('safeTone', concat(sr, [[tone(0.15, [1800, 3600], 0.1), 0, 1], [tone(0.22, [1200, 2400], 0.12), 0.14, 1]]));
     add('pinpull', concat(sr, [[clk([3400, 5400], 0.014, 0.3, 324), 0, 1], [clk([2600, 4200], 0.03, 0.2, 325), 0.07, 0.75]]));
     add('boom', concat(sr, [[synthNoiseHit(sr, 1.9, 520, 0.42, 0.7, 'lp', 326, 1.2, 36), 0, 1], [synthNoiseHit(sr, 0.5, 2300, 0.08, 0.8, 'bp', 327), 0, 0.65], [synthNoiseHit(sr, 1.2, 220, 0.5, 0.7, 'lp', 329), 0.08, 0.6]]));
     add('sting', synthNoiseHit(sr, 0.8, 130, 0.24, 0.7, 'lp', 328, 1.2, 40));

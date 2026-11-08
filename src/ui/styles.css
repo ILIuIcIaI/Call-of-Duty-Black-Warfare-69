@@ -416,3 +416,6 @@ body.cine #canvas-wrap canvas{filter:contrast(1.14) saturate(.82) brightness(.97
 #death-screen.kc { display: none; }
 #hud.kc-on #scorebar, #hud.kc-on #minimap-wrap, #hud.kc-on #ammo, #hud.kc-on #crosshair, #hud.kc-on #sd-panel, #hud.kc-on #sd-money, #hud.kc-on #sb-points, #hud.kc-on #gun-panel, #hud.kc-on #nametags { visibility: hidden; }
 #hud.sd-working #crosshair { visibility: hidden; }
+/* (at work over the bomb its own screen shows how far it has got: the panel under the score would cover it) */
+#sd-panel { transition: opacity .2s; }
+#hud.sd-working #sd-panel { opacity: 0; }

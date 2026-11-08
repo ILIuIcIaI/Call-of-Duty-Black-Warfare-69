@@ -41,81 +41,248 @@ class HeldInput {
   set suppress(v) { this.inp.suppress = v; }
 }
 
-// Planting and defusing as you see it yourself: the gun goes away, you look down at the bomb on the floor in
-// front of you, the left hand steadies it and the right one types; defusing ends with the red wire torn out.
-// The hands are in the world, next to the bomb everybody else sees.
+// ---- Planting and defusing, one sequence for everybody who sees it (seconds for a 3.2 s plant and a 7 s defuse;
+// a longer plant holds the trigger longer, a shorter one runs all of it faster).
+// Plant: the case comes down in the right hand, the left flicks the latches and throws the lid open, the screen in
+// the lid starts up, the right index finger flips the three arming switches, then holds the trigger down while the
+// device arms (a skull, a bar). Defuse: the switches back off, the trigger held, the first detonator pulled out.
+const PL = { bring: 0.3, latch: 0.36, open: 0.46, openLen: 0.24, boot: 0.72, armed: 1.0, sw: [0.98, 1.2, 1.42], swLen: 0.2, trig: 1.66, trigIn: 1.86 };
+const DF = { sw: [0.35, 0.65, 0.95], swLen: 0.26, trig: 1.25, trigIn: 1.5, det: 1.3, pull: 0.75 };
+const sm = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+// the lid's way open: quick, a little past, back
+const lidK = (u) => { u = Math.max(0, Math.min(1, u)); return u < 0.75 ? sm(u / 0.75) * 1.05 : 1.05 - 0.05 * sm((u - 0.75) / 0.25); };
+// what the bomb shows at time t of a piece of work (for its model, its sounds and the hands)
+function workState(kind, t, need) {
+  if (kind === 'plant') {
+    const s = Math.min(1, need / 3.2), T = (x) => x * s;
+    const st = { bring: Math.min(1, t / T(PL.bring)), lid: lidK((t - T(PL.open)) / T(PL.openLen)), sw: PL.sw.map((a) => t > T(a + PL.swLen * 0.55)), trig: t > T(PL.trigIn) };
+    st.screen = t < T(PL.boot) ? ['off'] : t < T(PL.armed) ? ['boot', (t - T(PL.boot)) / (T(PL.armed) - T(PL.boot))] : ['arm', (t - T(PL.armed)) / Math.max(0.1, need - T(PL.armed))];
+    return st;
+  }
+  return { bring: 1, lid: 1, sw: DF.sw.map((a, i) => !(t > a + DF.swLen * 0.55)).reverse(), trig: t > DF.trigIn && t < need - DF.det, pull: sm((t - (need - DF.pull)) / (DF.pull - 0.1)) };
+}
+// the sounds of it, each once when its moment is passed
+const WORK_SOUNDS = {
+  plant: [[0.3, 'caseDown', 1, 1], [0.36, 'latch', 0.9, 1], [0.46, 'lidOpen', 1, 1], [0.76, 'bootBeep', 0.6, 1], [0.86, 'bootBeep', 0.6, 1.12], [0.96, 'bootBeep', 0.6, 1.25],
+    [0.98 + 0.11, 'toggle', 1, 1], [1.2 + 0.11, 'toggle', 1, 1.05], [1.42 + 0.11, 'toggle', 1, 1.1], [1.86, 'toggle', 0.9, 0.7]],
+  defuse: [[0.35 + 0.14, 'toggle', 1, 1.1], [0.65 + 0.14, 'toggle', 1, 1.05], [0.95 + 0.14, 'toggle', 1, 1], [1.5, 'toggle', 0.9, 0.7]],
+};
+function workSounds(g, w, t0, t1, pos) {
+  const s = w.kind === 'plant' ? Math.min(1, w.need / 3.2) : 1;
+  for (const [at, name, vol, rate] of WORK_SOUNDS[w.kind]) if (at * s > t0 && at * s <= t1) g.audio.play(name, { pos, vol, rate });
+  // (the trigger held: a soft beep every half second; pulling the detonator out)
+  const from = w.kind === 'plant' ? PL.trigIn * s : DF.trigIn;
+  if (t1 > from && Math.floor((t1 - from) / 0.45) !== Math.floor((t0 - from) / 0.45) && (w.kind === 'plant' || t1 < w.need - DF.det)) g.audio.play('holdBeep', { pos, vol: 0.5, rate: w.kind === 'plant' ? 1 + Math.min(0.5, (t1 - from) * 0.25) : 0.85 });
+  if (w.kind === 'defuse' && t0 <= w.need - DF.pull && t1 > w.need - DF.pull) g.audio.play('detPull', { pos, vol: 1 });
+}
+// the model of the bomb at that moment (the case comes down from `from` to where it is put, as `at`)
+const _bq = new THREE.Quaternion(), _be = new THREE.Euler();
+function poseBomb(bomb, st, from, at, yaw) {
+  const R = bomb.root;
+  if (st.bring < 1 && from) {
+    const u = sm(st.bring);
+    R.position.lerpVectors(from, at, u); R.position.y += Math.sin(u * Math.PI) * 0.06;
+    R.quaternion.setFromEuler(_be.set(0.4 * (1 - u), yaw, -0.3 * (1 - u), 'YXZ'));
+  } else { R.position.copy(at); R.quaternion.setFromEuler(_be.set(0, yaw, 0, 'YXZ')); }
+  bomb.handle.rotation.x = st.bring < 1 || st.lid < 0.2 ? 0 : -1.2;
+  bomb.lid(st.lid);
+  st.sw.forEach((on, i) => bomb.flip(i, on));
+  bomb.trigger(!!st.trig);
+  if (st.pull !== undefined) bomb.pull(st.pull);
+}
+
+// The hands you see while you plant or defuse: gloves with jointed fingers, the forearms turned toward the
+// shoulders every frame (long sleeves that run out of the picture). In the world, next to the bomb everybody sees.
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 class HandsAtWork {
   constructor(game) {
-    // a gloved hand, fingers along -Z, and a forearm from the wrist that is turned toward its shoulder every frame
     const M = game.weapons.vm.mats;
-    // (the typing hand points its index finger, the others curled in; the other hand lies flat on the case)
-    const hand = (mirror, point) => {
-      const g = new THREE.Group();
-      const add = (geo, mat, x, y, z, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m; };
-      add(new THREE.BoxGeometry(0.082, 0.03, 0.088), M.glove, 0, 0, 0);
-      for (const [x, L, i] of [[-0.028, 0.05, 0], [-0.0095, 0.06, 1], [0.0095, 0.058, 2], [0.028, 0.048, 3]]) {
-        if (point && i > 0) add(new THREE.CapsuleGeometry(0.0098, 0.022, 4, 8), M.glove, x, -0.014, -0.05, Math.PI / 2 + 1.25);
-        else add(new THREE.CapsuleGeometry(0.0095, L * (point ? 0.95 : 0.7), 4, 8), M.glove, x, -0.006, -0.044 - L * (point ? 0.55 : 0.42), Math.PI / 2 + (point ? 0.12 : 0.3));
+    // a hand: the palm, four fingers of two joints each and the thumb, fingers along -Z, the palm facing down
+    const hand = (mirror) => {
+      const g = new THREE.Group(), fingers = [];
+      const cap = (r, L, mat = M.glove) => { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 8), mat); m.rotation.x = Math.PI / 2; m.position.z = -L / 2; return m; };
+      const palm = new THREE.Mesh(new THREE.BoxGeometry(0.084, 0.03, 0.09), M.glove); g.add(palm);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.008, 0.07), M.glove); back.position.set(0, 0.016, 0.004); g.add(back);
+      // [x across the palm, first joint, second joint, radius]
+      for (const [x, L1, L2, r] of [[-0.0285, 0.036, 0.03, 0.0092], [-0.0095, 0.042, 0.034, 0.0098], [0.0095, 0.04, 0.033, 0.0096], [0.0285, 0.033, 0.027, 0.0088]]) {
+        const k1 = new THREE.Group(); k1.position.set(x * mirror, -0.004, -0.044); g.add(k1);
+        k1.add(cap(r, L1));
+        const k2 = new THREE.Group(); k2.position.z = -L1 - r * 0.6; k1.add(k2);
+        k2.add(cap(r * 0.95, L2));
+        const tip = new THREE.Object3D(); tip.position.z = -L2 - r; k2.add(tip);
+        fingers.push({ k1, k2, tip });
       }
-      add(new THREE.CapsuleGeometry(0.0105, 0.03, 4, 8), M.glove, 0.048 * mirror, -0.006, -0.012, Math.PI / 2).rotation.z = 0.6 * mirror;
+      // the thumb from the side of the palm, angled in
+      const t0 = new THREE.Group(); t0.position.set(0.04 * -mirror, -0.008, -0.004); t0.rotation.set(0, 0.75 * mirror, 0); g.add(t0);
+      t0.add(cap(0.0105, 0.03));
+      const t1 = new THREE.Group(); t1.position.z = -0.036; t0.add(t1);
+      t1.add(cap(0.0098, 0.026));
+      const ttip = new THREE.Object3D(); ttip.position.z = -0.036; t1.add(ttip);
+      fingers.unshift({ k1: t0, k2: t1, tip: ttip, thumb: true });
+      // the forearm from the wrist: a cuff and a long sleeve
       const arm = new THREE.Group(); arm.position.set(0, 0.004, 0.046); g.add(arm);
-      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.045, 12), M.glove); cuff.position.y = 0.02; arm.add(cuff);
-      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.64, 12), M.sleeve); sleeve.position.y = 0.36; arm.add(sleeve); // (long enough to run out of the picture)
-      return { g, arm };
+      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.041, 0.041, 0.05, 12), M.glove); cuff.position.y = 0.022; arm.add(cuff);
+      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.062, 0.64, 12), M.sleeve); sleeve.position.y = 0.36; arm.add(sleeve);
+      return { g, arm, fingers, mirror };
     };
-    const hl = hand(1, false), hr = hand(-1, true);
-    this.left = hl.g; this.right = hr.g;
-    this.arms = [{ open: hl.g, arm: hl.arm }, { open: hr.g, arm: hr.arm }];
+    this.L = hand(-1); this.R = hand(1);
+    this.arms = [this.L, this.R];
     void buildHands;
     this.inv = new THREE.Matrix4();
     this.root = new THREE.Group();
-    this.root.add(this.left, this.right);
+    this.root.add(this.L.g, this.R.g);
     this.root.visible = false;
     game.scene.add(this.root);
     this.k = 0;
+    this.tgt = { L: new THREE.Vector3(), R: new THREE.Vector3() };
   }
   dispose() { if (this.root.parent) this.root.parent.remove(this.root); }
-  // w: the work under way (or null), bomb: the BombModel, p: the player
+
+  // the fingers bent: [thumb, index, middle, ring, little], 0 straight .. 1 in a fist
+  curl(H, c) {
+    H.fingers.forEach((f, i) => {
+      const v = c[i] ?? 0.5;
+      if (f.thumb) { f.k1.rotation.x = -v * 0.5; f.k2.rotation.x = -v * 0.9; } else { f.k1.rotation.x = -v * 1.35; f.k2.rotation.x = -v * 1.5; }
+    });
+  }
+  // where a part of the hand is with the hand at the origin turned as it is: 'palm', 'index' (its tip), 'thumb' (its
+  // tip), 'grip' (inside the bent fingers), 'pinch' (between thumb and index)
+  anchor(H, name, out) {
+    if (name === 'palm') return out.set(0, 0, 0);
+    H.g.updateMatrixWorld(true);
+    const P = H.g.position.clone();
+    const at = (f) => f.tip.getWorldPosition(new THREE.Vector3()).sub(P);
+    if (name === 'index') return out.copy(at(H.fingers[1]));
+    if (name === 'thumb') return out.copy(at(H.fingers[0]));
+    if (name === 'pinch') return out.copy(at(H.fingers[0])).add(at(H.fingers[1])).multiplyScalar(0.5);
+    // grip: the middle finger's first joint
+    return out.copy(H.fingers[2].k2.getWorldPosition(new THREE.Vector3()).sub(P)).lerp(at(H.fingers[2]), 0.3);
+  }
+  // a hand turned (pitch, yaw, roll, around the bomb's own yaw) and bent, with its `anchor` on `target`
+  place(H, target, yaw, pitch, dyaw, roll, curls, anchor) {
+    H.g.rotation.copy(_e.set(pitch, yaw + dyaw, roll, 'YXZ'));
+    this.curl(H, curls);
+    H.g.position.set(0, 0, 0);
+    const a = this.anchor(H, anchor, _c);
+    H.g.position.copy(target).sub(a);
+  }
+
+  // w: the work under way (or null), bomb: the BombModel, p: the player, cam: the camera
   update(dt, w, bomb, p, cam) {
     const on = !!(w && w.ent === p);
-    this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.3 : -dt / 0.2)));
+    this.k = Math.max(0, Math.min(1, this.k + (on ? dt / 0.16 : -dt / 0.18)));
     this.root.visible = this.k > 0.01;
-    if (!this.root.visible) { bomb.wires[0].position.set(0, 0, 0); return; }
+    if (!this.root.visible) return;
     const R = bomb.root;
     R.updateWorldMatrix(true, false);
-    // toward the player, sideways and up, from the bomb's point of view
-    const yaw = R.rotation.y, toP = _a.set(Math.sin(yaw), 0, Math.cos(yaw)), side = _b.set(Math.cos(yaw), 0, -Math.sin(yaw));
-    const from = _c.copy(cam.position).addScaledVector(toP, -0.15).add(_v.set(0, -0.5, 0)); // (where the hands come from and go back to)
-    const ease = this.k * this.k * (3 - 2 * this.k);
-    // left hand flat on the case, fingers forward and a little right
-    const L = this.left;
-    _w.copy(R.position).addScaledVector(side, -0.15).addScaledVector(toP, 0.02).add(_v.set(0, 0.09, 0));
-    L.position.copy(from).lerp(_w, ease);
-    L.rotation.set(-0.3, yaw + 0.55, 0, 'YXZ');
-    // right hand: over the key being pressed, down onto it while it is lit; defusing ends with the red wire
-    const Rh = this.right;
-    let target;
-    if (w && w.kind === 'defuse' && w.t > w.need - 1.3) {
-      const u = Math.min(1, (w.t - (w.need - 1.3)) / 1.1), pull = Math.max(0, (u - 0.45) / 0.55);
-      target = _w.set(-0.035, 0.08 + pull * 0.09, 0.0).applyMatrix4(R.matrixWorld).addScaledVector(toP, 0.06 + pull * 0.1);
-      bomb.wires[0].position.set(0, pull * 0.08, pull * 0.1);
-      bomb.wires[0].visible = pull < 0.98;
-    } else {
-      const key = w && bomb.lit >= 0 ? bomb.lit : w && w.key >= 0 ? w.key : 4;
-      bomb.keyTop(key, _w).applyMatrix4(R.matrixWorld);
-      target = _w.addScaledVector(toP, 0.07).addScaledVector(side, 0.035).add(_v.set(0, bomb.lit >= 0 ? 0.03 : 0.06, 0));
-    }
-    Rh.position.copy(from).lerp(target, ease);
-    Rh.rotation.set(-0.55, yaw - 0.45, 0, 'YXZ');
-    // the forearms: from the wrist back to a shoulder a little below and beside the eyes
+    const yaw = this.yaw = on ? w.yaw : this.yaw ?? 0;
+    const W = (v) => v.applyMatrix4(R.matrixWorld);
+    const t = on ? w.t : this.lastT || 0;
+    if (on) this.lastT = t;
+    const kind = on ? w.kind : this.kind || 'plant';
+    this.kind = kind;
+    const need = on ? w.need : this.need || SD.PLANT;
+    this.need = need;
     const e = cam.matrixWorld.elements;
-    this.arms.forEach(({ open, arm }, i) => {
-      const s = i === 0 ? -1 : 1;
-      _w.set(cam.position.x + e[0] * 0.4 * s - e[4] * 0.45 + e[8] * 0.12, cam.position.y + e[1] * 0.4 * s - e[5] * 0.45 + e[9] * 0.12, cam.position.z + e[2] * 0.4 * s - e[6] * 0.45 + e[10] * 0.12);
-      open.updateWorldMatrix(true, false);
-      _w.applyMatrix4(this.inv.copy(open.matrixWorld).invert()).sub(arm.position).normalize();
-      arm.quaternion.setFromUnitVectors(UP, _w);
+    // (where the hands come from and go back to: below the eyes, left and right)
+    const away = (s, out) => out.set(cam.position.x - e[4] * 0.5 + e[0] * 0.2 * s - e[8] * 0.1, cam.position.y - e[5] * 0.5 + e[1] * 0.2 * s - e[9] * 0.1, cam.position.z - e[6] * 0.5 + e[2] * 0.2 * s - e[10] * 0.1);
+    const press = (u) => (u < 0.35 ? 1 - sm(u / 0.35) : u < 0.6 ? 0 : sm((u - 0.6) / 0.4)); // (1 above the switch, 0 down on it)
+    // ---- the right hand
+    {
+      const H = this.R, at = _a;
+      if (kind === 'plant') {
+        const s = Math.min(1, need / 3.2), T = (x) => x * s;
+        const i = PL.sw.findIndex((a) => t >= T(a) && t < T(a + PL.swLen));
+        if (t < T(0.62)) this.place(H, W(bomb.spot('handle', at).add(_b.set(0, 0.012, -0.004))), yaw, 0.25, 0, 0, [0.75, 0.92, 0.95, 0.95, 0.95], 'grip');
+        else if (t < T(PL.sw[0])) {
+          // from the handle over to the first switch
+          const u = sm((t - T(0.62)) / (T(PL.sw[0]) - T(0.62)));
+          W(bomb.spot('handle', at).add(_b.set(0, 0.012, -0.004)));
+          W(bomb.spot('switch0', _c).add(_b.set(0, 0.045, 0.02)));
+          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(u * Math.PI) * 0.06, 0)), yaw, 0.25 - 1.2 * u, 0.25 * u, -0.2 * u, [0.75 - 0.2 * u, 0.92 - 0.82 * u, 0.95 - 0.1 * u, 0.95, 0.95], u < 0.5 ? 'grip' : 'index');
+        } else if (i >= 0) {
+          const u = (t - T(PL.sw[i])) / T(PL.swLen), up = press(u);
+          W(bomb.spot('switch' + i, at).add(_b.set(0, 0.006 + 0.04 * up, 0.012 * up - 0.008 * (1 - up))));
+          this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
+        } else if (t < T(PL.trig)) {
+          // (between two switches, or done with them and on the way)
+          const j = PL.sw.findIndex((a) => t < T(a)), from = j < 0 ? 2 : j - 1;
+          if (j >= 0) {
+            const u = sm((t - T(PL.sw[from] + PL.swLen)) / (T(PL.sw[j]) - T(PL.sw[from] + PL.swLen)));
+            W(bomb.spot('switch' + from, at).add(_b.set(0, 0.046, 0.012)));
+            W(bomb.spot('switch' + j, _c).add(_b.set(0, 0.046, 0.012)));
+            this.place(H, at.lerp(_c, u), yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
+          } else {
+            W(bomb.spot('switch2', at).add(_b.set(0, 0.046, 0.012)));
+            this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
+          }
+        } else {
+          // over to the trigger, and the button held down with the index finger
+          const u = sm((t - T(PL.trig)) / (T(PL.trigIn) - T(PL.trig)));
+          W(bomb.spot('switch2', at).add(_b.set(0, 0.046, 0.012)));
+          W(bomb.spot('trigger', _c).add(_b.set(0, 0.004 + 0.035 * (1 - u), 0)));
+          const breathe = Math.sin(t * 5.5) * 0.0015 * u;
+          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(u * Math.PI) * 0.05 + breathe, 0)), yaw, -0.95 + 0.35 * u, 0.25 - 0.1 * u, -0.2 + 0.05 * u, [0.55 - 0.15 * u, 0.1 + 0.15 * u, 0.85 - 0.1 * u, 0.9 - 0.1 * u, 0.9 - 0.1 * u], 'index');
+        }
+      } else {
+        // defusing: the switches off one after the other (2, 1, 0), the trigger, then the detonator out
+        const i = DF.sw.findIndex((a) => t >= a && t < a + DF.swLen);
+        const pullAt = need - DF.det;
+        if (t < DF.sw[0]) this.place(H, W(bomb.spot('switch2', at).add(_b.set(0, 0.05, 0.02))), yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
+        else if (i >= 0) {
+          const u = (t - DF.sw[i]) / DF.swLen, up = press(u), sw = 2 - i;
+          W(bomb.spot('switch' + sw, at).add(_b.set(0, 0.006 + 0.04 * up, -0.012 * up + 0.01 * (1 - up))));
+          this.place(H, at, yaw, -0.95, 0.25, -0.2, [0.55, 0.1, 0.85, 0.9, 0.9], 'index');
+        } else if (t < pullAt) {
+          const u = sm((t - DF.trig) / (DF.trigIn - DF.trig));
+          W(bomb.spot('switch0', at).add(_b.set(0, 0.046, 0.012)));
+          W(bomb.spot('trigger', _c).add(_b.set(0, 0.004 + 0.035 * (1 - u), 0)));
+          this.place(H, at.lerp(_c, t < DF.trig ? 0 : u), yaw, -0.6, 0.15, -0.15, [0.4, 0.25, 0.75, 0.8, 0.8], 'index');
+        } else {
+          // to the first detonator, take it between thumb and finger, and out with it
+          const u = sm((t - pullAt) / (DF.det - DF.pull));
+          W(bomb.spot('trigger', at).add(_b.set(0, 0.004, 0)));
+          W(bomb.spot('det', _c).add(_b.set(0, 0.006, 0.004)));
+          this.place(H, at.lerp(_c, u).add(_b.set(0, Math.sin(Math.min(1, u) * Math.PI) * 0.05, 0)), yaw, -0.7, 0.3, -0.3, [0.45 + 0.1 * u, 0.5, 0.8, 0.9, 0.9], 'pinch');
+        }
+      }
+      this.tgt.R.copy(H.g.position);
+      away(1, _b);
+      H.g.position.lerpVectors(_b, this.tgt.R, sm(this.k));
+    }
+    // ---- the left hand: the latches and the lid when planting, then on the rim of the case
+    {
+      const H = this.L, at = _a;
+      const s = Math.min(1, need / 3.2), T = (x) => x * s;
+      const rim = () => { W(bomb.spot('rimL', at).add(_b.set(0.03, 0.022, 0))); this.place(H, at, yaw, 0.08, -0.35, 0.1, [0.3, 0.25, 0.28, 0.3, 0.32], 'palm'); };
+      if (kind !== 'plant' || t >= T(0.95)) rim();
+      else if (t < T(PL.open)) {
+        // to the left latch and flick it
+        const u = sm((t - T(0.18)) / (T(PL.latch) - T(0.18))), flick = Math.max(0, Math.sin(Math.max(0, t - T(PL.latch)) / T(0.1) * Math.PI)) * (t < T(PL.open) ? 1 : 0);
+        W(bomb.spot('latchL', at).add(_b.set(0, 0.012 + 0.03 * (1 - u) + 0.008 * flick, 0.01)));
+        this.place(H, at, yaw, -0.8, 0.2, 0.2, [0.4, 0.35, 0.6, 0.65, 0.7], 'index');
+      } else if (t < T(PL.open + PL.openLen + 0.05)) {
+        // the lid's front edge, carried up and over
+        W(bomb.spot('lidEdge', at).add(_b.set(0, -0.006, 0.012)));
+        this.place(H, at, yaw, -0.3 - bomb.k * 0.9, 0.15, 0.15, [0.6, 0.6, 0.62, 0.64, 0.66], 'grip');
+      } else {
+        // from the lid down onto the rim
+        const u = sm((t - T(PL.open + PL.openLen + 0.05)) / (T(0.95) - T(PL.open + PL.openLen + 0.05)));
+        W(bomb.spot('lidEdge', at).add(_b.set(0, -0.006, 0.012)));
+        W(bomb.spot('rimL', _c).add(_b.set(0.03, 0.022, 0)));
+        this.place(H, at.lerp(_c, u), yaw, -0.3 - 0.9 * (1 - u) + 0.38 * u, 0.15 - 0.5 * u, 0.15 - 0.05 * u, [0.6 - 0.3 * u, 0.6 - 0.35 * u, 0.62 - 0.34 * u, 0.64 - 0.34 * u, 0.66 - 0.34 * u], u < 0.5 ? 'grip' : 'palm');
+      }
+      this.tgt.L.copy(H.g.position);
+      away(-1, _b);
+      H.g.position.lerpVectors(_b, this.tgt.L, sm(this.k));
+    }
+    // the forearms: from the wrist back to a shoulder a little below and beside the eyes
+    this.arms.forEach(({ g, arm, mirror }) => {
+      _a.set(cam.position.x + e[0] * 0.36 * mirror - e[4] * 0.45 + e[8] * 0.1, cam.position.y + e[1] * 0.36 * mirror - e[5] * 0.45 + e[9] * 0.1, cam.position.z + e[2] * 0.36 * mirror - e[6] * 0.45 + e[10] * 0.1);
+      g.updateWorldMatrix(true, false);
+      _a.applyMatrix4(this.inv.copy(g.matrixWorld).invert()).sub(arm.position).normalize();
+      arm.quaternion.setFromUnitVectors(UP, _a);
     });
   }
 }
@@ -158,8 +325,8 @@ export class SearchDestroy {
     this.hot = null; this.anchor = null; this.execute = false; this.gatherT = null; this.fallen = new Set(); this.goals = new Map();
     this.beepT = 0;
     this.bomb = new BombModel(); this.bomb.root.visible = false; game.scene.add(this.bomb.root);
-    this.packed = new BombModel(); this.packed.root.visible = false; game.scene.add(this.packed.root);
-    this.packed.root.scale.setScalar(0.92);
+    this.packed = new BombModel({ simple: true }); this.packed.root.visible = false; game.scene.add(this.packed.root);
+    this.packed.root.scale.setScalar(0.58);
     this.spectate = null; this.specT = 0;
     this.el = null;
     this.hands = new HandsAtWork(game);
@@ -168,20 +335,30 @@ export class SearchDestroy {
 
   // while you plant or defuse: no gun in your hands, and your eyes on the bomb
   hidesGun() { return this.hands.root.visible; }
-  // kneeling at it: the eyes go down closer to the bomb and onto it
+  // Kneeling at it: the eyes go down onto the spot while the case comes down, then lean in over it as the lid opens,
+  // low and close (breathing a little).
   workCam(cam) {
-    const k = this.hands.k, e = k * k * (3 - 2 * k), B = this.bomb.root.position;
+    const k = this.hands.k, e = k * k * (3 - 2 * k);
     if (e <= 0.001) return;
-    _v.set(B.x - cam.position.x, 0, B.z - cam.position.z).normalize();
-    cam.position.x += _v.x * 0.16 * e; cam.position.z += _v.z * 0.16 * e; cam.position.y -= 0.3 * e;
-    _m4.lookAt(cam.position, _w.set(B.x, B.y + 0.07, B.z), UPY);
+    const w = this.work, at = w && w.at ? w.at : this.bomb.root.position, yaw = w && w.yaw !== undefined ? w.yaw : this.hands.yaw || 0;
+    const t = this.game.time, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const loc = (x, y, z, out) => out.set(at.x + x * cy + z * sy, at.y + y, at.z - x * sy + z * cy);
+    const s = w ? Math.min(1, w.need / 3.2) : 1, lean = !w ? 1 : w.kind === 'plant' ? sm((w.t - 0.44 * s) / (0.32 * s)) : sm(w.t / 0.35);
+    const br = Math.sin(t * 1.3) * 0.003, bu = Math.sin(t * 0.9 + 1) * 0.004;
+    loc(br, 0.66 - 0.16 * lean + bu, 0.44 - 0.18 * lean, _v);
+    loc(0.0, 0.07 + 0.1 * lean, -0.01 - 0.09 * lean, _w);
+    cam.position.lerp(_v, e);
+    _m4.lookAt(cam.position, _w, UPY);
     _q.setFromRotationMatrix(_m4);
     cam.quaternion.slerp(_q, e);
+    // (a wider view this close, so the whole case is in it)
+    cam.fov += (62 - cam.fov) * e;
+    cam.updateProjectionMatrix();
   }
   lookAtWork(dt) {
     const g = this.game, p = g.player, w = this.work;
     if (!w || w.ent !== p) return;
-    const B = this.bomb.root.position, eye = p.pos.y + (p.eyeH ?? 1.05);
+    const B = w.at || this.bomb.root.position, eye = p.pos.y + (p.eyeH ?? 1.05);
     const yaw = Math.atan2(-(B.x - p.pos.x), -(B.z - p.pos.z)), pitch = -Math.atan2(eye - B.y, Math.max(0.2, flat(p.pos, B)));
     let dy = yaw - p.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     const k = 1 - Math.exp(-7 * dt);
@@ -258,7 +435,9 @@ export class SearchDestroy {
     }
     if (this.planted && s.p) { this.planted.left = s.p.l; this.planted.done = s.p.ok; }
     const w = s.w ? this.byId(s.w.i) : null;
-    this.remoteWork = w && w !== g.player ? { ent: w, kind: s.w.k, t: s.w.t } : null;
+    const rw0 = this.remoteWork;
+    this.remoteWork = w && w !== g.player ? (rw0 && rw0.ent === w && rw0.kind === s.w.k ? rw0 : { ent: w, kind: s.w.k, t: s.w.t }) : null;
+    if (rw0 && rw0 !== this.remoteWork) this.remoteDone(rw0);
     if (s.ph === 'live' && this.phase === 'freeze') g.audio.play('spawn', { vol: 0.6 });
     if (s.ph === 'post' && s.res && this.resultRound !== s.r) { this.resultRound = s.r; this.roundOver(s.res.team, s.res.how, this.byId(s.res.by)); }
     this.phase = s.ph; this.left = s.l;
@@ -267,7 +446,7 @@ export class SearchDestroy {
   onNet(m) {
     const g = this.game, e = this.byId(m.from);
     if (m.a === 'wdrop') { this.shop.netDrop(m); return; }
-    if (m.a === 'work') { this.remoteWork = m.on && e ? { ent: e, kind: m.kind, t: 0 } : null; if (this.auth) this.changed(); return; }
+    if (m.a === 'work') { const rw0 = this.remoteWork; this.remoteWork = m.on && e ? { ent: e, kind: m.kind, t: 0 } : null; if (rw0 && rw0 !== this.remoteWork) this.remoteDone(rw0); if (this.auth) this.changed(); return; }
     if (!this.auth || !e) return;
     if (m.a === 'plant' && this.phase === 'live' && e === this.carrier && m.p) {
       const site = this.sites.find((x) => x.id === m.s) || this.inSite(e) || this.sites[0];
@@ -348,8 +527,7 @@ export class SearchDestroy {
     this.botsBought = false;
     this.planted = null; this.dropped = null; this.work = null; this.defuser = null; this.fetcher = null;
     this.hot = null; this.anchor = null; this.execute = false; this.gatherT = null; this.fallen.clear(); this.goals.clear();
-    this.bomb.root.visible = false; this.bomb.setLed(false); this.bomb.setCode('');
-    this.bomb.wires[0].visible = true; this.bomb.wires[0].position.set(0, 0, 0);
+    this.bomb.root.visible = false; this.bomb.reset();
     this.spectate = null;
     document.getElementById('death-screen').classList.remove('watching');
     if (g.playerCorpse) g.playerCorpse.setVisible(false);
@@ -377,7 +555,7 @@ export class SearchDestroy {
   roundOver(team, how, by) {
     const g = this.game;
     if (!this.auth && how === 'boom' && this.planted) this.explode();
-    if (!this.auth && how === 'defused' && this.planted) { this.bomb.setLed('green'); this.bomb.setCode('-- --', '#7dff6a'); this.planted.done = true; if (by === g.player) this.shop.pay(g.player, ECON.DEFUSE, 'ENTSCHÄRFT'); }
+    if (!this.auth && how === 'defused' && this.planted) { this.bombSafe(); this.planted.done = true; if (by === g.player) this.shop.pay(g.player, ECON.DEFUSE, 'ENTSCHÄRFT'); }
     this.phase = 'post'; this.left = SD.POST;
     this.shop.endRound(team, how, !!this.planted);
     this.stopWork();
@@ -398,12 +576,19 @@ export class SearchDestroy {
 
   plantedAt(ent) {
     const g = this.game, site = this.inSite(ent) || this.sites[0];
-    // in front of his feet, on the floor
+    // in front of his feet, on the floor; the whole case clear of walls (its corners, and the lid's room behind it),
+    // nearer to him where it isn't
     const yaw = ent.isPlayer ? ent.yaw : ent.aimYaw;
-    const x = ent.pos.x - Math.sin(yaw) * 0.52, z = ent.pos.z - Math.cos(yaw) * 0.52;
-    const fy = g.col.floorBelow(x, z, 0.12, ent.pos.y + 0.6, ent.pos.y - 2);
-    const ok = Number.isFinite(fy) && Math.abs(fy - ent.pos.y) < 0.6 && g.col.lineClear(ent.pos.x, ent.pos.y + 0.3, ent.pos.z, x, fy + 0.1, z);
-    return { site, pos: ok ? new THREE.Vector3(x, fy, z) : new THREE.Vector3(ent.pos.x, ent.pos.y, ent.pos.z), yaw };
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), sx = Math.cos(yaw), sz = -Math.sin(yaw);
+    for (const d of [0.52, 0.44, 0.36]) {
+      const x = ent.pos.x + fx * d, z = ent.pos.z + fz * d;
+      const fy = g.col.floorBelow(x, z, 0.12, ent.pos.y + 0.6, ent.pos.y - 2);
+      if (!Number.isFinite(fy) || Math.abs(fy - ent.pos.y) > 0.6 || !g.col.lineClear(ent.pos.x, ent.pos.y + 0.3, ent.pos.z, x, fy + 0.1, z)) continue;
+      let ok = true;
+      for (const [a, b] of [[0.27, 0.26], [0.27, -0.26], [-0.18, 0.26], [-0.18, -0.26]]) if (ok) ok = g.col.lineClear(x, fy + 0.08, z, x + fx * a + sx * b, fy + 0.08, z + fz * a + sz * b);
+      if (ok) return { site, pos: new THREE.Vector3(x, fy, z), yaw };
+    }
+    return { site, pos: new THREE.Vector3(ent.pos.x, ent.pos.y, ent.pos.z), yaw };
   }
 
   plant(ent) { this.plantAt(ent, this.plantedAt(ent)); }
@@ -419,9 +604,9 @@ export class SearchDestroy {
     this.phase = 'planted';
     this.beepT = 0;
     this.bomb.root.position.copy(at.pos); this.bomb.root.rotation.set(0, at.yaw, 0);
-    this.bomb.root.visible = true; this.bomb.setLed(true); this.bomb.setCode('ARMED', '#ff5a4a');
+    this.bomb.root.visible = true; this.bombArmed();
     this.defuser = null;
-    g.audio.play('chargeFwd', { pos: at.pos, vol: 1.2, rate: 0.7 });
+    g.audio.play('armTone', { pos: at.pos, vol: 1 });
     const mine = (ent ? ent.team : this.attack) === g.player.team;
     g.hud.message('<span style="font-size:24px;letter-spacing:4px;color:' + (mine ? 'var(--accent)' : 'var(--enemy)') + '">BOMBE GELEGT · ' + at.site.id + '</span>', 2.6);
   }
@@ -429,10 +614,51 @@ export class SearchDestroy {
   defuse(by) {
     const g = this.game;
     this.shop.pay(by, ECON.DEFUSE, 'ENTSCHÄRFT');
-    this.bomb.setLed('green'); this.bomb.setCode('-- --', '#7dff6a');
-    g.audio.play('coverOpen', { pos: this.planted.pos, vol: 1.4 });
+    this.bombSafe();
+    g.audio.play('safeTone', { pos: this.planted.pos, vol: 1.1 });
     this.planted.done = true;
     this.endRound(1 - this.attack, 'defused', by);
+  }
+
+  bombArmed() {
+    const B = this.bomb;
+    B.lid(1); for (let i = 0; i < 3; i++) B.flip(i, true); B.trigger(false); B.pull(0); B.handle.rotation.x = -1.2;
+    B.setLed(true); B.screen('count', this.planted ? this.planted.left : SD.BOMB);
+  }
+  bombSafe() {
+    const B = this.bomb;
+    for (let i = 0; i < 3; i++) B.flip(i, false); B.trigger(false); B.pull(1);
+    B.setLed('green'); B.screen('safe');
+  }
+  // where the case comes from when it is put down: in the right hand, up and to the right, toward whoever puts it
+  // down (from below your eyes, for you)
+  carryFrom(at, yaw) {
+    const x = 0.12, y = 0.24, z = 0.3, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    return new THREE.Vector3(at.x + x * cy + z * sy, at.y + y, at.z - x * sy + z * cy);
+  }
+  // somebody else's work over: an unfinished defuse leaves it armed, an unfinished plant takes the case away
+  remoteDone(rw) {
+    if (rw.kind === 'defuse' && this.planted && !this.planted.done) this.bombArmed();
+    if (rw.kind === 'plant' && !this.planted && !this.pending) { this.bomb.root.visible = false; this.bomb.reset(); }
+  }
+  // somebody else at work (a bot here, anybody on another computer): the case, its lid and switches, its sounds
+  remoteVisuals(dt) {
+    const rw = this.remoteWork;
+    if (!rw || !rw.ent || !rw.ent.alive) return;
+    const t0 = rw.t || 0; rw.t = t0 + dt;
+    const need = rw.kind === 'plant' ? SD.PLANT : SD.DEFUSE;
+    if (rw.kind === 'plant') {
+      if (this.planted || this.phase !== 'live') return;
+      if (!rw.at) { const at = this.plantedAt(rw.ent); rw.at = at.pos; rw.yaw = at.yaw; rw.from = this.carryFrom(rw.at, rw.yaw); this.bomb.reset(); }
+      const st = workState('plant', rw.t, need);
+      poseBomb(this.bomb, st, rw.from, rw.at, rw.yaw);
+      this.bomb.screen(st.screen[0], st.screen[1]);
+      this.bomb.root.visible = true;
+      workSounds(this.game, { kind: 'plant', need }, t0, rw.t, rw.at);
+    } else if (this.planted && !this.planted.done) {
+      poseBomb(this.bomb, workState('defuse', rw.t, need), null, this.planted.pos, this.planted.yaw);
+      workSounds(this.game, { kind: 'defuse', need }, t0, rw.t, this.planted.pos);
+    }
   }
 
   explode() {
@@ -470,9 +696,9 @@ export class SearchDestroy {
     if (e === g.player) {
       this.work.stance = e.stance;
       if (e.stance === 'stand') e.stance = 'crouch';
-      if (kind === 'plant') { this.bomb.setCode(''); this.bomb.setLed(false); }
     }
-    if (kind === 'plant') { this.bomb.root.position.copy(this.plantedAt(e).pos); this.bomb.root.rotation.set(0, e.isPlayer ? e.yaw : e.aimYaw, 0); this.bomb.setCode(''); }
+    if (kind === 'plant') { const at = this.plantedAt(e); this.work.at = at.pos.clone(); this.work.yaw = at.yaw; this.work.from = this.carryFrom(at.pos, at.yaw); this.bomb.reset(); this.bomb.root.visible = true; }
+    else if (this.planted) { this.work.at = this.planted.pos.clone(); this.work.yaw = this.planted.yaw; }
     g.audio.play('pouch', { pos: e.pos, vol: 0.9 });
     if (kind === 'defuse') this.defuser = e;
     if (e === g.player) this.send('work', { on: 1, kind }); else this.changed();
@@ -485,8 +711,8 @@ export class SearchDestroy {
     if (w.ent.isBot) w.ent.busy = false;
     if (w.ent === this.game.player) this.send('work', { on: 0 }); else this.changed();
     if (w.ent === this.game.player && w.stance === 'stand' && w.ent.canStand && w.ent.canStand('stand')) w.ent.stance = 'stand';
-    this.bomb.press(-1);
-    if (w.kind === 'plant' && this.phase !== 'planted' && !this.pending) { this.bomb.root.visible = false; this.bomb.setCode(''); }
+    if (w.kind === 'defuse' && this.planted && !this.planted.done) this.bombArmed();
+    if (w.kind === 'plant' && this.phase !== 'planted' && !this.pending) { this.bomb.root.visible = false; this.bomb.reset(); }
   }
 
   updateWork(dt) {
@@ -495,16 +721,14 @@ export class SearchDestroy {
       const e = w.ent;
       const holding = e === p ? g.input.down('interact') && !g.paused : !(e.target && e.targetVisible && e.target.alive);
       if (!holding || this.canWork(e) !== w.kind) { this.stopWork(); return; }
-      w.t += dt;
-      // the keys: one every so often, a beep each (planting types the code in, defusing types it back out)
-      w.keyT -= dt;
-      if (w.keyT <= 0) {
-        w.key = (Math.random() * 12) | 0; w.keyT = w.kind === 'plant' ? 0.32 : 0.45;
-        this.bomb.press(w.key);
-        if (w.kind === 'plant') this.bomb.setCode(('*'.repeat(Math.min(7, Math.floor(w.t / SD.PLANT * 8)))).padEnd(7, '_'));
-        g.audio.play('uiClick', { pos: this.bomb.root.position, vol: 0.7, rate: 1.6 + Math.random() * 0.4 });
-      } else if (w.keyT < (w.kind === 'plant' ? 0.18 : 0.25)) this.bomb.press(-1);
+      const t0 = w.t; w.t += dt;
+      // the case, its lid, switches and screen at this moment of it, and its sounds
+      const st = workState(w.kind, w.t, w.need);
+      poseBomb(this.bomb, st, w.from, w.at, w.yaw);
+      if (st.screen) this.bomb.screen(st.screen[0], st.screen[1]);
+      else if (this.planted) this.bomb.screen('defuse', this.planted.left, w.t / w.need);
       if (w.kind === 'plant') this.bomb.root.visible = true;
+      workSounds(g, w, t0, w.t, w.at || this.bomb.root.position);
       if (w.t >= w.need) {
         const kind = w.kind;
         if (!this.auth) {
@@ -512,7 +736,7 @@ export class SearchDestroy {
           const at = kind === 'plant' ? this.plantedAt(e) : null;
           this.pending = kind;
           this.stopWork();
-          if (at) { this.send('plant', { s: at.site.id, p: [+at.pos.x.toFixed(2), +at.pos.y.toFixed(2), +at.pos.z.toFixed(2)], y: +at.yaw.toFixed(2) }); this.bomb.root.visible = true; this.bomb.setLed(true); }
+          if (at) { this.send('plant', { s: at.site.id, p: [+at.pos.x.toFixed(2), +at.pos.y.toFixed(2), +at.pos.z.toFixed(2)], y: +at.yaw.toFixed(2) }); this.bomb.root.visible = true; this.bombArmed(); }
           else this.send('defuse');
           return;
         }
@@ -552,14 +776,16 @@ export class SearchDestroy {
       }
       if (auth) { this.botWork(); if (this.phase === 'live') this.spot(); }
       this.updateWork(dt);
+      this.remoteVisuals(dt);
       if (this.phase === 'planted') {
         const P = this.planted;
         P.left -= dt;
         // the lamp and the beep, faster and faster
         const k = Math.max(0, P.left / SD.BOMB), every = 0.12 + 0.9 * k * k;
         this.beepT -= dt;
-        if (this.beepT <= 0) { this.beepT = every; g.audio.play('dryfire', { pos: P.pos, vol: 1.4, rate: 1.9, maxDist: 60 }); this.bomb.setLed(true); }
+        if (this.beepT <= 0) { this.beepT = every; g.audio.play('bombBeep', { pos: P.pos, vol: 1.1, maxDist: 60 }); this.bomb.setLed(true); }
         else if (this.beepT < every - 0.06) this.bomb.setLed(false);
+        if (!P.done && !(this.work && this.work.kind === 'defuse')) { const rw = this.remoteWork; if (rw && rw.kind === 'defuse') this.bomb.screen('defuse', P.left, (rw.t || 0) / SD.DEFUSE); else this.bomb.screen('count', P.left); }
         if (this.phase === 'planted' && P.left <= 0 && auth) { this.stopWork(); this.explode(); this.endRound(this.attack, 'boom', P.by); this.sync(dt); return; }
       }
       if (this.phase === 'post' || !auth) { this.sync(dt); this.showCarried(); this.lookAtWork(dt); this.hands.update(dt, this.work, this.bomb, g.player, g.engine.camera); return; }
@@ -581,12 +807,7 @@ export class SearchDestroy {
   // the bomb on the carrier's back, or on the floor where he fell; somebody on another computer planting: in front of him
   showCarried() {
     const R = this.packed.root, c = this.carrier, rw = this.remoteWork;
-    if (rw && rw.kind === 'plant' && rw.ent && rw.ent.alive && this.phase === 'live' && !this.work) {
-      const at = this.plantedAt(rw.ent);
-      this.bomb.root.position.copy(at.pos); this.bomb.root.rotation.set(0, at.yaw, 0); this.bomb.root.visible = true;
-      R.visible = false;
-      return;
-    }
+    if (rw && rw.kind === 'plant' && rw.ent && rw.ent.alive && this.phase === 'live' && !this.work) { R.visible = false; return; }
     if (this.phase === 'live' && !this.work && !this.pending && !this.planted) this.bomb.root.visible = false;
     if (c && c.alive && !(this.work && this.work.kind === 'plant')) {
       if (c === this.game.player) { R.visible = false; return; }
@@ -780,7 +1001,7 @@ export class SearchDestroy {
       M.style.display = '';
     };
     const view = p.alive ? p.pos : (this.spectate && this.spectate.pos) || p.pos;
-    const show = this.phase !== 'over' && this.phase !== 'wait';
+    const show = this.phase !== 'over' && this.phase !== 'wait' && !working; // (not over the case you are working at)
     this.sites.forEach((s, i) => {
       const hot = this.planted && this.planted.site === s;
       if (show && !hot) put(this.marks[i], s, Math.round(flat(view, s)) + ' m', 'sdmark site ' + (mine === 'attack' ? 'att' : 'def'));
