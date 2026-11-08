@@ -155,6 +155,7 @@ export class SearchDestroy {
     this.used = new Set();
     this.final = -1;
     this.targetSite = null; this.defuser = null; this.fetcher = null;
+    this.hot = null; this.anchor = null; this.execute = false; this.gatherT = null; this.fallen = new Set(); this.goals = new Map();
     this.beepT = 0;
     this.bomb = new BombModel(); this.bomb.root.visible = false; game.scene.add(this.bomb.root);
     this.packed = new BombModel(); this.packed.root.visible = false; game.scene.add(this.packed.root);
@@ -210,7 +211,7 @@ export class SearchDestroy {
   // whatever a bot was doing stops, and this PC may be the one that decides from now on
   reresolve() {
     const re = (c) => (c && c.netId ? this.byId(c.netId) || c : c);
-    this.carrier = re(this.carrier); this.defuser = re(this.defuser); this.fetcher = re(this.fetcher);
+    this.carrier = re(this.carrier); this.defuser = re(this.defuser); this.fetcher = re(this.fetcher); this.anchor = re(this.anchor);
     if (this.planted) this.planted.by = re(this.planted.by);
     if (this.work && this.work.ent !== this.game.player) this.stopWork();
     this.remoteWork = null;
@@ -346,6 +347,7 @@ export class SearchDestroy {
     this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1);
     this.botsBought = false;
     this.planted = null; this.dropped = null; this.work = null; this.defuser = null; this.fetcher = null;
+    this.hot = null; this.anchor = null; this.execute = false; this.gatherT = null; this.fallen.clear(); this.goals.clear();
     this.bomb.root.visible = false; this.bomb.setLed(false); this.bomb.setCode('');
     this.bomb.wires[0].visible = true; this.bomb.wires[0].position.set(0, 0, 0);
     this.spectate = null;
@@ -548,7 +550,7 @@ export class SearchDestroy {
           break;
         }
       }
-      if (auth) this.botWork();
+      if (auth) { this.botWork(); if (this.phase === 'live') this.spot(); }
       this.updateWork(dt);
       if (this.phase === 'planted') {
         const P = this.planted;
@@ -606,30 +608,123 @@ export class SearchDestroy {
     const att = b.team === this.attack;
     if (this.phase === 'planted') {
       const P = this.planted.pos;
-      if (att) return { x: P.x, y: P.y, z: P.z, r: 7 };
-      // the one closest to it defuses, the others come and cover him
+      if (att) return this.goal('guard', P.x, P.y, P.z, 7, this.entryOf(this.planted.site, 'defend'));
+      // the bot closest to it defuses, the others come and cover him (a player defuses when he wants to)
       if (!this.defuser || !this.defuser.alive || this.defuser.team === this.attack) this.defuser = this.closest(1 - this.attack, P);
-      return b === this.defuser ? { x: P.x, y: P.y, z: P.z, r: 1.2 } : { x: P.x, y: P.y, z: P.z, r: 6 };
+      return b === this.defuser ? this.goal('defuse', P.x, P.y, P.z, 1.2) : this.goal('cover', P.x, P.y, P.z, 6);
     }
     const gun = b !== this.carrier ? this.shop.wantFor(b) : null;
-    if (gun) return { x: gun.obj.position.x, y: gun.obj.position.y, z: gun.obj.position.z, r: 0.7 };
+    if (gun) return this.goal(gun, gun.obj.position.x, gun.obj.position.y, gun.obj.position.z, 0.7);
     if (att) {
       if (this.dropped) {
         if (!this.fetcher || !this.fetcher.alive) this.fetcher = this.closest(this.attack, this.dropped);
-        if (b === this.fetcher) return { x: this.dropped.x, y: this.dropped.y, z: this.dropped.z, r: 0.9 };
+        if (b === this.fetcher) return this.goal('fetch', this.dropped.x, this.dropped.y, this.dropped.z, 0.9);
       }
       const s = this.targetSite || (this.targetSite = this.sites[0]);
-      return b === this.carrier ? { x: s.x, y: s.y, z: s.z, r: Math.max(1.4, s.r * 0.5) } : { x: s.x, y: s.y, z: s.z, r: s.r + 3 };
+      // first together a little way out (the defenders hear them there and come over), then in all at once
+      if (!this.execute) {
+        const st = this.entryOf(s, 'attack', 18);
+        if (st && SD.ROUND - this.left < 30 && !this.gathered(st)) return this.goal(b === this.carrier ? 'gatherC' : 'gather', st.x, st.y, st.z, b === this.carrier ? 2.5 : 4, s);
+        this.execute = true;
+      }
+      return b === this.carrier ? this.goal('plant' + s.id, s.x, s.y, s.z, Math.max(1.4, s.r * 0.5)) : this.goal('take' + s.id, s.x, s.y, s.z, s.r + 3, this.entryOf(s, 'defend'));
     }
-    // defenders: half on each site (by where they stand in the list), all to the bomb once it is down
+    // defenders: half on each site, watching the way the attackers come in; once the attackers are seen or heard at a
+    // site, or one of the defenders falls there, the others come over (one stays home while three or more are still
+    // up and an attacker is somewhere else); all to the bomb once it is down
+    const home = this.homeOf(b), s = this.hot && this.hot !== home && b !== this.anchor ? this.hot : home;
+    return this.goal('hold' + s.id, s.x, s.y, s.z, s.r, this.entryOf(s, 'attack'));
+  }
+  // Where the way from one side's spawns comes into a site (the last bit of it more than `out` m outside the
+  // circle): what to watch while holding it (Bot reads obj.look).
+  entryOf(s, side, out = 3) {
+    const k = 'entry_' + side + out;
+    if (s[k] !== undefined) return s[k];
+    s[k] = null;
+    const nav = this.game.nav, L = this.spawnList[side];
+    if (!nav || !L || !L.length) return null;
+    let x = 0, y = 0, z = 0;
+    for (const p of L) { x += p.x / L.length; y += p.y / L.length; z += p.z / L.length; }
+    let a = nav.nearest(x, y, z, 6);
+    if (a < 0) a = nav.nearest(L[0].x, L[0].y, L[0].z, 6);
+    const b = nav.nearest(s.x, s.y, s.z, 4);
+    const path = a >= 0 && b >= 0 ? nav.findPath(a, b) : null;
+    if (!path || !path.length) return null;
+    for (let i = path.length - 1; i >= 0; i--) {
+      const n = path[i];
+      if (Math.hypot(nav.X[n] - s.x, nav.Z[n] - s.z) > s.r + out) { s[k] = { x: nav.X[n], y: nav.Y[n], z: nav.Z[n] }; break; }
+    }
+    return s[k];
+  }
+  // the attacking bots are together: all of them still up at the gathering point, or most and a moment gone, or
+  // the first one there 5 s ago
+  gathered(st) {
+    const g = this.game, bots = g.bots.filter((c) => c.alive && !c.remote && c.team === this.attack);
+    const there = bots.filter((c) => flat(c.pos, st) < 6.5 && Math.abs(c.pos.y - st.y) < 3).length;
+    if (!there) return !bots.length;
+    if (this.gatherT === null) this.gatherT = g.time;
+    const wait = g.time - this.gatherT;
+    return there >= bots.length || (there >= Math.min(3, bots.length) && wait > 2) || wait > 5;
+  }
+  homeOf(b) {
     const list = this.game.combatants.filter((c) => c.team === b.team);
-    const s = this.sites[list.indexOf(b) % this.sites.length];
-    return { x: s.x, y: s.y, z: s.z, r: s.r };
+    return this.sites[Math.max(0, list.indexOf(b)) % this.sites.length];
+  }
+  // The same goal as the same object: Bot.think starts over on a new one (a new spot to stand on, a new path) and
+  // a bot holding a site would wander about in it instead of watching the ways in.
+  goal(key, x, y, z, r, look = null) {
+    let o = this.goals.get(key);
+    if (!o || o.x !== x || o.y !== y || o.z !== z || o.r !== r) { o = { x, y, z, r, look }; this.goals.set(key, o); }
+    return o;
   }
 
+  // The defenders' call: attackers seen at a site (the bomb carrier anywhere near one), two or more of them heard
+  // near one (running feet, a group getting together: about 20 m out), or one of the defenders down at a site.
+  spot() {
+    const g = this.game, t = g.time;
+    if (t < (this.spotT || 0)) return;
+    this.spotT = t + 0.25;
+    for (const s of this.sites) {
+      let n = 0;
+      for (const c of g.combatants) if (c.alive && c.team === this.attack && flat(c.pos, s) < s.r + 20 && Math.abs(c.pos.y - s.y) < 8) n++;
+      if (n >= 2) this.callSite(s);
+    }
+    // (one stays home only while an attacker is somewhere else)
+    if (this.hot && this.anchor && !g.combatants.some((c) => c.alive && c.team === this.attack && flat(c.pos, this.hot) > 30)) this.anchor = null;
+    for (const c of g.combatants) {
+      if (c.team === this.attack) continue;
+      if (!c.alive) {
+        if (!this.fallen.has(c)) { this.fallen.add(c); const s = this.siteNear(c.pos, 10); if (s) this.callSite(s); }
+        continue;
+      }
+      const e = c.isBot && !c.remote && c.targetVisible && c.target;
+      if (!e || !e.alive || e.team !== this.attack) continue;
+      const s = this.siteNear(e.pos, e === this.carrier ? 30 : 14);
+      if (s) this.callSite(s);
+    }
+  }
+  siteNear(p, m) {
+    let best = null, bd = m;
+    for (const s of this.sites) { const d = flat(p, s) - s.r; if (d < bd && Math.abs(p.y - s.y) < 8) { bd = d; best = s; } }
+    return best;
+  }
+  callSite(s) {
+    const t = this.game.time;
+    if (this.hot === s || (this.hot && t - this.hotT < 8)) return; // (not back and forth: a call holds a while)
+    this.hot = s; this.hotT = t;
+    // the one who stays: the bot of the other site closest to it
+    const other = this.sites.find((x) => x !== s);
+    this.anchor = null;
+    if (other && this.aliveOf(1 - this.attack) >= 3) {
+      let bd = Infinity;
+      for (const c of this.game.bots) if (c.alive && !c.remote && c.team !== this.attack && this.homeOf(c) === other && flat(c.pos, other) < bd) { bd = flat(c.pos, other); this.anchor = c; }
+    }
+  }
+
+  // (bots only: one of them has to do it when no player does)
   closest(team, P) {
     let best = null, bd = Infinity;
-    for (const c of this.game.combatants) { if (!c.alive || c.team !== team || c.remote) continue; const d = c.pos.distanceTo(P); if (d < bd) { bd = d; best = c; } }
+    for (const c of this.game.combatants) { if (!c.alive || c.team !== team || c.remote || c === this.game.player) continue; const d = c.pos.distanceTo(P); if (d < bd) { bd = d; best = c; } }
     return best;
   }
 

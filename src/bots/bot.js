@@ -193,11 +193,19 @@ export class Bot {
         // nobody in sight (something between), go round and look for them instead of waiting it out.
         if (obj.contested && !this.targetVisible && t > (this.patrolT || 0)) { this.holdAt = null; this.patrolT = t + 1.6; }
         if (!this.holdAt || this.holdObj !== obj) {
-          const a = Math.random() * Math.PI * 2, r = Math.random() * (obj.r - 1.2);
+          // (with a way in to watch: on the far side from it, so whoever comes in has open ground to cross first)
+          const L = obj.look;
+          const a = L ? Math.atan2(obj.z - L.z, obj.x - L.x) + rand(-1.2, 1.2) : Math.random() * Math.PI * 2;
+          const r = (L ? 0.35 + Math.random() * 0.6 : Math.random()) * (obj.r - 1.2);
           this.holdAt = new THREE.Vector3(obj.x + Math.cos(a) * r, obj.y, obj.z + Math.sin(a) * r); this.holdObj = obj;
           if (this.holdAt.distanceTo(this.pos) > 0.8) this.pathTo(this.holdAt); else this.path = null;
         }
-        if (!this.lookT || t > this.lookT) { this.lookYaw = this.aimYaw + rand(-2.2, 2.2); this.lookT = t + rand(1.2, 2.6); }
+        // (with a way in to watch, mostly that way; now and then a look round)
+        if (!this.lookT || t > this.lookT) {
+          const L = obj.look;
+          this.lookYaw = L && Math.random() < 0.8 ? Math.atan2(-(L.x - this.pos.x), -(L.z - this.pos.z)) + rand(-0.45, 0.45) : this.aimYaw + rand(-2.2, 2.2);
+          this.lookT = t + rand(1.2, 2.6);
+        }
         if (Math.random() < 0.08) this.crouchT = rand(0.8, 2);
       } else {
         this.holdAt = null;
