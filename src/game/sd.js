@@ -193,6 +193,7 @@ function poseBomb(bomb, st, from, at, yaw) {
 // shoulders every frame (long sleeves that run out of the picture). In the world, next to the bomb everybody sees.
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 const _e = new THREE.Euler(0, 0, 0, 'YXZ'), _hq = new THREE.Quaternion(), _hx = new THREE.Vector3(1, 0, 0), _fw = new THREE.Vector3();
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 class HandsAtWork {
   constructor(game) {
     const M = game.weapons.vm.mats;
@@ -287,32 +288,45 @@ class HandsAtWork {
     this.place(H, _a, yaw, key[3][0], key[3][1], key[3][2], key[4], key[5]);
     return { p: H.g.position.clone(), q: H.g.quaternion.clone(), c: key[4] };
   }
-  // the hand at time t: between two poses on an arc, a press if one is on, and a little life in it
+  // The hand at time t: on one flowing path through the poses (it slows into a pose and stops only where it stays:
+  // the same place before or after), turning on the way with the wrist first and the fingers last, leaning a little
+  // into where it goes, the fingers loosening while it travels; a press if one is on; and a little life in it.
   pose(H, keys, taps, hand, t, s, bomb, yaw, M, seed) {
+    const N = keys.length, K = (j) => keys[Math.max(0, Math.min(N - 1, j))], T = (j) => K(j)[0] * s;
     let i = keys.findIndex((k) => k[0] * s > t);
-    if (i < 0) i = keys.length;
-    const k0 = keys[Math.max(0, i - 1)], k1 = keys[Math.min(keys.length - 1, i)];
-    const t0 = k0[0] * s, t1 = k1[0] * s, raw = t1 > t0 ? Math.max(0, Math.min(1, (t - t0) / (t1 - t0))) : 1;
-    // (the wrist turns first, the hand follows on its way, the fingers settle last)
-    const u = raw < 0.5 ? 4 * raw * raw * raw : 1 - Math.pow(-2 * raw + 2, 3) / 2, ur = sm(Math.min(1, raw * 1.4)), uc = sm(raw * 0.85 + (raw > 0.9 ? (raw - 0.9) * 1.5 : 0));
-    const A = this.solve(H, k0, bomb, yaw, M), B = k1 === k0 ? A : this.solve(H, k1, bomb, yaw, M);
+    if (i < 0) i = N;
+    const i0 = Math.max(0, i - 1), i1 = Math.min(N - 1, i);
+    const A = this.solve(H, K(i0), bomb, yaw, M), B = i1 === i0 ? A : this.solve(H, K(i1), bomb, yaw, M);
+    const Pm = i0 > 0 ? this.solve(H, K(i0 - 1), bomb, yaw, M) : A, Pn = i1 < N - 1 ? this.solve(H, K(i1 + 1), bomb, yaw, M) : B;
+    const t0 = T(i0), t1 = T(i1), dur = Math.max(1e-3, t1 - t0), raw = t1 > t0 ? Math.max(0, Math.min(1, (t - t0) / dur)) : 1;
+    // (the speed through a pose: on toward the next one, a little gentler than a spline would, none where it stays)
+    const tan = (P0, P1, P2, ta, tb, out) => (P0.p.distanceTo(P1.p) < 0.004 || P2.p.distanceTo(P1.p) < 0.004 || tb - ta < 1e-3 ? out.set(0, 0, 0) : out.subVectors(P2.p, P0.p).multiplyScalar(0.75 / (tb - ta)));
+    const mA = tan(Pm, A, B, T(i0 - 1), t1, _v1), mB = tan(A, B, Pn, t0, T(i1 + 1), _v2);
+    const u = raw, u2 = u * u, u3 = u2 * u;
+    H.g.position.set(0, 0, 0).addScaledVector(A.p, 2 * u3 - 3 * u2 + 1).addScaledVector(mA, (u3 - 2 * u2 + u) * dur).addScaledVector(B.p, -2 * u3 + 3 * u2).addScaledVector(mB, (u3 - u2) * dur);
     const dist = A.p.distanceTo(B.p);
-    H.g.position.lerpVectors(A.p, B.p, u); H.g.position.y += Math.sin(u * Math.PI) * Math.min(0.045, dist * 0.45);
+    H.g.position.y += Math.sin(u * Math.PI) * Math.min(0.035, dist * 0.35);
+    // (how fast and where to: the hand leans into it, the fingers loosen)
+    _v3.set(0, 0, 0).addScaledVector(A.p, 6 * u2 - 6 * u).addScaledVector(mA, (3 * u2 - 4 * u + 1) * dur).addScaledVector(B.p, -6 * u2 + 6 * u).addScaledVector(mB, (3 * u2 - 2 * u) * dur).divideScalar(dur);
+    const speed = Math.min(1, _v3.length() / 0.45), side = Math.max(-1, Math.min(1, (_v3.x * Math.cos(yaw) - _v3.z * Math.sin(yaw)) / 0.45));
+    const ur = sm(Math.min(1, raw * 1.3)), uc = sm(raw * 0.85 + (raw > 0.9 ? (raw - 0.9) * 1.5 : 0));
     H.g.quaternion.slerpQuaternions(A.q, B.q, ur);
-    const c = A.c.map((v, j) => v + (B.c[j] - v) * Math.min(1, uc));
+    H.g.quaternion.multiply(_hq.setFromEuler(_e.set(0.06 * speed, 0, -0.22 * side, 'YXZ')));
+    const c = A.c.map((v, j) => v + (B.c[j] - v) * Math.min(1, uc) - (j >= 2 ? 0.1 * speed : 0));
     // the press on now: down along the finger, the finger bending, the wrist following it down and back, the
-    // fingers beside it going a little with it
-    for (const p of taps) {
-      if (p[2] !== hand) continue;
+    // fingers beside it going a little with it; no two presses quite alike
+    taps.forEach((p, j) => {
+      if (p[2] !== hand) return;
       const v = (t - p[0] * s) / (p[1] * s);
-      if (v < 0 || v > 1) continue;
-      const d = pressCurve(v), after = v > 0.56 ? Math.sin((v - 0.56) / 0.44 * Math.PI) * 0.25 : 0;
+      if (v < 0 || v > 1) return;
+      const r1 = Math.abs(Math.sin(j * 12.9898 + seed) * 43758.5453) % 1, r2 = Math.abs(Math.sin(j * 78.233 + seed) * 12345.678) % 1;
+      const d = pressCurve(v) * (0.85 + 0.3 * r1), after = v > 0.56 ? Math.sin((v - 0.56) / 0.44 * Math.PI) * 0.25 : 0;
       H.g.position.y -= d * p[3];
       _fw.set(0, 0, -1).applyQuaternion(H.g.quaternion); _fw.y = 0;
-      if (_fw.lengthSq() > 1e-6) H.g.position.addScaledVector(_fw.normalize(), d * 0.006);
-      H.g.quaternion.multiply(_hq.setFromAxisAngle(_hx, -0.15 * d + 0.05 * after));
-      c[1] += 0.3 * d; c[2] += 0.12 * d; c[3] += 0.06 * d; c[0] -= 0.07 * d;
-    }
+      if (_fw.lengthSq() > 1e-6) H.g.position.addScaledVector(_fw.normalize(), d * (0.004 + 0.004 * r2));
+      H.g.quaternion.multiply(_hq.setFromAxisAngle(_hx, -(0.12 + 0.07 * r2) * d + 0.05 * after));
+      c[1] += (0.26 + 0.1 * r1) * d; c[2] += 0.12 * d; c[3] += 0.06 * d; c[0] -= 0.07 * d;
+    });
     // (never quite still: the hand rises and sinks with the breath, drifts a little, trembles a very little; the
     // fingers too)
     const n = (a, b, amp) => Math.sin(t * a + seed * b) * amp;
@@ -343,9 +357,11 @@ class HandsAtWork {
       away(H.mirror, _b);
       H.g.position.lerpVectors(_b, this.tgt, sm(this.k));
     }
-    // the forearms: from the wrist back to a shoulder a little below and beside the eyes
+    // the forearms: from the wrist back to a shoulder a little below and beside the eyes (that goes a little way
+    // with the hand: the body leans after it)
     this.arms.forEach(({ g, arm, mirror }) => {
       _a.set(cam.position.x + e[0] * 0.36 * mirror - e[4] * 0.45 + e[8] * 0.1, cam.position.y + e[1] * 0.36 * mirror - e[5] * 0.45 + e[9] * 0.1, cam.position.z + e[2] * 0.36 * mirror - e[6] * 0.45 + e[10] * 0.1);
+      _a.lerp(g.position, 0.12);
       g.updateWorldMatrix(true, false);
       _a.applyMatrix4(this.inv.copy(g.matrixWorld).invert()).sub(arm.position).normalize();
       arm.quaternion.setFromUnitVectors(UP, _a);
@@ -413,6 +429,15 @@ export class SearchDestroy {
     const br = Math.sin(t * 1.3) * 0.003, bu = Math.sin(t * 0.9 + 1) * 0.004;
     loc(br, 0.66 - 0.16 * lean + bu, 0.44 - 0.18 * lean, _v);
     loc(0.0, 0.07 + 0.1 * lean, -0.01 - 0.09 * lean, _w);
+    // (the body goes a little after the right hand at work: the eyes lean a centimetre or so its way and look
+    // after it a little; eased, so the head follows the hand rather than sitting on it)
+    if (lean > 0.5 && this.hands.R) {
+      const hp = this.hands.R.g.position, ox = hp.x - at.x, oz = hp.z - at.z;
+      const tx = Math.max(-0.016, Math.min(0.016, ox * 0.06)), tz = Math.max(-0.016, Math.min(0.016, oz * 0.06));
+      const f = this.camFollow || (this.camFollow = { x: 0, z: 0, lx: 0, lz: 0 }), dt = Math.min(0.05, Math.max(0, t - (f.t ?? t))), kf = 1 - Math.exp(-4 * dt);
+      f.t = t; f.x += (tx - f.x) * kf; f.z += (tz - f.z) * kf; f.lx += (ox * 0.12 - f.lx) * kf; f.lz += (oz * 0.12 - f.lz) * kf;
+      _v.x += f.x; _v.z += f.z; _w.x += f.lx; _w.z += f.lz;
+    }
     cam.position.lerp(_v, e);
     _m4.lookAt(cam.position, _w, UPY);
     _q.setFromRotationMatrix(_m4);
