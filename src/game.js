@@ -318,6 +318,17 @@ export class Game {
       const c = this.engine.camera.position;
       return this.col.lineClear(c.x, c.y, c.z, p.x, p.y + 0.2, p.z);
     };
+    // how closed in a place is, for the sound: 0 out in the open .. 1 a room (a roof over it, and walls near it all
+    // round); rays through the same collision boxes the bullets meet. A roof with open sides (a porch) is a little of a
+    // room, walls without a roof (an alley) none.
+    const hit = {}, sm = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+    this.audio.resetRooms((x, y, z) => {
+      const col = this.col, up = col.raycast(x, y, z, 0, 1, 0, 16, hit), roof = up ? 1 - sm(5, 14, up.t) : 0;
+      if (roof < 0.05) return 0;
+      let walls = 0;
+      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, h = col.raycast(x, y, z, Math.cos(a), 0, Math.sin(a), 24, hit); walls += h ? 1 - sm(6, 20, h.t) : 0; }
+      return roof * sm(0.3, 0.8, walls / 8);
+    });
     const t0 = performance.now();
     if (def.onBuilt) def.onBuilt(this);
     this.nav = def.large ? new IslandNav(this.col, def.bounds, def.layout.navRects, def.terrain, def.navHub).build() : new NavGraph(this.col, def.bounds, def.navClimb, def.navTop, def.spawns()[0][0]).build();

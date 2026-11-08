@@ -12,7 +12,9 @@
 // The gas and the kick are pushed hard together (dense and loud); the pop and the crack go on top of that clean, so the
 // shot keeps its snap. Takes: 'fp' your own gun (stereo, every detail, the mechanics toward the right where the port is;
 // the tail is a buffer of its own so automatic fire does not drown in it), 'near' (mono, for the 3D panner) and 'far'
-// (mono: the dull boom and the echoes that carry a few hundred metres).
+// (mono: the dull boom and the echoes that carry a few hundred metres). Your own tail and the near take come twice: out
+// in the open (slaps off houses, a rolling tail) and in a room (walls close by answering at once, a short boxy ring, the
+// air booming).
 // Plain numbers in, Float32Arrays out: the game renders every take at its own sample rate when the audio starts. The
 // tails, dark anyway, are made at a quarter of the rate and brought up.
 // =============================================================================
@@ -263,8 +265,8 @@ export const GUNS = {
 
 const SHOT = 0.5; // seconds: the shot itself (gas, kick, mechanics, the first slaps); the rest is tail
 
-// One take of one gun. take: 'fp' -> { L, R } (the shot, stereo) and { tL, tR } (its tail, unless opt.noTail);
-// 'near' | 'far' -> { M }.
+// One take of one gun. take: 'fp' -> { L, R } (the shot, stereo) and, unless opt.noTail, its tails { tL, tR } (out in
+// the open) and { iL, iR } (in a room); 'near' | 'nearIn' (near, in a room) | 'far' -> { M }.
 export function renderGun(sr, G, take, seed, opt = {}) {
   const R = rng(seed), J = (v, amt) => v * (1 + (R() * 2 - 1) * amt), N = () => R() * 2 - 1;
   const fp = take === 'fp', far = take === 'far';
@@ -351,12 +353,15 @@ export function renderGun(sr, G, take, seed, opt = {}) {
   };
 
   // ---- the world, made at a quarter of the rate: what the slaps send back is the shot itself, darkened
-  const qsr = sr / 4, dry = new Float32Array(Math.floor(0.3 * qsr));
+  const qsr = sr / 4, dry = new Float32Array(Math.floor(0.3 * qsr)), dryR = new Float32Array(dry.length);
   {
     const full = new Float32Array(Math.floor(0.3 * sr));
     for (let i = 0; i < full.length; i++) full[i] = sus[i] * 0.8 + (i < tr.length ? tr[i] * 0.5 : 0);
+    // (a room's walls are near: what they send back is less darkened than an echo off a house across the street)
+    const fr = Float32Array.from(full);
     biquad(full, 'lp', far ? 1100 : 2600, 0.7, sr); lp1(full, far ? 1500 : 3400, sr); hp1(full, 140, sr);
-    for (let i = 0; i < dry.length; i++) dry[i] = full[i * 4];
+    biquad(fr, 'lp', 4500, 0.7, sr); biquad(fr, 'lp', 5000, 0.7, sr); hp1(fr, 90, sr);
+    for (let i = 0; i < dry.length; i++) { dry[i] = full[i * 4]; dryR[i] = fr[i * 4]; }
   }
   const tLen = fp ? G.len : far ? Math.min(G.len * 1.2, 2.6) : Math.min(G.len * 0.8, 1.6), nq = Math.floor(tLen * qsr);
   const world = (ch, from, to, shift, withTail) => {
@@ -382,7 +387,31 @@ export function renderGun(sr, G, take, seed, opt = {}) {
     return a;
   };
 
-  // ---- the shot together: the dense gas and kick, the clean snap on top, the mechanics, the hiss, the first slap;
+  // ---- a room instead of the open: walls, floor and ceiling close by answer at once (dense reflections inside 40 ms),
+  // then the room rings on for a short while, a little bright, with its low modes in it (the boxy sound), and the air
+  // shut in it booms. How long a room rings is the room's (about 0.55 to 0.75 s to -60 dB), only a little longer for the
+  // guns that fill it more. Also at a quarter of the rate.
+  const tauR = 0.08 + 0.03 * Math.min(1, Math.max(0, (G.tDecay - 0.35) / 1.25)), nqR = Math.floor(Math.min(G.len, 0.25 + tauR * 9) * qsr);
+  const room = (ch, shift) => {
+    const a = new Float32Array(nqR), r2 = rng(seed * 41 + ch * 9 + 5);
+    [0.0042, 0.0068, 0.0097, 0.0128, 0.0163, 0.0205, 0.0252, 0.031, 0.038].forEach((d, k) => addInto(a, dryR, (0.62 - k * 0.05) * (0.85 + 0.3 * r2()) * (k % 2 ? -1 : 1), Math.floor((d * (0.85 + 0.3 * r2()) + shift) * qsr)));
+    const t = new Float32Array(nqR), k = Math.exp(-1 / (tauR * qsr)), s0 = Math.floor(0.003 * qsr), rise = Math.max(1, Math.floor(0.012 * qsr));
+    let e = 1;
+    for (let i = s0; i < nqR; i++) { const j = i - s0, x = j < rise ? j / rise : 1; t[i] = (r2() * 2 - 1) * x * e; e *= k; }
+    sweepLP(t, (q) => 4800 * (0.5 + 0.5 * Math.exp(-q / 0.15)), 0.7, qsr);
+    for (const [f, dB] of [[230, 5], [360, 4], [540, 3]]) biquad(t, 'peak', f * (0.92 + 0.16 * r2()), 2.5, qsr, dB);
+    hp1(t, 70, qsr);
+    addInto(a, norm(t), G.tail * 1.6);
+    const u = new Float32Array(nqR), ku = Math.exp(-1 / (tauR * 1.5 * qsr)), ru = Math.max(1, Math.floor(0.006 * qsr));
+    let eu = 1;
+    for (let i = 0; i < nqR; i++) { u[i] = (r2() * 2 - 1) * (i < ru ? i / ru : 1) * eu; eu *= ku; }
+    biquad(u, 'lp', 150, 0.7, qsr); biquad(u, 'lp', 180, 0.7, qsr); hp1(u, 35, qsr);
+    addInto(a, norm(u), G.rum * 0.45);
+    return a;
+  };
+
+  // ---- the shot together: the dense gas and kick, the clean snap on top, the mechanics, the hiss (dry: the world
+  // comes with the tail, out in the open or in a room);
   // a soft knee over the top, to just under full scale
   const finish = (chs, kneeAt) => {
     const p = peak(...chs);
@@ -395,22 +424,24 @@ export function renderGun(sr, G, take, seed, opt = {}) {
     const L = new Float32Array(ns), Rr = new Float32Array(ns), hL = hiss(1), hR = hiss(2);
     for (let i = 0; i < ns; i++) { const c = sus[i] + (i < tr.length ? tr[i] : 0); L[i] = c + mech[i] * 0.72; Rr[i] = c + mech[i]; }
     addInto(L, hL, G.siz); addInto(Rr, hR, G.siz);
-    const eL = up4(world(1, 0, 0.12, 0, false), ns, sr), eR = up4(world(2, 0, 0.12, 0.007, false), ns, sr);
-    addInto(L, eL); addInto(Rr, eR);
     const k = finish([L, Rr], G.knee ?? 0.65);
     fade(L, sr, 40); fade(Rr, sr, 40);
     if (opt.noTail) return { L, R: Rr };
-    // the tail: its own pair of buffers (the later slaps, the rolling tail, the rumble), each ear its own
-    const n = Math.floor(G.len * sr), tL = up4(world(1, 0.12, 9, 0, true), n, sr), tR = up4(world(2, 0.12, 9, 0.011, true), n, sr);
+    // the tails, each a pair of buffers (each ear its own): out in the open (the slaps, the rolling tail, the rumble)
+    // and in a room
+    const n = Math.floor(G.len * sr), tL = up4(world(1, 0, 9, 0, true), n, sr), tR = up4(world(2, 0, 9, 0.011, true), n, sr);
     for (const a of [tL, tR]) { scale(a, k * 0.75); hp1(a, 22, sr); fade(a, sr, 80); }
     const pt = peak(tL, tR); if (pt > 0.85) { scale(tL, 0.85 / pt); scale(tR, 0.85 / pt); }
-    return { L, R: Rr, tL, tR };
+    const nr = nqR * 4, iL = up4(room(1, 0), nr, sr), iR = up4(room(2, 0.0035), nr, sr);
+    for (const a of [iL, iR]) { scale(a, k * 0.75); hp1(a, 22, sr); fade(a, sr, 60); }
+    const pi = peak(iL, iR); if (pi > 0.9) { scale(iL, 0.9 / pi); scale(iR, 0.9 / pi); }
+    return { L, R: Rr, tL, tR, iL, iR };
   }
-  // near and far: one mono buffer with everything
-  const n = Math.floor(tLen * sr), M = new Float32Array(n);
+  // near and far: one mono buffer with everything ('nearIn': near, in a room)
+  const inRoom = take === 'nearIn', n = inRoom ? Math.max(ns, nqR * 4) : Math.floor(tLen * sr), M = new Float32Array(n);
   for (let i = 0; i < ns; i++) M[i] = sus[i] + (i < tr.length ? tr[i] : 0) + (far ? 0 : mech[i]);
   if (!far) addInto(M, hiss(1), G.siz * 0.8);
-  addInto(M, up4(world(1, 0, 9, 0, true), n, sr), far ? 1 : 0.8);
+  addInto(M, inRoom ? up4(room(1, 0), n, sr) : up4(world(1, 0, 9, 0, true), n, sr), far ? 1 : 0.8);
   finish([M], far ? 0.8 : G.knee ?? 0.65);
   fade(M, sr, 80);
   return { M };

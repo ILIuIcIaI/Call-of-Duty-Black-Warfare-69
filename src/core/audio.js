@@ -157,6 +157,12 @@ export class Audio {
     this.ready = false;
     this.listener = { x: 0, y: 0, z: 0 };
     this.occlusionTest = null;
+    // rooms: enclosure(x, y, z) says how closed in a place is (0 out in the open .. 1 a room; the game sets it for every
+    // map); room is where you stand, as heard (it changes over in about half a second); the map may say more by
+    // itself (mapIndoor: the Backrooms are all rooms); places sounds come from are kept on a 2 m grid
+    this.enclosure = null;
+    this.room = 0; this.roomRaw = 0; this.roomN = 0; this.roomApplied = -1; this.mapIndoor = 0;
+    this.roomCache = new Map();
   }
 
   // must be called from a user gesture
@@ -185,17 +191,31 @@ export class Audio {
   }
 
   setVolume(v) { if (this.master) this.master.gain.value = v; }
-  setIndoor(amount) {
+  // the map's own say on how much of a room it is (the Backrooms: almost all); where you stand comes on top of it
+  setIndoor(amount) { this.mapIndoor = amount; this.applyRoom(true); }
+  // the outdoor air under everything: indoor maps turn it down, and so does a room you stand in
+  setWind(v) { this.wind = v; this.applyRoom(true); }
+  // how much of a room you hear: the reverb from the open to the room's, the wind outside quieter
+  applyRoom(force) {
     if (!this.ctx) return;
+    const k = Math.max(this.mapIndoor || 0, this.room || 0);
+    if (!force && Math.abs(k - this.roomApplied) < 0.03) return;
+    this.roomApplied = k;
     const t = this.ctx.currentTime;
-    this.revGain.gain.setTargetAtTime(0.42 * (1 - amount) + 0.08, t, 0.3);
-    this.revGainIn.gain.setTargetAtTime(0.35 * amount, t, 0.3);
+    this.revGain.gain.setTargetAtTime(0.42 * (1 - k) + 0.08, t, 0.3);
+    this.revGainIn.gain.setTargetAtTime(0.35 * k, t, 0.3);
+    if (this.ambGain) this.ambGain.gain.setTargetAtTime((this.wind ?? 0.16) * (1 - 0.6 * k), t, 0.4);
   }
-  // the outdoor air under everything: indoor maps turn it down
-  setWind(v) {
-    this.wind = v;
-    if (this.ambGain) this.ambGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.4);
+  // how much of a room a sound comes from (on a 2 m grid, kept: the maps do not move)
+  roomAt(p) {
+    if (!this.enclosure) return this.mapIndoor || 0;
+    const key = Math.floor(p.x / 2) + ',' + Math.floor(p.y / 2) + ',' + Math.floor(p.z / 2);
+    let v = this.roomCache.get(key);
+    if (v === undefined) { v = this.enclosure(p.x, p.y, p.z); if (this.roomCache.size > 20000) this.roomCache.clear(); this.roomCache.set(key, v); }
+    return Math.max(v, this.mapIndoor || 0);
   }
+  // a new map: nothing known about its rooms yet
+  resetRooms(enclosure) { this.enclosure = enclosure; this.roomCache.clear(); this.room = 0; this.roomRaw = 0; this.applyRoom(true); }
   // low health / explosion style muffling
   setMuffle(amount) {
     if (!this.ctx) return;
@@ -213,9 +233,9 @@ export class Audio {
     return b;
   }
 
-  // Every gun's takes, one at a time on a timer, so the page never stalls (all of them take about a second in all):
-  // three shots and two tails of your own, two near, two far (the far ones made as loud as the near ones, since their
-  // peaks are not what you hear). The guns people start with come first.
+  // Every gun's takes, one at a time on a timer, so the page never stalls (all of them take a second or two in all):
+  // three shots of your own with two tails for the open and two for a room, two near, two near in a room, two far (the
+  // far ones made as loud as the near ones, since their peaks are not what you hear). The guns people start with first.
   genGuns() {
     const sr = this.ctx.sampleRate, B = this.buffers, add = (name, b) => { (B[name] || (B[name] = [])).push(b); };
     const first = ['ar', 'pistol', 'smg', 'burst', 'shotgun', 'sniper'], ids = [...first, ...Object.keys(GUN_SOUNDS).filter((k) => !first.includes(k))];
@@ -224,8 +244,9 @@ export class Audio {
     ids.forEach((id, k) => {
       const G = GUN_SOUNDS[id], base = 7000 + k * 101;
       let nearE = 0;
-      for (let v = 0; v < 3; v++) jobs.push(() => { const r = renderGun(sr, G, 'fp', base + v, { noTail: v === 2 }); add('gfp_' + id, this.buf2(r.L, r.R)); if (r.tL) add('gft_' + id, this.buf2(r.tL, r.tR)); });
+      for (let v = 0; v < 3; v++) jobs.push(() => { const r = renderGun(sr, G, 'fp', base + v, { noTail: v === 2 }); add('gfp_' + id, this.buf2(r.L, r.R)); if (r.tL) { add('gft_' + id, this.buf2(r.tL, r.tR)); add('gfti_' + id, this.buf2(r.iL, r.iR)); } });
       for (let v = 0; v < 2; v++) jobs.push(() => { const r = renderGun(sr, G, 'near', base + 10 + v); nearE += energy(r.M) / 2; add('gnear_' + id, this.buf(r.M)); });
+      for (let v = 0; v < 2; v++) jobs.push(() => { const r = renderGun(sr, G, 'nearIn', base + 30 + v); add('gnearin_' + id, this.buf(r.M)); });
       for (let v = 0; v < 2; v++) jobs.push(() => { const r = renderGun(sr, G, 'far', base + 20 + v), g = Math.min(1, nearE / (energy(r.M) || 1)); for (let i = 0; i < r.M.length; i++) r.M[i] *= g; add('gfar_' + id, this.buf(r.M)); });
     });
     const run = () => { const job = jobs.shift(); if (!job || !this.ctx) return; job(); setTimeout(run, 0); };
@@ -367,6 +388,12 @@ export class Audio {
       L.forwardX.setValueAtTime(fwd.x, t); L.forwardY.setValueAtTime(fwd.y, t); L.forwardZ.setValueAtTime(fwd.z, t);
       L.upX.setValueAtTime(up.x, t); L.upY.setValueAtTime(up.y, t); L.upZ.setValueAtTime(up.z, t);
     } else { L.setPosition(pos.x, pos.y, pos.z); L.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z); }
+    // the room you stand in, looked at every fourth frame and eased in (walking through a door changes it smoothly)
+    if (this.enclosure) {
+      if ((this.roomN = (this.roomN + 1) % 4) === 0) this.roomRaw = this.enclosure(pos.x, pos.y, pos.z);
+      this.room += (this.roomRaw - this.room) * 0.08;
+      this.applyRoom(false);
+    }
   }
 
   // play a sound. opts: { pos, vol, rate, rev, lowpass, far }
@@ -461,24 +488,29 @@ export class Audio {
   }
 
   // A gunshot. Your own (no pos): the stereo shot, and its tail, thinner while you keep firing so a long burst does not
-  // drown in its own echo. Everybody else's: the near and the far take crossfaded by the distance, through the 3D
-  // panner; and sound takes its time: from 15 m on it comes in later, as far as it has to travel (at 343 m/s).
+  // drown in its own echo; out in the open the slaps and the rolling tail, in a room the room's (and in a doorway some
+  // of both). Everybody else's: the near and the far take crossfaded by the distance, through the 3D panner, the near
+  // one with the room of the place it is fired in; and sound takes its time: from 15 m on it comes in later, as far as
+  // it has to travel (at 343 m/s).
   gunshot(sound, opts = {}) {
     if (!this.ready) return;
     const id = GUN_SOUNDS[sound] ? sound : 'ar', vol = (opts.vol ?? 1) * (GUN_SOUNDS[id].vol ?? 1);
     if (!opts.pos) {
-      const now = this.ctx.currentTime, gap = now - (this.lastOwnShot ?? -9);
+      const now = this.ctx.currentTime, gap = now - (this.lastOwnShot ?? -9), k = Math.max(this.mapIndoor || 0, this.room || 0);
       this.lastOwnShot = now;
       this.play('gfp_' + id, { ...opts, vol: vol * 0.85, rev: 0.3, rateVar: 0.035 });
-      this.play('gft_' + id, { ...opts, vol: vol * 0.85 * (gap > 0.3 ? 1 : 0.35 + 0.65 * gap / 0.3), rev: 0, rateVar: 0.03 });
+      const tg = vol * 0.85 * (gap > 0.3 ? 1 : 0.35 + 0.65 * gap / 0.3);
+      if (k < 0.97) this.play('gft_' + id, { ...opts, vol: tg * Math.sqrt(1 - k), rev: 0, rateVar: 0.03 });
+      if (k > 0.03) this.play('gfti_' + id, { ...opts, vol: tg * Math.sqrt(k), rev: 0, rateVar: 0.03 });
       return;
     }
     const p = opts.pos, d = Math.hypot(p.x - this.listener.x, p.y - this.listener.y, p.z - this.listener.z);
     const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-    const near = 1 - ss(25, 90, d), far = ss(12, 60, d);
+    const near = 1 - ss(25, 90, d), far = ss(12, 60, d), kr = near > 0.01 || far > 0.01 ? this.roomAt(p) : 0;
     const o = { ...opts, rateVar: 0.05, ref: 9, rolloff: 0.85, maxDist: 450, delay: (opts.delay || 0) + Math.max(0, d - 15) / 343 };
-    if (near > 0.01) this.play('gnear_' + id, { ...o, vol: vol * 1.25 * near, rev: 0.7 });
-    if (far > 0.01) this.play('gfar_' + id, { ...o, vol: vol * 1.25 * far, rev: 0.35 });
+    if (near > 0.01 && kr < 0.97) this.play('gnear_' + id, { ...o, vol: vol * 1.25 * near * (1 - kr), rev: 0.7 });
+    if (near > 0.01 && kr > 0.03) this.play('gnearin_' + id, { ...o, vol: vol * 1.25 * near * kr, rev: 0.4 });
+    if (far > 0.01) this.play('gfar_' + id, { ...o, vol: vol * 1.25 * far * (1 - 0.5 * kr), rev: 0.35 });
   }
 }
 
