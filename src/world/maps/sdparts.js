@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { stairs } from '../props.js';
-import { Kit, Plan, BASE, T, SLAB, PLAIN, straightStair, topRail, awning, gableRoof, hipRoof, bays } from '../kit.js';
+import { Kit, Plan, BASE, T, SLAB, PLAIN, straightStair, topRail, awning, gableRoof, hipRoof, bays, kickOf } from '../kit.js';
 
 // =============================================================================
 // Parts the Search and Destroy maps share: houses you walk through (built with the building kit, furnished),
@@ -93,7 +93,9 @@ export function houses(b, out, list) {
     if (y0 > 1.0 || y1 < 1.8 || y1 - y0 > 20) continue;   // (not the ground, not the map's invisible edge)
     for (let i = 0; i < list.length; i++) for (const [sa, , , a0, a1] of against(R[i], [x0, z0, x1, z1])) if (a1 - a0 >= 0.8) add(i, sa, a0, a1, y1);
   }
-  return list.map((s, i) => house(b, out, { ...s, r: R[i] }, adj[i]));
+  // each house knows where the others stand (walls included): no dressing of its own pokes into theirs
+  const solid = R.map((q) => [q[0] - T / 2, q[1] - T / 2, q[2] + T / 2, q[3] + T / 2]);
+  return list.map((s, i) => house(b, out, { ...s, r: R[i], solid: solid.filter((_, j) => j !== i) }, adj[i]));
 }
 
 // collision for round things lives in surround.js (all maps use it); the S&D maps take it from here as well
@@ -109,22 +111,52 @@ function noSteps(K) {
   P.sub = function (...a) { const s = Kit.prototype.sub.apply(this, a); s.box = P.box; s.sub = P.sub; return s; };
   return P;
 }
-const RISER = 0.4;   // under the player's step height (0.46): up a roof without jumping
+const RISER = 0.1;   // far under the player's step height (0.46): up a roof as up a ramp, no climbing
 function roofSteps(K, x0, z0, x1, z1, y, o, hip) {
   const along = o.along || (x1 - x0 >= z1 - z0 ? 'x' : 'z'), k = along === 'x' ? K : K.sub(0, 0, 1);
   const [X0, X1, Z0, Z1] = along === 'x' ? [x0, x1, z0, z1] : [-z1, -z0, x0, x1];
-  const mat = o.mat || 'rooftile', rise = o.rise ?? (hip ? 2.2 : 2.3), n = Math.max(4, Math.ceil(rise / RISER)), big = { visual: false };
-  // each step's top where the slope passes the middle of its tread (as much under the tiles as over them); the lowest
-  // one reaches out under the eaves, so the roof ends where you see it end
-  const bot = (i) => (i ? y + rise * (i - 0.5) / n : y - 0.05), top = (i) => y + rise * (i + 0.5) / n;
-  if (hip) {
-    const over = o.over ?? 0.5, A = X0 - over, E = X1 + over, ZS = Z1 + over, ZN = Z0 - over, hd = (ZS - ZN) / 2;
-    for (let i = 0; i < n; i++) { const ins = hd * i / n; k.box(A + ins, bot(i), ZN + ins, E - ins, top(i), ZS - ins, mat, big); }
-  } else {
-    // the tiles run from the eaves' edge (over past the wall) up to the ridge: d in from the wall they stand at
-    const rake = o.rake ?? 0.3, over = o.over ?? 0.45, A = X0 - rake, E = X1 + rake, hd = (Z1 - Z0) / 2, at = (d) => y + rise * (d + over) / (hd + over);
-    if (over > 0.02) for (const [za, zb] of [[Z0 - over, Z0], [Z1, Z1 + over]]) k.box(A, y - 0.05, za, E, y + rise * (over / 2) / (hd + over), zb, mat, big);
-    for (let i = 0; i < n; i++) { const ins = hd * i / n; k.box(A, i ? at(hd * (i - 0.5) / n) : y - 0.05, Z0 + ins, E, at(hd * (i + 0.5) / n), Z1 - ins, mat, big); }
+  const mat = o.mat || 'rooftile', rise = o.rise ?? (hip ? 2.2 : 2.3), big = { visual: false };
+  // the tiles run from the eaves' edge (over past the wall) straight up to the ridge, run away from it
+  const over = o.over ?? (hip ? 0.5 : 0.45), rake = hip ? over : (o.rake ?? 0.3);
+  const A = X0 - rake, E = X1 + rake, ZN = Z0 - over, ZS = Z1 + over, run = (ZS - ZN) / 2, tiles = (d) => y + rise * d / run;
+  const slab = (d, y0, y1) => {
+    if (hip) { if (E - d > A + d + 0.05 && ZS - d > ZN + d + 0.05) k.box(A + d, y0, ZN + d, E - d, y1, ZS - d, mat, big); }
+    else if (ZS - d > ZN + d + 0.05) k.box(A, y0, ZN + d, E, y1, ZS - d, mat, big);
+  };
+  // the eaves: flat from the edge to a hand inside the wall, so you climb onto the roof from the street (whoever
+  // climbs needs a flat strip past the edge)
+  const bw = Math.min(over + 0.12, run * 0.4), by = y + 0.05;
+  slab(0, y - 0.05, by);
+  // then steps of at most RISER, each one's top where the tiles pass the middle of its tread; the first few climb a
+  // little faster than the tiles until they meet them
+  const n = Math.max(1, Math.ceil((rise * (1 - bw / run)) / RISER));
+  let prev = by;
+  for (let i = 0; i < n; i++) {
+    const d0 = bw + (run - bw) * i / n, top = Math.max(prev + 0.01, Math.min(tiles(bw + (run - bw) * (i + 0.5) / n), prev + 0.16));
+    slab(d0, prev - 0.02, top); prev = top;
+  }
+}
+
+// The S&D houses' gable roofs have kicked eaves (KICK: flatter from the eaves' edge to w past the wall, h up), and only
+// what stands over the walls is solid: the overhangs are drawn, so from the street you climb up at the wall as at
+// any wall (an overhang over your head would stop you). Over the wall up to the kick a flat strip, where the climb
+// lands (the body needs half a metre of flat past the edge); then risers of RISER along the tiles to the ridge.
+export const KICK = { w: 0.6, h: 0.16 };
+function gableSteps(K, x0, z0, x1, z1, y, o) {
+  const along = o.along || (x1 - x0 >= z1 - z0 ? 'x' : 'z'), k = along === 'x' ? K : K.sub(0, 0, 1);
+  const [X0, X1, Z0, Z1] = along === 'x' ? [x0, x1, z0, z1] : [-z1, -z0, x0, x1];
+  const mat = o.mat || 'rooftile', rise = o.rise ?? 2.3, over = o.over ?? 0.45, big = { visual: false };
+  const hd = (Z1 - Z0) / 2, kw = kickOf(o, over, hd) - over, yk = y + o.kick.h, yr = y + rise;
+  // the tiles' height at d in from the wall's face
+  const tiles = (d) => (d <= kw ? y + (yk - y) * (d + over) / (kw + over) : yk + (yr - yk) * (d - kw) / (hd - kw));
+  const slab = (d, y0, y1) => { if (Z1 - d > Z0 + d + 0.05) k.box(X0, y0, Z0 + d, X1, y1, Z1 - d, mat, big); };
+  const sy = (tiles(0) + tiles(kw)) / 2;
+  slab(0, y - 0.05, sy);
+  const n = Math.max(1, Math.ceil((yr - sy) / RISER));
+  let prev = sy;
+  for (let i = 0; i < n; i++) {
+    const d0 = kw + (hd - kw) * i / n, top = Math.max(prev + 0.01, Math.min(tiles(kw + (hd - kw) * (i + 0.5) / n), prev + 0.16));
+    slab(d0, prev - 0.02, top); prev = top;
   }
 }
 
@@ -164,8 +196,10 @@ export function house(b, out, s, adj = null) {
   const [x0, z0, x1, z1] = s.r, rot = FACE[s.face], sideways = rot % 2 === 1;
   const w = sideways ? z1 - z0 : x1 - x0, d = sideways ? x1 - x0 : z1 - z0, hw = w / 2, hd = d / 2;
   const K = new Kit(b, out, { x: (x0 + x1) / 2, z: (z0 + z1) / 2, rot });
+  K.solid = s.solid || null;
   const ext = s.ext || 'adobe', fl = s.fl || 1, shop = s.kind === 'shop', roof = s.roof || 'flat';
-  const look = { ext, frame: 'woodDark', leaf: 'shutterBlue', shutter: null, winW: 0.8, winH: 1.0, winY: 1.3, bay: 3.4, flower: 0, pen: 0.4, extPen: 0.2, ...(s.look || {}) };
+  // windows a player gets through as in Warzone: wide and high enough to vault or dive through, nothing in front
+  const look = { ext, frame: 'woodDark', leaf: 'shutterBlue', shutter: null, winW: 1.3, winH: 1.35, winY: 0.95, bay: 3.4, flower: 0, pen: 0.4, extPen: 0.2, clearWin: true, ...(s.look || {}) };
   const G = new Plan(K, BASE, H, { ...look, ground: true });
   const front = s.front ?? Math.min(4.8, d - 2.6), split = hd - front;
   const frOpts = shop ? { wall: s.shopWall || 'plasterSand', floor: s.shopFloor || 'tilesTerra', win: { s: false } } : s.frontWin ? { win: s.frontWin } : {};
@@ -181,7 +215,7 @@ export function house(b, out, s, adj = null) {
   for (const D of s.doors || []) if (R[D.room]) G.out(R[D.room], D.side, { at: D.at, w: D.w ?? 1.4 });
   const plans = [G];
   if (fl === 2) {
-    const U = new Plan(K, BASE + H, H, { ...look, winW: look.upWinW ?? 0.9, winH: look.upWinH ?? 1.1, winY: 1.0 });
+    const U = new Plan(K, BASE + H, H, { ...look, winW: look.upWinW ?? look.winW, winH: look.upWinH ?? look.winH, winY: look.upWinY ?? look.winY });
     const uf = U.room(-hw, split, hw, hd, s.upFront || 'bed'), ub = U.room(-hw, -hd, hw, split, s.upBack || 'living');
     U.door(uf, ub, { at: hw - 1.3 });
     // the stair: along the back wall of the front room, up to the room above
@@ -216,7 +250,7 @@ export function house(b, out, s, adj = null) {
     if (s.beams !== false) for (let a = -hw + 0.6; a < hw - 0.3; a += 1.1) K.box(a - 0.07, top - 0.42, hd + T / 2, a + 0.07, top - 0.3, hd + T / 2 + 0.3, 'woodDark', { ...DECO });
   } else {
     const along = s.ridge || (w >= d ? 'x' : 'z');
-    const o = { along, rise: s.rise ?? 2.6, mat: s.roofMat || 'rooftile', wall: s.gableWall || ext };
+    const o = { along, rise: s.rise ?? 2.6, mat: s.roofMat || 'rooftile', wall: s.gableWall || ext, ...(roof === 'hip' ? {} : { over: 0.3, kick: KICK }) };
     if (adj) {
       // against a house as high as this one the roof stops at the wall: no eaves into the next house
       const shut = shutSides(K, adj, top);
@@ -228,7 +262,8 @@ export function house(b, out, s, adj = null) {
     }
     if (roof === 'hip') hipRoof(noSteps(K), -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o);
     else gableRoof(noSteps(K), -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o);
-    roofSteps(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o, roof === 'hip');
+    if (roof === 'hip') roofSteps(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o, true);
+    else gableSteps(K, -hw - T / 2, -hd - T / 2, hw + T / 2, hd + T / 2, top, o);
   }
   if (shop) {
     const c = s.awning || ['awningRed', 'paintWhite'], y = BASE + 2.9, z = hd + T / 2, dep = 1.3;

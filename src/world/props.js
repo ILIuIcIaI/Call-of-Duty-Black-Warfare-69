@@ -162,14 +162,14 @@ export function truck(b, x, z, along = 'x', paint = 'carPaintWhite', dir = 1) {
   // cargo box
   const c0 = -L / 2, c1 = L / 2 - 2.2;
   const cab0 = L / 2 - 2.1, cab1 = L / 2;
-  const seg = (a, c, y0, y1, mat, opts) => {
-    if (ax) b.box(x + dir * a, y0, z - hz, x + dir * c, y1, z + hz, mat, opts);
-    else b.box(x - hx, y0, z + dir * a, x + hx, y1, z + dir * c, mat, opts);
+  const seg = (a, c, y0, y1, mat, opts, ins = 0) => {
+    if (ax) b.box(x + dir * a, y0, z - hz + ins, x + dir * c, y1, z + hz - ins, mat, opts);
+    else b.box(x - hx + ins, y0, z + dir * a, x + hx - ins, y1, z + dir * c, mat, opts);
   };
   seg(c0, c1, 1.2, 3.6, 'contWhite', { pen: 0.5 });
   seg(cab0, cab1, 1.2, 2.5, paint, { pen: 0.4 });
   seg(cab0 + 0.6, cab1 - 0.1, 2.5, 3.2, paint, { pen: 0.4 });
-  seg(cab1 - 0.12, cab1 - 0.02, 2.55, 3.1, 'carGlass', { collide: false });
+  seg(cab1 - 0.12, cab1 - 0.02, 2.55, 3.1, 'carGlass', { collide: false }, 0.03);   // (inside the cab's sides: flush they flickered)
   const wheel = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 16);
   for (const p of [-L / 2 + 1.0, -L / 2 + 2.2, L / 2 - 1.2]) for (const s of [-1, 1]) {
     const wx = ax ? x + dir * p : x + s * (hx - 0.1), wz = ax ? z + s * (hz - 0.1) : z + dir * p;

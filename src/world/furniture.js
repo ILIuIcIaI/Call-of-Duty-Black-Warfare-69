@@ -297,6 +297,15 @@ class Packer {
     this.placed = [];
     this.block = [...P.keep, ...P.holes];
     if (r.keep) this.block.push(...r.keep);
+    // P.clearWin: windows you climb out of, so nothing stands in front of them (a bench or a bed just under the sill
+    // makes the sill a mere step up from it, and nobody gets over it standing)
+    if (P.clearWin) {
+      for (const W of r.wins) {
+        const a = W.s - 0.25, b = W.e + 0.25, dd = 0.95;
+        this.block.push(W.side === 'n' ? [a, this.z0, b, this.z0 + dd] : W.side === 's' ? [a, this.z1 - dd, b, this.z1]
+          : W.side === 'w' ? [this.x0, a, this.x0 + dd, b] : [this.x1 - dd, a, this.x1, b]);
+      }
+    }
     this.fronts = [];
     for (const D of r.doors) {
       const m = D.w / 2 + 0.15;
@@ -466,6 +475,7 @@ class Packer {
         const s = this.K.sub(along ? c : line, along ? line : c, Q_OF[side], false, this.P.y);
         s.box(-w / 2 - 0.04, y - 0.04, 0, w / 2 + 0.04, y + h + 0.04, 0.02, o.frame || 'woodDark', { ...DECO, faces: '+z+x-x+y-y' });
         s.box(-w / 2, y, 0.02, w / 2, y + h, 0.028, mat, { ...DECO, faces: '+z' });   // (8 mm before the frame: a millimetre flickered)
+        this.placed.push(rect);   // (two pictures on one spot flickered into each other)
         return true;
       }
     }

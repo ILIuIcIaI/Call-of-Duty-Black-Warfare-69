@@ -105,6 +105,15 @@ export class Kit {
     return this;
   }
   boxC(cx, cz, w, d, y, h, mat, o) { return this.box(cx - w / 2, y, cz - d / 2, cx + w / 2, y + h, cz + d / 2, mat, o); }
+  // this.solid: world rects other houses stand in; does a rect of this frame lie in one (dressing poking into the
+  // next house's wall shows only at the front, as a stripe in the front wall's plane that flickers)
+  inSolid(x0, z0, x1, z1) {
+    if (!this.solid) return false;
+    const { A, B, C, D, tx, tz } = this;
+    const ax = A * x0 + B * z0 + tx, az = C * x0 + D * z0 + tz, ex = A * x1 + B * z1 + tx, ez = C * x1 + D * z1 + tz;
+    const X0 = Math.min(ax, ex), X1 = Math.max(ax, ex), Z0 = Math.min(az, ez), Z1 = Math.max(az, ez);
+    return this.solid.some((q) => X0 >= q[0] - 0.005 && X1 <= q[2] + 0.005 && Z0 >= q[1] - 0.005 && Z1 <= q[3] + 0.005);
+  }
   matrix() {
     if (!this.M) this.M = new THREE.Matrix4().set(this.A, 0, this.B, this.tx, 0, 1, 0, this.y, this.C, 0, this.D, this.tz, 0, 0, 0, 1);
     return this.M;
@@ -358,7 +367,8 @@ export class Plan {
     if (y0 > 0.01) put(s - 0.05, e + 0.05, y0 - 0.04, y0 + 0.03, d + 0.05, '+y-y+x-x+z-z', '+y-y+x-x+z-z');
     // a door stands wide open against the wall beside its opening
     if (op.door && op.leaf !== false && !op.gate && op.w < 2.3) {
-      const lw = Math.min(0.95, op.w * 0.6), sign = chance(0.5) ? 1 : -1, off = sign * (this.t / 2 + 0.03);
+      // (it stands clear of the plinth and the shutters: in their plane it flickered)
+      const lw = Math.min(0.95, op.w * 0.6), sign = chance(0.5) ? 1 : -1, off = sign * (this.t / 2 + 0.075);
       const free = (a, b) => a > pc.p + 0.1 && b < pc.q - 0.1 && !pc.ops.some((o) => o !== op && a < o.c + o.w / 2 + 0.05 && b > o.c - o.w / 2 - 0.05);
       const a = free(e, e + lw) ? e : free(s - lw, s) ? s - lw : null;
       if (a !== null) {
@@ -387,7 +397,8 @@ export class Plan {
     if (this.shutter) {
       const sw = Math.min(0.62, op.w * 0.45);
       if (s - sw > pc.p + 0.1 && e + sw < pc.q - 0.1 && !pc.ops.some((o) => o !== op && (Math.abs(o.c - op.c) < (o.w + op.w) / 2 + sw + 0.05))) {
-        bx(s - sw, s, op.y, op.y + op.h, 0, 0.035, this.shutter); bx(e, e + sw, op.y, op.y + op.h, 0, 0.035, this.shutter);
+        // (clear of the timber posts behind them and of the sill's front: 5 mm apart they flickered from afar)
+        bx(s - sw, s, op.y, op.y + op.h, 0.04, 0.085, this.shutter); bx(e, e + sw, op.y, op.y + op.h, 0.04, 0.085, this.shutter);
       }
     }
     if (this.flower && Math.random() < this.flower && !this.ground) {
@@ -401,6 +412,7 @@ export class Plan {
     const f = pc.ax === 'x' ? (sg > 0 ? '+z' : '-z') : (sg > 0 ? '+x' : '-x');
     for (const [s, e, ya, yb] of wallSegs(p, q, pc.ops.filter((o) => o.y < H), H)) {
       const o = { ...DECO, faces: f + '+y' };
+      if (pc.ax === 'x' ? K.inSolid(s, n0, e, n1) : K.inSolid(n0, s, n1, e)) continue;
       if (pc.ax === 'x') K.box(s, Y + ya, n0, e, Y + yb, n1, this.plinth, o);
       else K.box(n0, Y + ya, s, n1, Y + yb, e, this.plinth, o);
     }
@@ -410,6 +422,7 @@ export class Plan {
   timberRun(pc, p, q) {
     const K = this.K, Y = this.y, sg = pc.extSign, n0 = pc.line + sg * this.t / 2, n1 = n0 + sg * 0.03, m = this.timber, H = this.h;
     const bx = (a, b, ya, yb) => {
+      if (pc.ax === 'x' ? K.inSolid(a, n0, b, n1) : K.inSolid(n0, a, n1, b)) return;
       if (pc.ax === 'x') K.box(a, Y + ya, n0, b, Y + yb, n1, m, { ...DECO });
       else K.box(n0, Y + ya, a, n1, Y + yb, b, m, { ...DECO });
     };
@@ -555,10 +568,12 @@ function meshOf(K, v, mat, uvFn) {
   K.geom(g, mat, null, { shade: 1 });
 }
 // a gable wall with its windows cut out
-function gableEnd(k, x, sign, zc, Z0, Z1, y, dy, yr, mat, holes) {
+function gableEnd(k, x, sign, zc, Z0, Z1, y, dy, yr, mat, holes, kick = null) {
   const shape = new THREE.Shape();
   const u = (z) => (sign > 0 ? -z : z);
-  const pts = [[Z1, y], [Z1, y + dy], [zc, yr], [Z0, y + dy], [Z0, y]];
+  // kick: [z where the tiles bend on the Z1 side, on the Z0 side, their height there]
+  const pts = kick ? [[Z1, y], [Z1, y + dy], [kick[0], kick[2]], [zc, yr], [kick[1], kick[2]], [Z0, y + dy], [Z0, y]]
+    : [[Z1, y], [Z1, y + dy], [zc, yr], [Z0, y + dy], [Z0, y]];
   shape.moveTo(u(pts[0][0]), pts[0][1]);
   for (let i = 1; i < pts.length; i++) shape.lineTo(u(pts[i][0]), pts[i][1]);
   shape.closePath();
@@ -573,6 +588,9 @@ function gableEnd(k, x, sign, zc, Z0, Z1, y, dy, yr, mat, holes) {
   k.geom(g, mat, mtx(x, 0, 0, sign > 0 ? Math.PI / 2 : -Math.PI / 2));
 }
 
+// where a kicked gable roof's tiles bend: how far in from the eaves' edge (0: no kick)
+export function kickOf(o, over, hd) { return o.kick ? over + Math.min(o.kick.w, hd - 0.3) : 0; }
+
 // ridged roof. along: the ridge's direction. hollow: { band, top } keeps a walkable room free under the ridge
 export function gableRoof(K, x0, z0, x1, z1, y, o = {}) {
   const along = o.along || (x1 - x0 >= z1 - z0 ? 'x' : 'z');
@@ -581,18 +599,27 @@ export function gableRoof(K, x0, z0, x1, z1, y, o = {}) {
   const mat = o.mat || 'rooftile', rise = o.rise ?? 2.3, over = o.over ?? 0.45, rake = o.rake ?? 0.3, zc = (Z0 + Z1) / 2, hd = (Z1 - Z0) / 2;
   if (!o.hollow) k.box(X0, y - SLAB, Z0, X1, y, Z1, o.ceil || 'plasterWhite', { ...PLAIN, faces: '-y' }); // from inside you look at a ceiling, not through the roof (its edges are the walls' own faces: they flickered)
   const yr = y + rise, A = X0 - rake, E = X1 + rake, ZS = Z1 + over, ZN = Z0 - over, tile = MATERIALS[mat].scale || 2;
+  // kick { w, h }: the eaves flatter than the roof (an Aufschiebling), from their edge to w past the wall and h up;
+  // the tiles bend there (kickOf gives where)
+  const kw = kickOf(o, over, hd), yk = y + (kw ? o.kick.h : 0);
   const v = [];
-  quad(v, [A, y, ZS], [E, y, ZS], [E, yr, zc], [A, yr, zc]);
-  quad(v, [E, y, ZN], [A, y, ZN], [A, yr, zc], [E, yr, zc]);
+  if (kw) {
+    quad(v, [A, y, ZS], [E, y, ZS], [E, yk, ZS - kw], [A, yk, ZS - kw]); quad(v, [A, yk, ZS - kw], [E, yk, ZS - kw], [E, yr, zc], [A, yr, zc]);
+    quad(v, [E, y, ZN], [A, y, ZN], [A, yk, ZN + kw], [E, yk, ZN + kw]); quad(v, [E, yk, ZN + kw], [A, yk, ZN + kw], [A, yr, zc], [E, yr, zc]);
+  } else {
+    quad(v, [A, y, ZS], [E, y, ZS], [E, yr, zc], [A, yr, zc]);
+    quad(v, [E, y, ZN], [A, y, ZN], [A, yr, zc], [E, yr, zc]);
+  }
   meshOf(k, v, mat, (x, yy, z) => [x / tile, Math.hypot(yy - y, z - (z > zc ? ZS : ZN)) / tile]);
   // under the eaves
   k.box(A, y - 0.02, Z1, E, y, ZS, 'woodDark', { ...DECO, faces: '-y+z' }); k.box(A, y - 0.02, ZN, E, y, Z0, 'woodDark', { ...DECO, faces: '-y-z' });
   k.box(X1, y - 0.02, Z0, E, y, Z1, 'woodDark', { ...DECO, faces: '-y' }); k.box(A, y - 0.02, Z0, X0, y, Z1, 'woodDark', { ...DECO, faces: '-y' });
   // the triangles in the end walls
-  const dy = over * rise / (hd + over), endM = o.end || o.wall || 'plasterWhite';
+  const dy = kw ? (yk - y) * over / kw : over * rise / (hd + over), endM = o.end || o.wall || 'plasterWhite';
   const hN = o.holes ? o.holes.filter((q) => q.end === 'min') : [], hS = o.holes ? o.holes.filter((q) => q.end === 'max') : [];
-  gableEnd(k, X1, 1, zc, Z0, Z1, y, dy, yr, endM, hS);
-  gableEnd(k, X0, -1, zc, Z0, Z1, y, dy, yr, endM, hN);
+  const kick = kw ? [ZS - kw, ZN + kw, yk] : null;
+  gableEnd(k, X1, 1, zc, Z0, Z1, y, dy, yr, endM, hS, kick);
+  gableEnd(k, X0, -1, zc, Z0, Z1, y, dy, yr, endM, hN, kick);
   // the steps you land on
   const steps = 4, hollow = o.hollow, big = { visual: false };
   for (let i = 0; i < steps; i++) {

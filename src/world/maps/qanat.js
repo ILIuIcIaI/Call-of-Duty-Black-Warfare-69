@@ -142,7 +142,8 @@ export default {
     const out = { spots: [], vehicles: [], navRects: [], footprints: [] };
     // ------------------------------------------------------------- ground, with the two stair holes of the qanat
     for (const q of subtract([[-52, -74, 52, 52]], [QIN, QOUT])) B.box(q[0], -1, q[1], q[2], 0, q[3], 'sand');
-    for (const q of subtract([[-43.4, -37.4, 43.4, 46]], [QOUT])) B.box(q[0], 0, q[1], q[2], 0.012, q[3], 'dirt', { collide: false, ao: false });
+    // (no underside: from the stair holes it flickered against the paving's)
+    for (const q of subtract([[-43.4, -37.4, 43.4, 46]], [QOUT])) B.box(q[0], 0, q[1], q[2], 0.012, q[3], 'dirt', { collide: false, ao: false, faces: '+y+x-x+z-z' });
     B.box(-10, 0.012, -37.4, 2.5, 0.02, -16, 'pavers', { collide: false, ao: false });
     B.box(-10, 0.012, -16, 10, 0.02, -2, 'paversDark', { collide: false, ao: false });
     B.box(-8, 0.012, 28, 10, 0.02, 40, 'pavers', { collide: false, ao: false });
@@ -186,7 +187,7 @@ export default {
     // the well house over the way down into the qanat: the door to the south, the stairs going down north
     wall(B, 14.6, -47.6, 19.4, -47, 3.1, 'adobeLight', [[15.6, 18.4]]);
     wall(B, 14.6, -47, 15.2, -39.6, 3.1, 'adobeLight'); wall(B, 18.8, -47, 19.4, -39.6, 3.1, 'adobeLight');
-    B.box(14.4, 3.1, -47.8, 19.6, 3.35, -39.4, 'clay');
+    B.box(14.4, 3.18, -47.8, 19.6, 3.35, -39.4, 'clay');   // (on the copings: level with their undersides it flickered)
     B.geom(new THREE.SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'adobeLight', mtx(17, 3.3, -43.6, 0, 1, 0.55, 1.7));
     // the dome in steps you can stand on
     domeCol(B, 17, 3.3, -43.6, 2.2, 1.21, 3.74, 'adobeLight', 4);
@@ -262,7 +263,7 @@ export default {
     B.box(-2.3, 3.0, -11.3, 2.3, 3.25, -6.7, 'woodDark'); B.box(-2.5, 3.25, -11.5, 2.5, 3.35, -6.5, 'clay', DECO);
     for (const [x, z] of [[-8, -14], [8, -14], [-8, -4], [8.4, -3.6]]) palm(B, x, z, 7);
     stall(B, -6, -9, 'z', 'canvasRed'); stall(B, 6.2, -10.6, 'z', 'canvasBlue');
-    cart(B, 12.2, -4.4, 'z');
+    cart(B, 12.2, -5.0, 'z');   // (its shaft clear of the house wall)
 
     // ------------------------------------------------------------- the defenders' side: the street and the kasbah
     for (const [x, z] of [[-14, 26.4], [12.5, 26.2], [-34, 26.5], [33, 26]]) jar(B, x, z, 1.25);
@@ -291,7 +292,7 @@ export default {
     wall(B, x0, z0 + 0.4, x0 + 0.4, z1 - 0.6, h, 'adobeOchre');
     wall(B, x1 - 0.4, z0 + 0.4, x1, z1 - 0.6, h, 'adobeOchre');
     wall(B, x0, z1 - 1.0, x1, z1 - 0.6, h, 'adobeOchre', [[22.4, 26.6]]);
-    B.box(x0, h, z0, x1, h + 0.3, z1 - 0.6, 'clay');
+    B.box(x0, h + 0.08, z0, x1, h + 0.3, z1 - 0.6, 'clay');   // (on the copings: level with their undersides it flickered)
     // the floor round the hole, a low wall along the hole's open side
     for (const q of subtract([[x0 + 0.4, z0 + 0.4, x1 - 0.4, z1 - 1.0]], [QOUT])) B.box(q[0], 0, q[1], q[2], BASE, q[3], 'pavers');
     B.box(23.3, BASE, QOUT[1], 23.4, BASE + 0.9, QOUT[3] - 1.6, 'woodDark'); B.box(25.6, BASE, QOUT[1], 25.7, BASE + 0.9, QOUT[3] - 1.6, 'woodDark');

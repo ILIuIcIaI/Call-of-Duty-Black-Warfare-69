@@ -16,7 +16,8 @@ import { H, DECO, seeded, houses, wall, block, siteLetter, cart, roundCol, domeC
 // Every house can be walked through and is furnished.
 // =============================================================================
 const DOT = 0.012;
-const LOOK = { timber: 'woodDark', plinth: 'fieldstone', shutter: 'shutterGreen', flower: 0.7, winW: 1.0, winH: 1.2, winY: 1.25, bay: 2.9, frame: 'paintWhite', leaf: 'woodDark', upWinW: 1.0, upWinH: 1.2 };
+// windows as on the island's houses: a sill you jump over and a hole a crouched body fits through, in and out
+const LOOK = { timber: 'woodDark', plinth: 'fieldstone', shutter: 'shutterGreen', flower: 0.7, winW: 1.4, winH: 1.35, winY: 0.95, bay: 2.9, frame: 'paintWhite', leaf: 'woodDark', upWinW: 1.4, upWinH: 1.35 };
 const look = (o = {}) => ({ ...LOOK, ...o });
 
 // a picket fence along x or z (low cover you see through); gaps [a0, a1]
@@ -215,7 +216,8 @@ export default {
     // the maypole: a tall striped pole with a wreath and the signs of the trades
     B.box(3.85, 0, -0.15, 4.15, 18, 0.15, 'woodPale', { visual: false });
     B.geom(new THREE.CylinderGeometry(0.12, 0.2, 18, 10), 'woodPale', mtx(4, 9, 0));
-    for (let y = 1; y < 17; y += 1.2) B.geom(new THREE.CylinderGeometry(0.205 - y * 0.0045, 0.205 - y * 0.0045, 0.45, 10), 'paintWhite', mtx(4, y, 0));
+    // (the stripes stand 12 mm proud of the pole: at 4 mm they flickered from across the square)
+    for (let y = 1; y < 17; y += 1.2) { const r = 0.2 - 0.08 * y / 18 + 0.012; B.geom(new THREE.CylinderGeometry(r, r, 0.45, 10), 'paintWhite', mtx(4, y, 0)); }
     B.geom(new THREE.TorusGeometry(0.9, 0.12, 6, 18), 'pine', mtx(4, 16.5, 0, 0, 1, 1, 1, Math.PI / 2));
     for (let i = 0; i < 4; i++) B.box(4 + Math.cos(i * 1.57) * 0.25 - 0.3, 11 - i * 2.2, Math.sin(i * 1.57) * 0.25 - 0.02, 4 + Math.cos(i * 1.57) * 0.25 + 0.3, 11.5 - i * 2.2, Math.sin(i * 1.57) * 0.25 + 0.02, ['paintYellow', 'canvasBlue', 'canvasRed', 'paintWhite'][i], DECO);
     // the fountain: a stone basin, a column with a spout
