@@ -434,7 +434,7 @@ class Room {
     if (M.mode === 'gun') {
       const last = GUN_LEVELS - 1;
       if (!k || m.by === m.id) { if (v) v.tier = Math.max(0, v.tier - 1); }
-      else if (m.w === 'MESSER') { if (k.tier >= last) gunWon = true; else if (v) v.tier = Math.max(0, v.tier - 1); }
+      else if (m.w === 'knife' || m.w === 'MESSER') { if (k.tier >= last) gunWon = true; else if (v) v.tier = Math.max(0, v.tier - 1); } // (a person's stab comes by the knife's id, a bot's by its name)
       else if (k.tier < last) k.tier++;
     }
     this.others(from, { ...m, t: 'died', from: from.id });
