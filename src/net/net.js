@@ -121,8 +121,7 @@ export class Net {
         if (m.auth && m.auth !== this.you && this.isAuth) this.giveUpBots();
         if (m.auth) this.setAuth(m.auth);
         g.netWait = false; g.showNetWait(false);
-        // (the browser only hands over the mouse on a click)
-        if (!g.input.locked && !g.input.hoverLook && !g.dev && g.hud) g.hud.message('<span style="font-size:22px">Ins Bild klicken, um die Maus zu fangen</span>', 5);
+        // (the browser only hands over the mouse on a click: the game says so in the middle until then, see updateClickHint)
         break;
       case 'clock': this.clock(m); break;
       case 'st': { const p = this.byId.get(m.from); if (p && p.receive) { const ck = this.clockOf(m.from); p.receive(m.s, m.c === undefined ? performance.now() : ck.local(m.c, performance.now()), ck); } break; }
@@ -137,6 +136,20 @@ export class Net {
       case 'ev': if (g.br) g.br.onNetEvent(m); else if (m.k === 'gfin') { if (g.finale) g.finale.onNet(m); } else if (m.k === 'sd') { if (g.match && g.match.sd) g.match.sd.onNet(m); } else if (g.mapDef && g.mapDef.onNetEvent) g.mapDef.onNetEvent(g, m); break;
       case 'joined': { this.addEntry(m.entry); const c = this.byId.get(m.entry.id); if (c && m.score) { c.kills = m.score.kills; c.deaths = m.score.deaths; c.score = m.score.points; c.tier = m.score.tier || 0; } this.note(m.entry.name + ' ist dazugekommen'); break; }
       case 'left': this.onLeft(m); break;
+      case 'botout': {
+        // a bot is to make room for someone who came in: whoever runs it lets it go (see Match, SearchDestroy)
+        const e = this.cfg && this.cfg.roster.find((r) => r.id === m.id), c = this.byId.get(m.id);
+        if (e) e.leaving = true;
+        if (c) c.leaving = true;
+        break;
+      }
+      case 'botstay': {
+        // ... and stays after all: whoever it was to make room for has gone again before it went
+        const e = this.cfg && this.cfg.roster.find((r) => r.id === m.id), c = this.byId.get(m.id);
+        if (e) e.leaving = false;
+        if (c) c.leaving = false;
+        break;
+      }
       case 'auth': this.setAuth(m.id); break;
       case 'end': this.onEnd(m); break;
       default: break;
@@ -183,7 +196,7 @@ export class Net {
       for (const r of cfg.board || []) { const c = r.id === this.you ? g.player : this.byId.get(r.id); if (c) { c.kills = r.kills; c.deaths = r.deaths; c.score = r.points; if (g.match.gun && r.tier) g.match.setTier(c, r.tier); } }
       if (cfg.team && g.match.teams) g.match.score = [cfg.team[0], cfg.team[1]];
       if (cfg.obj && g.match.points) g.match.points.unpack(cfg.obj); // (Wingman, coming in late: how the points stand)
-      if (cfg.obj && g.match.sd) g.match.sd.apply(cfg.obj); // (S&D: which round, who has the bomb)
+      if (cfg.obj && g.match.sd) g.match.sd.apply(cfg.obj, true); // (S&D: which round, who has the bomb; also where the bots came here just now)
       g.showNetWait(g.netWait);
       this.send({ t: 'loaded' });
     }, 60);
@@ -211,7 +224,7 @@ export class Net {
       if (e.id === this.you) { g.player.team = e.team; g.player.name = e.name; this.byId.set(e.id, g.player); continue; }
       const real = e.bot && this.isAuth;
       const c = real ? make(e) : new Puppet(g, e);
-      c.netId = e.id;
+      c.netId = e.id; c.leaving = !!e.leaving; // (a bot told to make room before this PC had built anybody)
       this.byId.set(e.id, c);
       list.push(c);
     }
@@ -221,11 +234,16 @@ export class Net {
   addEntry(e) {
     const g = this.game;
     if (this.byId.has(e.id) || e.id === this.you) return;
-    if (!this.cfg.roster.some((r) => r.id === e.id)) this.cfg.roster.push(e);
-    const c = new Puppet(g, e);
+    // (one who comes back may play on the other side now)
+    const k = this.cfg.roster.findIndex((r) => r.id === e.id);
+    if (k >= 0) this.cfg.roster[k] = e; else this.cfg.roster.push(e);
+    // (a bot that comes in for someone who has gone: real on the PC that runs the bots, a puppet everywhere else)
+    const real = !!(e.bot && this.isAuth && g.match);
+    const c = real ? g.match.makeNetBot(e) : new Puppet(g, e);
     c.netId = e.id;
     this.byId.set(e.id, c);
     g.bots.push(c); g.combatants.push(c);
+    if (real) g.match.placeNetBot(c);
   }
 
   // ---------------------------------------------------------------- who runs the bots now
@@ -261,8 +279,17 @@ export class Net {
       if (!pu || !pu.remote) continue;
       const i = g.bots.indexOf(pu), j = g.combatants.indexOf(pu);
       const b = g.match.makeNetBot(e);
-      b.netId = e.id; b.kills = pu.kills; b.deaths = pu.deaths; b.score = pu.score;
+      b.netId = e.id; b.kills = pu.kills; b.deaths = pu.deaths; b.score = pu.score; b.leaving = !!e.leaving;
       if (g.match.gun && pu.tier) { b.tier = pu.tier; b.setWeapon(pu.wdef.id, pu.skin); }
+      // (S&D: the gun it bought stays in its hands; its money was only known where it ran: it gets what the player
+      // here has, the same rounds won and lost behind it on his side, much the same on the other)
+      if (g.match.sd) {
+        if (pu.wdef) b.setWeapon(pu.wdef.id, pu.skin || 'standard', pu.optic);
+        b.money = g.match.sd.shop.money(g.player);
+        // (taken over between two rounds: who lived keeps the gun into the next one, also where this PC has come in
+        // after the round's end and so never counted it)
+        b.sdKeep = g.match.sd.phase === 'post' ? !!pu.alive : !!pu.sdKeep;
+      }
       // (one still in the plane isn't alive yet, but not out of it either)
       if (g.br ? pu.out : !pu.alive) g.match.adoptDead(b, pu);
       else g.match.adoptAt(b, pu);
@@ -274,10 +301,28 @@ export class Net {
     if (g.match && g.match.sd) g.match.sd.reresolve(); // (S&D: who has the bomb, and this PC decides now)
   }
 
+  // (on the computer that runs the bots) the bot that makes room goes: here at once, then everywhere else
+  botGone(b) {
+    const g = this.game, i = g.bots.indexOf(b), j = g.combatants.indexOf(b);
+    if (i >= 0) g.bots.splice(i, 1);
+    if (j >= 0) g.combatants.splice(j, 1);
+    b.alive = false; b.out = true;
+    g.hud.dropTag(b);
+    b.dispose();
+    this.byId.delete(b.netId);
+    const k = this.cfg.roster.findIndex((r) => r.id === b.netId);
+    if (k >= 0) this.cfg.roster.splice(k, 1);
+    this.note(b.name + ' macht Platz');
+    this.send({ t: 'botgone', id: b.netId });
+  }
+
   onLeft(m) {
     const g = this.game, c = this.byId.get(m.id);
+    // (a bot gone for good leaves the roster too, and so does anybody who left before this PC has built anybody, also
+    // for the room: the build would bring them back as one that never moves. Who comes back is in it again with 'joined')
+    if (this.cfg && m.id !== this.you && (m.bot || !c)) { const k = this.cfg.roster.findIndex((r) => r.id === m.id); if (k >= 0) this.cfg.roster.splice(k, 1); }
     if (!c || c === g.player) return;
-    this.note(c.name + ' hat das Match verlassen');
+    this.note(c.name + (m.bot ? ' macht Platz' : ' hat das Match verlassen'));
     this.byId.delete(m.id);
     // (whoever had him in his sights lets go)
     c.alive = false; c.out = true;

@@ -165,9 +165,10 @@ class Room {
     if (this.match) {
       const m = this.match;
       this.others(null, { t: 'left', id: p.id });
-      if (m.auth === p.id) { m.auth = this.connected().filter((q) => q.inMatch)[0]?.id || null; if (m.auth) this.others(null, { t: 'auth', id: m.auth }); }
+      if (m.auth === p.id) this.passAuth();
       if (!this.connected().some((q) => q.inMatch)) { this.endMatch(null); return; }
       m.alive.delete(p.id);
+      this.refill(m.roster.find((r) => r.id === p.id));
       if (this.state === 'match') this.checkLast();
       else if (this.state === 'loading') this.checkLoaded();
     } else this.after();
@@ -269,6 +270,8 @@ class Room {
       mode, map: mode === 'br' ? 'island' : c.map, size: mode === 'sd' ? +c.size : 0, seed, roster, limit, auth: carrier.id,
       score: new Map(roster.map((r) => [r.id, { kills: 0, deaths: 0, points: 0, team: r.team, tier: 0 }])), team: [0, 0],
       alive: new Set(roster.map((r) => r.id)), joinable: mode !== 'br', taken: new Set(),
+      // (with bots, the match keeps its size: a bot makes room for whoever comes in, and comes back for whoever goes)
+      total, fill: bots > 0 || c.bots === 'yes', botSeq: bots,
     };
     this.state = 'loading'; this.startsAt = 0; this.lateOk = false;
     this.everyone({ t: 'start', cfg: this.startCfg(), you: null });
@@ -278,7 +281,9 @@ class Room {
 
   startCfg() {
     const m = this.match;
-    return { mode: m.mode, map: m.map, size: m.size, seed: m.seed, roster: m.roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : m.mode === 'wing' ? WING_MS : MATCH_MS, obj: m.obj || null, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points, tier: s.tier })), team: m.team };
+    // (whoever has left, or sits in the room for now, isn't in it: 'joined' brings him in again if he comes back)
+    const roster = m.roster.filter((r) => r.bot || (this.players.get(r.id) && this.players.get(r.id).inMatch));
+    return { mode: m.mode, map: m.map, size: m.size, seed: m.seed, roster, limit: m.limit, auth: m.auth, difficulty: 'regular', leftMs: m.endsAt ? Math.max(0, m.endsAt - Date.now()) : m.mode === 'wing' ? WING_MS : MATCH_MS, obj: m.obj || null, board: [...m.score].map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths, points: s.points, tier: s.tier })), team: m.team };
   }
 
   // Everybody is there, or the time is up and somebody is: whoever is late comes in when he can.
@@ -299,6 +304,7 @@ class Room {
     const len = m.mode === 'wing' ? WING_MS : MATCH_MS;
     m.endsAt = m.mode === 'br' || m.mode === 'sd' ? 0 : m.startedAt + len;
     this.everyone({ t: 'go', auth: m.auth });
+    this.evenOut();
     this.broadcastLobby();
     if (m.endsAt) this.matchTimer = setTimeout(() => this.timeUp(), len);
     this.clock = setInterval(() => this.others(null, { t: 'clock', ms: Date.now() - m.startedAt, left: m.endsAt ? m.endsAt - Date.now() : 0, pings: this.pings() }), 3000);
@@ -320,9 +326,17 @@ class Room {
   joinRunning(p) {
     const m = this.match;
     let entry = m.roster.find((r) => r.id === p.id); // (he has been here before and went to the lobby for a moment)
+    // (back on his old side, unless it is full with no bot to make room and the other side has room or a bot)
+    if (entry && TEAMS(m.mode) && m.fill && this.teamSize(entry.team) >= m.total / 2 && !this.botToGo(entry.team)) {
+      const o = 1 - entry.team;
+      if (this.teamSize(o) < m.total / 2 || this.botToGo(o)) {
+        entry.team = o; entry.outfit = o === 0 ? 'vanguard' : 'raven';
+        if (m.score.has(p.id)) m.score.get(p.id).team = o;
+      }
+    }
     if (!entry) {
       const n = m.roster.filter((r) => !r.bot).length + 1;
-      const team = TEAMS(m.mode) ? (this.teamSize(0) <= this.teamSize(1) ? 0 : 1) : 2 + 100 + n;
+      const team = TEAMS(m.mode) ? this.teamForJoiner() : 2 + 100 + n;
       entry = { id: p.id, name: p.name, team, bot: false, outfit: TEAMS(m.mode) ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[n % FFA_OUTFITS.length] };
       m.roster.push(entry);
       m.score.set(p.id, { kills: 0, deaths: 0, points: 0, team, tier: 0 });
@@ -330,10 +344,78 @@ class Room {
     m.alive.add(p.id);
     p.team = entry.team; p.inMatch = true; p.loaded = false;
     this.others(p, { t: 'joined', entry, score: m.score.get(p.id) });
+    // a bot makes room for him, if the match is fuller than it was made for: one of his side, if his side now has
+    // more than its half (any one where there are no sides). The computer that runs the bots lets it go where
+    // nobody sees it vanish: when it is down, or as the next round begins (Search and Destroy; in the freeze before
+    // a round, as soon as he is up in it).
+    if (m.fill && (TEAMS(m.mode) ? this.teamSize(entry.team) > m.total / 2 : this.headcount() > m.total)) {
+      const go = this.botToGo(entry.team);
+      if (go) { go.leaving = true; this.others(p, { t: 'botout', id: go.id }); }
+    }
     p.sock.send({ t: 'start', cfg: this.startCfg() });
     this.broadcastLobby();
   }
-  teamSize(t) { return this.match.roster.filter((r) => r.team === t && (r.bot || (this.players.get(r.id) && this.players.get(r.id).inMatch))).length; }
+  // the side for someone new: the smaller one; between even sides the one with a bot to make room for him, then the
+  // one with fewer people on it
+  teamForJoiner() {
+    const s0 = this.teamSize(0), s1 = this.teamSize(1);
+    if (s0 !== s1) return s0 < s1 ? 0 : 1;
+    const b0 = !!this.botToGo(0), b1 = !!this.botToGo(1);
+    if (b0 !== b1) return b0 ? 0 : 1;
+    return this.humans(0) <= this.humans(1) ? 0 : 1;
+  }
+  inMatchNow(r) { return r.bot ? !r.leaving : !!(this.players.get(r.id) && this.players.get(r.id).inMatch); }
+  teamSize(t) { return this.match.roster.filter((r) => r.team === t && this.inMatchNow(r)).length; }
+  humans(t) { return this.match.roster.filter((r) => r.team === t && !r.bot && this.inMatchNow(r)).length; }
+  headcount() { return this.match.roster.filter((r) => this.inMatchNow(r)).length; }
+  botToGo(team) {
+    const M = this.match, sides = TEAMS(M.mode), list = M.roster.filter((r) => r.bot && !r.leaving && (!sides || r.team === team));
+    return list[list.length - 1] || null;
+  }
+  // Someone has left the running match (gone, or back to the room for a while): with bots, the match keeps its size.
+  // A bot that was to make room on his side stays after all; if it has gone already, a new one comes in for him.
+  refill(entry) {
+    const m = this.match;
+    // (not in Warzone: nobody comes into it once it runs, and a bot added there would never leave the plane; while
+    // the match loads, go() evens it out)
+    if (!m || !m.fill || !m.joinable || !entry || entry.bot || this.state !== 'match') return;
+    const sides = TEAMS(m.mode), team = entry.team;
+    if (!this.short(team)) return;
+    const stay = m.roster.filter((r) => r.bot && r.leaving && (!sides || r.team === team)).pop();
+    if (stay) { stay.leaving = false; this.others(null, { t: 'botstay', id: stay.id }); return; }
+    this.botIn(team);
+  }
+  // that side has fewer than its half of the match (or, without sides, the match fewer than it was made for)
+  short(team) { const m = this.match; return TEAMS(m.mode) ? this.teamSize(team) < m.total / 2 : this.headcount() < m.total; }
+  // the bots go to somebody else in the match: one whose match is built already, if there is one
+  passAuth() {
+    const m = this.match, q = this.connected().filter((x) => x.inMatch);
+    m.auth = (q.find((x) => x.loaded) || q[0])?.id || null;
+    if (m.auth) this.others(null, { t: 'auth', id: m.auth });
+  }
+  // a new bot comes into the running match on that side: everybody gets it as one who joined, the PC with the bots
+  // makes it real
+  botIn(team) {
+    const m = this.match, sides = TEAMS(m.mode);
+    const taken = new Set(m.roster.map((r) => r.name)), name = shuffled(BOT_NAMES).find((x) => !taken.has(x)) || 'Bot ' + (m.botSeq + 1);
+    const id = 'b' + ++m.botSeq, n = m.roster.length;
+    const bot = { id, name, team: sides ? team : 2 + 200 + m.botSeq, bot: true, outfit: sides ? (team === 0 ? 'vanguard' : 'raven') : FFA_OUTFITS[n % FFA_OUTFITS.length], weapon: m.mode === 'gun' || m.mode === 'sd' ? 'pistol' : pickWeapon() };
+    m.roster.push(bot);
+    m.score.set(id, { kills: 0, deaths: 0, points: 0, team: bot.team, tier: 0 });
+    m.alive.add(id);
+    this.others(null, { t: 'joined', entry: bot, score: m.score.get(id) });
+  }
+  // as the match goes live: whoever dropped out while it loaded leaves a gap, a bot fills it
+  evenOut() {
+    const m = this.match;
+    if (!m || !m.fill || !m.joinable) return;
+    const sides = TEAMS(m.mode);
+    for (let guard = 0; guard < 24; guard++) {
+      const t = sides ? (this.short(0) && (!this.short(1) || this.teamSize(0) <= this.teamSize(1)) ? 0 : this.short(1) ? 1 : -1) : this.short(0) ? 0 : -1;
+      if (t < 0) break;
+      this.botIn(t);
+    }
+  }
 
   // what somebody says about his body
   died(from, m) {
@@ -411,6 +493,19 @@ class Room {
         else this.checkLoaded();
         break;
       case 'died': this.died(p, m); break;
+      case 'botgone': {
+        // the bot that made room has gone on the computer that ran it: out of the match for everybody
+        const M = this.match;
+        if (!M || p.id !== M.auth) break;
+        const i = M.roster.findIndex((r) => r.id === m.id && r.bot);
+        if (i < 0) break;
+        const r = M.roster[i];
+        M.roster.splice(i, 1); M.score.delete(m.id); M.alive.delete(m.id);
+        this.others(p, { t: 'left', id: m.id, bot: true });
+        // (it was told to stay, as whoever it made room for went again, but it had gone already: a new one comes in)
+        if (!r.leaving && M.fill && M.joinable && this.state === 'match' && this.short(r.team)) this.botIn(r.team);
+        break;
+      }
       case 'hit': {
         if (!this.match || !p.inMatch) break;
         // to whoever owns the one that was hit: his own client decides what it does to him
@@ -441,11 +536,13 @@ class Room {
         break;
       case 'bye': this.remove(p); p.sock.close(); break;
       case 'tolobby':
-        // he has seen enough: back in the lobby while the others go on
-        if (this.match && p.inMatch && this.state === 'match') {
-          p.inMatch = false; this.match.alive.delete(p.id); this.others(p, { t: 'left', id: p.id, stays: true });
-          if (this.match.auth === p.id) { this.match.auth = this.connected().filter((q) => q.inMatch)[0]?.id || null; if (this.match.auth) this.others(null, { t: 'auth', id: this.match.auth }); }
-          if (!this.connected().some((q) => q.inMatch)) this.endMatch(null); else { this.checkLast(); this.broadcastLobby(); }
+        // he has seen enough: back in the lobby while the others go on (also while it loads, from the wait for the others)
+        if (this.match && p.inMatch && (this.state === 'match' || this.state === 'loading')) {
+          p.inMatch = false; p.loaded = false; this.match.alive.delete(p.id); this.others(p, { t: 'left', id: p.id, stays: true });
+          if (this.match.auth === p.id) this.passAuth();
+          if (!this.connected().some((q) => q.inMatch)) this.endMatch(null);
+          else if (this.state === 'loading') { this.checkLoaded(); this.broadcastLobby(); }
+          else { this.refill(this.match.roster.find((r) => r.id === p.id)); this.checkLast(); this.broadcastLobby(); }
         }
         break;
       default: break;

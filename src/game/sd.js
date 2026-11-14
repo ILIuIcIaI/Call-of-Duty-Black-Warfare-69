@@ -314,6 +314,12 @@ class HandsAtWork {
   }
 }
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+// How the bots play a map where it needs a hand, measured with bots only, five a side: on Qanat the attackers wait a
+// moment together at their gathering point before they go in, so the defenders have time to come over (without it
+// the attackers won 22 of 30 rounds). How long, from round to round, is drawn between the two numbers: whether the
+// defenders get there before the bomb is down turns on a fraction of a second (up to 2.75 s the attackers won two
+// rounds in three, from 3 s on two in five), and a fixed wait would also be one a player learns.
+const TACTICS = { qanat: { wait: [2, 4.5] } };
 
 // The sites and the spawns of both sides: the map's own (`sd`), or for trying it out on a map that has none (dev)
 // two spots on the defenders' half, the ones furthest apart.
@@ -479,7 +485,7 @@ export class SearchDestroy {
       d: this.dropped ? [r2(this.dropped.x), r2(this.dropped.y), r2(this.dropped.z)] : null,
       p: P ? { s: P.site.id, x: r2(P.pos.x), y: r2(P.pos.y), z: r2(P.pos.z), w: r2(P.yaw), l: +P.left.toFixed(1), ok: !!P.done, by: this.idOf(P.by) } : null,
       w: W && W.ent ? { i: this.idOf(W.ent), k: W.kind, t: +(W.t || 0).toFixed(1) } : null,
-      res: this.result || null, f: this.final };
+      res: this.result || null, f: this.final, st: [this.shop.streak[0], this.shop.streak[1]] };
   }
   // (sent when something changes, and once a second for the clocks; the end with the winner)
   sync(dt) {
@@ -491,10 +497,14 @@ export class SearchDestroy {
     const s = this.snapshot();
     n.send(this.phase === 'over' && this.final >= 0 ? { t: 'obj', s, win: this.final } : { t: 'obj', s });
   }
-  // a PC that doesn't run the bots: the round as the one that does sees it
-  apply(s) {
-    if (!s || this.auth) return;
+  // a PC that doesn't run the bots: the round as the one that does sees it (force: the word the match was built
+  // with, also where the bots came to this PC before it was built)
+  apply(s, force = false) {
+    if (!s || (this.auth && !force)) return;
     const g = this.game;
+    // (the first word on a match just come into: what has happened in it is paid already, or was not ours)
+    const first = !this.applied;
+    this.applied = true;
     if (s.r > this.round || (this.phase === 'wait' && s.r >= 1)) {
       this.followRound(s);
       if (s.ph !== 'freeze') this.sitOut(); // (in while a round runs: from the next one)
@@ -507,7 +517,7 @@ export class SearchDestroy {
       const site = this.sites.find((x) => x.id === s.p.s) || this.sites[0], by = this.byId(s.p.by);
       if (this.work && this.work.ent === g.player) this.stopWork();
       this.showPlant({ site, pos: new THREE.Vector3(s.p.x, s.p.y, s.p.z), yaw: s.p.w }, by);
-      if (by === g.player) this.shop.pay(g.player, ECON.PLANT, 'BOMBE GELEGT');
+      if (by === g.player && !first) this.shop.pay(g.player, ECON.PLANT, 'BOMBE GELEGT');
     }
     if (this.planted && s.p) { this.planted.left = s.p.l; this.planted.done = s.p.ok; }
     const w = s.w ? this.byId(s.w.i) : null;
@@ -515,7 +525,10 @@ export class SearchDestroy {
     this.remoteWork = w && w !== g.player ? (rw0 && rw0.ent === w && rw0.kind === s.w.k ? rw0 : { ent: w, kind: s.w.k, t: s.w.t }) : null;
     if (rw0 && rw0 !== this.remoteWork) this.remoteDone(rw0);
     if (s.ph === 'live' && this.phase === 'freeze') g.audio.play('spawn', { vol: 0.6 });
-    if (s.ph === 'post' && s.res && this.resultRound !== s.r) { this.resultRound = s.r; this.roundOver(s.res.team, s.res.how, this.byId(s.res.by)); }
+    if (s.ph === 'post' && s.res && this.resultRound !== s.r) { this.resultRound = s.r; if (!first) this.roundOver(s.res.team, s.res.how, this.byId(s.res.by)); }
+    // (the losses in a row, as the PC with the bots counts them: someone who came in late pays his loss bonus right;
+    // taken between the rounds' ends only, where both count the same, or after one this PC never counted)
+    if (s.st && ((first && s.ph === 'post') || (s.ph !== 'post' && s.ph !== 'over'))) this.shop.streak = [s.st[0], s.st[1]];
     this.phase = s.ph; this.left = s.l;
   }
   // what the others say their player did; only the PC with the bots decides on it (the rest is to see)
@@ -560,16 +573,24 @@ export class SearchDestroy {
   // ---- rounds
   startRound() {
     const g = this.game;
+    // (a bot that makes room for someone who came in goes between the rounds, before anybody is placed)
+    if (g.net && this.match.cfg.net) for (const b of [...g.bots]) if (b.leaving && !b.remote) g.net.botGone(b);
     this.round++;
     if (this.round === SD.HALF + 1) this.attack = 1 - this.attack;
     if (this.round === SD.ROUNDS + 1) this.attack = Math.random() < 0.5 ? 0 : 1; // (3 : 3: the decider, sides by lot)
     this.resetRound();
-    const att = g.combatants.filter((c) => c.team === this.attack), up = att.filter((c) => c.alive), from = up.length ? up : att;
-    this.carrier = from.length ? from[(Math.random() * from.length) | 0] : null;
+    this.carrier = this.pickCarrier(false);
     this.targetSite = this.sites[(Math.random() * this.sites.length) | 0];
     this.changed();
     this.announceRound();
     if (this.carrier === g.player) g.hud.popup('', 'DU HAST DIE BOMBE');
+  }
+  // who carries the bomb: an attacker who is up. Somebody on another PC counts as well as the round begins, as his
+  // body here only gets up once his PC has the new round (up: only who is up by now)
+  pickCarrier(up) {
+    const att = this.game.combatants.filter((c) => c.team === this.attack && !c.leaving);
+    const ok = att.filter((c) => c.alive || (!up && c.remote)), from = ok.length || up ? ok : att;
+    return from.length ? from[(Math.random() * from.length) | 0] : null;
   }
   followRound(s) {
     this.round = s.r; this.attack = s.a;
@@ -593,13 +614,23 @@ export class SearchDestroy {
     document.getElementById('death-timer').textContent = SIT_OUT;
     g.hud.message('<span style="font-size:26px;letter-spacing:5px">' + (this.round > SD.ROUNDS ? 'ENTSCHEIDUNGSRUNDE' : 'RUNDE ' + this.round + ' / ' + SD.ROUNDS) + '</span><div style="font-size:15px;letter-spacing:3px;margin-top:4px">DIE RUNDE LÄUFT SCHON · ' + SIT_OUT + '</div>', 5);
   }
+  // A bot comes in for someone who has gone (network, on the PC that runs the bots): before the round starts it is
+  // placed with the others; in a running round it waits out of sight, as a person who comes in does, and is placed
+  // with everybody at the next one.
+  botIn(b) {
+    if (this.phase === 'freeze' || this.phase === 'wait') {
+      if (this.round > SD.ROUNDS) b.money = Math.max(this.shop.money(b), ECON.DECIDER); // (the decider: what everybody has)
+      this.match.spawn(b); this.shop.armBot(b); b.hold = true; b.busy = false;
+      if (this.botsBought) this.shop.botBuy(b);
+    } else this.match.adoptDead(b);
+  }
   resetRound() {
     const g = this.game, m = this.match;
     this.phase = 'freeze'; this.left = SD.FREEZE;
     this.benched = false;
     this.result = null; this.remoteWork = null; this.pending = null;
     this.used.clear();
-    this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1);
+    this.shop.startRound(this.round, this.round === SD.HALF + 1, this.round === SD.ROUNDS + 1, this.round > SD.ROUNDS ? 3 : this.round > SD.HALF ? 2 : 1);
     this.botsBought = false;
     this.planted = null; this.dropped = null; this.work = null; this.defuser = null; this.fetcher = null;
     this.hot = null; this.anchor = null; this.execute = false; this.gatherT = null; this.fallen.clear(); this.goals.clear();
@@ -633,6 +664,7 @@ export class SearchDestroy {
     if (!this.auth && how === 'boom' && this.planted) this.explode();
     if (!this.auth && how === 'defused' && this.planted) { this.bombSafe(); this.planted.done = true; if (by === g.player) this.shop.pay(g.player, ECON.DEFUSE, 'ENTSCHÄRFT'); }
     this.phase = 'post'; this.left = SD.POST;
+    this.shop.close(); // (still open as the round is decided: nothing to buy any more, and the shop is not updated now)
     this.shop.endRound(team, how, !!this.planted);
     this.stopWork();
     const mine = team === g.player.team, att = team === this.attack;
@@ -840,6 +872,18 @@ export class SearchDestroy {
     if (this.phase === 'freeze' && !this.botsBought && this.left < SD.FREEZE - 1.5) { this.botsBought = true; for (const b of g.bots) this.shop.botBuy(b); }
     if (this.phase !== 'post' && this.phase !== 'over') this.shop.update(dt);
     if (this.phase === 'freeze') {
+      // (a bot that makes room for someone who came in now goes as soon as he is up here: one of the two plays the round)
+      if (auth && g.net && this.match.cfg.net) for (const b of [...g.bots]) {
+        if (!b.leaving || b.remote) continue;
+        const mates = g.combatants.filter((c) => c.team === b.team && c.remote);
+        if (!mates.length || !mates.every((c) => c.alive)) continue;
+        const car = b === this.carrier;
+        g.net.botGone(b);
+        if (car) this.carrier = this.pickCarrier(false);
+        this.changed();
+      }
+      // (one who was to carry the bomb and never got up in this round: somebody who did)
+      if (this.left <= 0 && auth && this.carrier && !this.carrier.alive) this.carrier = this.pickCarrier(true);
       if (this.left <= 0 && auth) { this.changed(); this.phase = 'live'; this.left = SD.ROUND; for (const b of g.bots) b.hold = false; g.audio.play('spawn', { vol: 0.6 }); }
     } else if (this.phase === 'live' || this.phase === 'planted') {
       // a carrier who falls drops it, the first attacker to step on it picks it up
@@ -963,9 +1007,14 @@ export class SearchDestroy {
     const g = this.game, bots = g.bots.filter((c) => c.alive && !c.remote && c.team === this.attack);
     const there = bots.filter((c) => flat(c.pos, st) < 6.5 && Math.abs(c.pos.y - st.y) < 3).length;
     if (!there) return !bots.length;
-    if (this.gatherT === null) this.gatherT = g.time;
-    const wait = g.time - this.gatherT;
-    return there >= bots.length || (there >= Math.min(3, bots.length) && wait > 2) || wait > 5;
+    if (this.gatherT === null) {
+      this.gatherT = g.time;
+      const w = (TACTICS[g.mapDef && g.mapDef.id] || {}).wait || 0;
+      this.gatherW = Array.isArray(w) ? w[0] + Math.random() * (w[1] - w[0]) : w;
+    }
+    const wait = g.time - this.gatherT, W = this.gatherW || 0;
+    if (wait < W) return false;
+    return there >= bots.length || (there >= Math.min(3, bots.length) && wait > 2 + W) || wait > 5 + W;
   }
   homeOf(b) {
     const list = this.game.combatants.filter((c) => c.team === b.team);

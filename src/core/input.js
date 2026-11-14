@@ -44,6 +44,11 @@ export class Input {
     this.enabled = true;
     this.capture = false; // in a match: Ctrl+<key> belongs to the game, not to the browser
     this.ui = false; // an on-screen menu has the mouse (the S&D shop): no looking, no shots, no wheel
+    // the mouse has been caught here once: this browser can do it, so a refusal later is a moment's (its pause right
+    // after Escape let go of it, or no click to go with the request), never a reason to give up and look by the cursor
+    this.lockOk = false; this.lockAt = 0; this.freshLock = false;
+    this.caught = false; // (caught in this match: the game clears it as a match begins)
+    this.keepHover = false; // (dev mode looks by the cursor whether or not the mouse was caught once)
     // virtual input layer used by automated tests / dev tools
     this.virtual = {};
     this.virtualPressed = new Set();
@@ -66,7 +71,15 @@ export class Input {
     window.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', (e) => {
       this.cx = e.clientX; this.cy = e.clientY; this.inside = true;
-      if ((this.locked || this.hoverLook) && !this.ui) { this.dx += e.movementX; this.dy += e.movementY; }
+      if ((this.locked || this.hoverLook) && !this.ui) {
+        // (just caught, a browser may report the cursor's jump to the middle as one big movement: that one is not the
+        // player's. Only the first movement right after the catch, and only a big one; every other one counts)
+        if (this.locked && this.freshLock) {
+          this.freshLock = false;
+          if (performance.now() - this.lockAt < 250 && (Math.abs(e.movementX) > 120 || Math.abs(e.movementY) > 120)) return;
+        }
+        this.dx += e.movementX; this.dy += e.movementY;
+      }
     });
     document.addEventListener('mouseleave', () => { this.inside = false; });
     window.addEventListener('blur', () => { this.inside = false; });
@@ -76,30 +89,38 @@ export class Input {
     }, { passive: false });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
+      if (this.locked) { this.lockOk = true; this.caught = true; if (!this.keepHover) this.hoverLook = false; this.lockAt = performance.now(); this.freshLock = true; }
       if (!this.locked) { this.mouse = [false, false, false]; this.keys.clear(); }
       if (this.onLockChange) this.onLockChange(this.locked);
     });
   }
 
   lockFailed() {
-    // embedded views (e.g. the IDE browser pane) may forbid pointer lock: fall back to hover look
+    // embedded views (e.g. the IDE browser pane) may forbid pointer lock: fall back to hover look. Where it has worked
+    // before, a refusal is only for now: the next click on the game catches the mouse (until then the game says so).
+    if (this.lockOk) { if (this.onLockRefused) this.onLockRefused(); return; }
     this.hoverLook = true;
     if (this.onLockFail) this.onLockFail();
   }
 
   lock() {
+    // (refused although a click or key of the player's own was behind the request: this page may never catch the
+    // mouse, look by the cursor. Refused without one, as after Escape: only not now, the next click catches it)
+    const ua = typeof navigator !== 'undefined' ? navigator.userActivation : null, gesture = !ua || ua.isActive;
+    const failed = () => { if (gesture) this.lockFailed(); else if (this.onLockRefused) this.onLockRefused(); };
     try {
       const p = this.target.requestPointerLock({ unadjustedMovement: true });
       if (p && p.catch) p.catch(() => {
-        try { const p2 = this.target.requestPointerLock(); if (p2 && p2.catch) p2.catch(() => this.lockFailed()); } catch (e) { this.lockFailed(); }
+        try { const p2 = this.target.requestPointerLock(); if (p2 && p2.catch) p2.catch(failed); } catch (e) { failed(); }
       });
-    } catch (e) { this.lockFailed(); }
+    } catch (e) { failed(); }
   }
   // catch the mouse again without a click, after the game itself let go of it (an on-screen menu closing): browsers allow
   // that then. Should one refuse, a click on the game catches it as ever; unlike lock(), no fall back to hover look.
   relock() {
-    if (this.locked || this.hoverLook) return;
-    const again = () => { try { const p = this.target.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* a click will */ } };
+    if (this.locked || (this.hoverLook && !this.lockOk)) return;
+    const no = () => { if (this.onLockRefused) this.onLockRefused(); };
+    const again = () => { try { const p = this.target.requestPointerLock(); if (p && p.catch) p.catch(no); } catch (e) { no(); } };
     try { const p = this.target.requestPointerLock({ unadjustedMovement: true }); if (p && p.catch) p.catch(again); } catch (e) { again(); }
   }
   unlock() { if (document.pointerLockElement) document.exitPointerLock(); }

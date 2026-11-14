@@ -80,7 +80,7 @@ export class Game {
     this.events = new Events();
     this.engine = new Engine(document.getElementById('canvas-wrap'), this.settings);
     this.input = new Input(this.engine.renderer.domElement);
-    this.input.hoverLook = this.dev;
+    this.input.hoverLook = this.dev; this.input.keepHover = this.dev;
     this.audio = new Audio(this.settings);
     this.scene = new THREE.Scene();
     this.vmScene = new THREE.Scene();
@@ -231,9 +231,10 @@ export class Game {
   resume() {
     this.menu.hide();
     this.paused = false;
-    if (!this.br && !this.match.gun) this.weapons.applyLoadout(this.settings.loadout);
+    // (a changed loadout comes in here; not in Search and Destroy, whose guns are bought: they stay what they are)
+    if (!this.br && !this.match.gun && !this.match.sd) this.weapons.applyLoadout(this.settings.loadout);
     this.input.pressedKeys.clear();
-    this.input.lock();
+    if (!this.uiMouse) this.input.lock(); // (a menu of the game still open has the mouse: it catches it as it closes)
   }
 
   // ---- multiplayer: from a match back into the room
@@ -242,6 +243,7 @@ export class Game {
     if (tell) net.send({ t: 'tolobby' });
     this.paused = false; this.netWait = false; this.showNetWait(false);
     if (this.br) this.br.dispose();
+    if (this.match && this.match.sd) this.match.sd.dispose(); // (its shop, panel and marks: an open shop would keep the mouse)
     this.clearBots();
     this.match = null;
     document.getElementById('death-screen').classList.add('hidden');
@@ -349,6 +351,7 @@ export class Game {
 
   startMatch(cfg) {
     this.cfg = cfg;
+    this.input.caught = this.input.locked; // (the hint asks to catch the mouse until it is caught in this match)
     if (this.match && this.br) this.br.dispose();
     if (this.match && this.match.sd) this.match.sd.dispose();
     this.match = null;
@@ -663,6 +666,25 @@ export class Game {
     for (const b of this.bots) if (b !== bot) b.hear(bot.pos, bot);
   }
 
+  // In the game, the mouse not caught and no pause: the browser would not catch it without a click (Escape closing the
+  // S&D shop, the shop closing by itself as the buy time runs out, a network match that began without a click). One
+  // click on the game does it; say so in the middle of the screen until then. Every frame, whatever is on screen (so
+  // it goes as a menu, the end or the room comes up); not where pointer lock never works (hover look), and only once
+  // the mouse has stayed free a moment (a catch under way takes a frame or two, and must not flash it).
+  updateClickHint(dt) {
+    const I = this.input, br = this.br;
+    const need = this.state === 'playing' && !this.paused && !this.dev && !this.uiMouse && !this.netWait && !I.locked && !I.hoverLook &&
+      !(br && br.netDead && !br.watchOn) && !(this.finale && this.finale.on);
+    this._hintT = need ? (this._hintT || 0) + dt : 0;
+    const show = this._hintT > 0.3, text = I.caught ? 'KLICKEN ZUM WEITERSPIELEN' : 'INS BILD KLICKEN, UM DIE MAUS ZU FANGEN';
+    if (show === !!this._clickHint && (!show || text === this._hintText)) return;
+    this._clickHint = show; this._hintText = text;
+    let el = document.getElementById('click-hint');
+    if (!el) { el = document.createElement('div'); el.id = 'click-hint'; document.body.appendChild(el); }
+    el.textContent = text;
+    el.classList.toggle('show', show);
+  }
+
   onMatchEnd(won) {
     this.state = 'ended';
     this.input.unlock();
@@ -731,6 +753,7 @@ export class Game {
     this.input.capture = this.state === 'playing' && !this.paused;
     if (this.state === 'playing' || this.state === 'ended') this.updatePlaying(dt);
     else this.renderMenuBackdrop(dt);
+    this.updateClickHint(dt);
   }
 
   updatePlaying(dt) {

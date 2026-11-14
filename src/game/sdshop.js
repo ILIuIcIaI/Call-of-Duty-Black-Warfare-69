@@ -42,6 +42,11 @@ const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 export class Shop {
   constructor(sd) {
     this.sd = sd; this.game = sd.game;
+    // a new match: the money of the last one is gone (who comes in late starts with a first round's money); back in
+    // the same network match after a moment in the room, you have what you had
+    const p = this.game.player, cfg = sd.match.cfg, key = cfg.net ? cfg.seed : null;
+    if (key === null || p.sdMatch !== key) { p.money = ECON.START; p.sdKeep = false; p.sdPart = 0; }
+    p.sdMatch = key;
     this.items = [];      // guns on the floor: { id, obj, soldier (whose dropped gun it is), own (made here) }
     this.pendingPlayer = null;
     this.protos = new Map();
@@ -52,7 +57,7 @@ export class Shop {
 
   dispose() {
     this.clearItems();
-    this.close();
+    this.close(false); // (the match is going: nothing to catch the mouse for)
     if (this.moneyEl) { this.moneyEl.remove(); this.moneyEl = null; }
     if (this.view) { this.view.r.dispose(); this.view = null; }
     if (this.el) { this.el.remove(); this.el = null; }
@@ -67,8 +72,9 @@ export class Shop {
   }
 
   // a round begins: the side switch and the decider reset the money, the dead get a plain pistol
-  startRound(round, half, decider) {
-    const g = this.game;
+  // (part: 1 the first half, 2 the second, 3 the decider)
+  startRound(round, half, decider, part = 1) {
+    const g = this.game, p = g.player;
     this.clearItems(); this.pendingPlayer = null; this.close();
     // (your own gun from the last round, if nobody took it: the bots clear theirs when they spawn)
     const corpse = g.playerCorpse;
@@ -78,6 +84,10 @@ export class Shop {
       for (const c of g.combatants) { c.money = ECON.START; c.sdKeep = false; }
     }
     if (decider) for (const c of g.combatants) c.money = Math.max(this.money(c), ECON.DECIDER);
+    // (back in the same network match after a while in the room, past the side switch: the reset the others had
+    // there is yours now; in the decider, money from the first half is worth no more than the others' is)
+    if (p.sdPart && p.sdPart < part && !(round === 1 || half) && (!decider || p.sdPart < 2)) { p.money = decider ? ECON.DECIDER : ECON.START; p.sdKeep = false; }
+    p.sdPart = part;
     this.buyLeft = ECON.BUY_TIME;
   }
 
@@ -252,7 +262,8 @@ export class Shop {
     }
     if (this.open && !this.canBuy(p)) this.close();
     if (this.open && this.el) { const t = this.sd.phase === 'live' ? 'NOCH ' + Math.ceil(this.buyLeft) + ' S' : '', e = this.el.querySelector('.sdb-time'); if (e.textContent !== t) e.textContent = t; }
-    if (g.input.pressed('buy')) { if (this.open) this.close(); else if (this.canBuy(p)) this.show(); }
+    // (not behind the pause menu: in a network match the round runs on while it is up, and B would open it unseen)
+    if (g.input.pressed('buy') && !g.paused) { if (this.open) this.close(); else if (this.canBuy(p)) this.show(); }
     this.hud();
   }
 
@@ -422,12 +433,12 @@ export class Shop {
   }
   // closed (with B, Escape or the button, or by itself once the buy time is over or you leave the spawn): the game
   // catches the mouse again right away, as long as you are still playing and alive
-  close() {
+  close(relock = true) {
     if (!this.open) return;
     const g = this.game;
     this.open = false;
     if (this.el) this.el.style.display = 'none';
     g.uiMouse = false; g.uiClose = null; g.input.ui = false;
-    if (g.state === 'playing' && g.player.alive && !g.paused) g.input.relock();
+    if (relock && g.state === 'playing' && g.player.alive && !g.paused) g.input.relock();
   }
 }

@@ -76,6 +76,10 @@ export class Match {
     if (this.gun) { b.tier = 0; b.setWeapon(GUN_TIERS[0], randomSkin(), gunOptic(GUN_TIERS[0])); }
     return b;
   }
+  // a bot that came into the running match for someone who has gone (made real on the PC that runs the bots, and
+  // already among the combatants): up at a spawn at once, or in Search and Destroy from the next round once the
+  // round is under way
+  placeNetBot(b) { if (this.sd) this.sd.botIn(b); else this.spawn(b); }
   adoptAt(b, was) { b.spawn(was.pos.x, was.pos.y, was.pos.z, was.aimYaw); b.health = Math.max(1, was.health); }
   adoptDead(b) { b.alive = false; b.deathT = this.game.time - 2; b.soldier.setVisible(false); }
 
@@ -207,7 +211,8 @@ export class Match {
     if (this.sd) { this.sd.update(dt); this.timeLeft = this.sd.clock(); this.sd.hud(dt); return; }
     this.timeLeft -= dt;
     // bot respawns
-    for (const b of g.bots) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) this.spawn(b);
+    // (one making room for someone who came in goes now, instead of coming back)
+    for (const b of [...g.bots]) if (!b.remote && !b.alive && g.time - b.deathT > 3.2) { if (b.leaving && g.net && this.cfg.net) g.net.botGone(b); else this.spawn(b); }
     // Wingman: the flag is decided alone, or by the PC that runs the bots (the others are told, see Net)
     if (this.wing) {
       const net = this.cfg.net && g.net;
