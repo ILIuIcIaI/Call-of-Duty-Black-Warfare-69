@@ -4,6 +4,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-15
+
 ### Added
 
 - Search and Destroy, a mode of its own with a tab in the main menu: two teams, one bomb, two sites. The attackers carry the bomb to site A or B and plant it there (hold F, 5 s); the defenders hold the sites and defuse it (hold F, 5 s); it goes off 20 seconds after it is down. A round is won by killing the other team, by the bomb going off or being defused, or (for the defenders) by the round time of 1:45 running out with nothing planted. Nobody respawns within a round: whoever falls, or comes into the match while a round runs, watches a teammate until the next one (click for the next).
@@ -338,6 +340,7 @@ The first release.
 - Main menu, pause menu, settings and controls overview (in German).
 - HUD with minimap, score bar, kill feed, ammo counter and hit markers.
 
+[0.8.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases/tag/v0.5.0

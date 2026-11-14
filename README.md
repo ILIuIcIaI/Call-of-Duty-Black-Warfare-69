@@ -2,19 +2,65 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by or connected to Activision or the Call of Duty franchise. One map, PoolDay, comes from a Counter-Strike 1.6 map file ([credits](#credits-and-license)). Apart from that, no code, models, textures or sounds from any other game are used.
 
-A fast military first-person shooter for Windows and the browser. Jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for one flag in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on eleven maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
+A fast military first-person shooter for Windows and the browser. Plant the bomb or stop it in Search and Destroy, jump out of a plane in Warzone, a battle royale for 20 players, fight 2 against 2 for one flag in Wingman, or add up to 8 bots and play Team Deathmatch, Free for All or Gun Game on eleven maps. All of it also works together with your friends over the local network, nothing needs to be installed, and it runs on very weak computers too.
 
 Apart from that one map file, the game has no model, texture or audio files: every soldier, weapon, skin, wall, animation and gunshot is generated in code on top of [three.js](https://threejs.org/).
 
-![Wingman on Sirocco: the flag on the rug stand in the domed market hall is being taken, the blue flag climbs the pole, a teammate in the doorway](docs/screenshots/wingman-sirocco.jpg)
+![Search and Destroy on Qanat: out of the round, you watch a teammate through their own sights as they fire at a defender on site B](docs/screenshots/sd-watch.jpg)
 
-**Current version: [0.7.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
+**Current version: [0.8.0](CHANGELOG.md).** Download it from the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases): a Windows program, or a browser version you open straight from the disk. See [Getting started](#getting-started).
 
 ## Features
 
+### Search and Destroy
+
+The newest mode, made after Counter-Strike's but played with this game's fast movement: two teams, one bomb, two sites, and nobody comes back within a round.
+
+- **The rounds:** the attackers carry the bomb to site A or B and plant it there (hold `F`, 5 seconds). The defenders keep them off the sites and defuse a planted bomb (hold `F`, 5 seconds). It goes off 20 seconds after it is down. A round is won by taking out the other team, by the bomb going off or being defused, or, for the defenders, by the round time of 1:45 running out with nothing planted.
+- **The match:** six rounds. The sides switch after three, whoever wins four has won, and at 3 : 3 a seventh round decides, with the sides drawn by lot. Four sizes: one against one, or 4, 5 or 6 a side, with bots filling the teams.
+- **Money and the shop:** everybody starts with $800 and a pistol. A round won pays $3000 ($3250 for the bomb or a defuse), a round lost $1400 and $500 more for every loss in a row, up to $2900. A kill pays by the gun that made it, from $100 for a sniper rifle to $1500 for the knife. In your own spawn, before the round and for 15 seconds after it starts, `B` opens the shop with every gun of the game in its plain form. A double click on a card buys it.
+- **Guns on the floor:** whoever survives a round keeps their guns, whoever falls drops theirs. Walk over a gun to take it, or press `F` to swap it for the one in your hands.
+- **The bomb** is a hard case with latches, a screen in the lid, three arming switches, detonators and a trigger box. Planting it is five calm moves by gloved hands with jointed fingers: set it down, open the latches and the lid, arm the switches, type the code, hold the red button. Defusing runs the other way, down to pulling a detonator out of its charge.
+- **Out of the round** you watch a teammate through their own eyes: their gun in their hands, every shot, reload, scope, climb and slide as they do it, and their hands on the bomb when they plant or defuse. A click goes to the next teammate.
+- **Where the bomb is:** the attackers see who carries it, with the name and distance above the carrier's head, and where it lies once the carrier falls. Once it is planted, everybody sees the site and the distance. The minimap marks it too.
+- **Bots** buy, pick up better guns, gather a little way out and go in together, plant, guard the bomb and defuse it. The defenders split between the sites and come over when the attackers are seen or heard at one.
+- **Multiplayer:** the room offers Search and Destroy with its maps and sizes. Whoever comes into a running match watches until the next round and takes the place of a bot.
+
+| The shop | Planting the bomb |
+|---|---|
+| ![The buy menu over the game: every gun on a card with its price, the AR-77 large on the right with its numbers and the buy button](docs/screenshots/sd-shop.jpg) | ![First person, planting: the open case, the screen in the lid asking for the code, the gloved hands on the switches](docs/screenshots/sd-plant.jpg) |
+
+![An attacker on Qanat sees the bomb carrier ahead, the carrier's name and distance under the bomb mark; the panel at the top says who carries it](docs/screenshots/sd-carrier.jpg)
+
+Two maps were made for the mode and are played only there. Most houses in the town can be walked through and are furnished, their windows can be vaulted, jumped or dived through, and the roofs can be climbed.
+
+**Qanat**, an oasis town in the morning: A in the dyers' yard, B in the potters' yard, the souk and the well square in the middle, and an old water tunnel under the town that comes up in B.
+
+![Qanat from above: the walled oasis town in the dunes, palms round the walls, a truck and the attackers outside the gate](docs/screenshots/sd-qanat-panorama.jpg)
+
+| Qanat, A: the dyers' yard | Qanat, B: the potters' yard |
+|---|---|
+| ![Dyed cloth hung out to dry in the dyers' yard, between the town houses](docs/screenshots/sd-qanat-dyers-yard.jpg) | ![The potters' yard with its domed kilns and racks of jars, two defenders on the site](docs/screenshots/sd-qanat-potters-yard.jpg) |
+
+**Lindenhof**, a half-timbered village in summer: A in the brewery yard, B in the nursery with its glasshouses (the glass breaks), the square under the old linden tree in the middle, the orchard and the barn with its hay loft round the sides. The gable roofs can be walked up to the ridge.
+
+![Lindenhof from above: red-roofed half-timbered houses round the church tower and the maypole, the orchard on the right, the attackers coming up the road on the left](docs/screenshots/sd-lindenhof-panorama.jpg)
+
+| Lindenhof, A: the brewery yard | Lindenhof, B: the nursery |
+|---|---|
+| ![Barrels and a cart in the brewery yard, the A on the wall, two defenders](docs/screenshots/sd-lindenhof-brewery.jpg) | ![The nursery with its two glasshouses and raised beds, the B on the wall, two defenders](docs/screenshots/sd-lindenhof-nursery.jpg) |
+
+### Gunshots
+
+Every gun has its own voice, still made entirely in code. A shot is built the way a real one happens: the pop of the blast wave, the crack of the bullet, the punch, the powder gas tearing out through the gun's own resonances, its mechanics working (bolt carrier, slide, buffer spring, belt links) and what the walls and the ground throw back.
+
+- Your own gun plays in stereo, with the mechanics toward the ejection port, and its echo thins out while you keep firing, so long bursts stay clear.
+- Other people's shots fade from a near to a far sound with the distance. From about 15 m on they arrive as late as sound travels, and far off only the dull boom and the echo are left.
+- Inside a building a shot sounds like the room it is fired in: the walls close by answer at once and the room rings short and boxy. In a doorway you hear a little of both.
+
 ### Wingman
 
-The newest mode: 2 against 2, you and a bot against two bots, or players together over the local network, for one flag: a circle with a flagpole in the middle.
+A mode for 2 against 2: you and a bot against two bots, or players together over the local network, for one flag: a circle with a flagpole in the middle.
 
 - **Taking the flag:** stand in its circle for 10 seconds, players and bots alike, however many of a team stand in it. With both teams in the circle nothing moves, and a half-taken flag slowly falls back once everybody has left it.
 - **Holding it:** once a team has the flag, the others have one minute to take it back. If they don't, the holders win. Taking it back starts the minute again, for the other side.
@@ -105,6 +151,7 @@ A battle royale for you and 19 bots on Serena, an island with a town, a harbor, 
 | ![The transport plane over the island of Serena](docs/screenshots/warzone-plane.jpg) | ![Holding the parachute lines high above the town](docs/screenshots/warzone-parachute.jpg) |
 
 - **Loot:** 170 chests and 280 items on the ground. Any weapon can come with any optic and any [skin](#weapon-skins), in five rarity levels from Common to Legendary. Higher rarities hit harder, hold more rounds, reload faster and kick less.
+- **Inventory:** two slots for long guns (`1` and `2`) and one for the sidearm (`3`), shown bottom right with a picture of each gun in its rarity colour. A found long gun goes into a free slot, or in place of the one in your hands. An empty slot is your fists: a click throws a punch, and from behind, on someone already hurt, it turns into a finisher.
 - **Armor:** carry up to 5 plates and wear up to 3. Each one takes 50 damage.
 - **Vehicles:** hatchback, sedan, pickup, jeep and off-roader, with a first- and third-person camera.
 - **Going down:** at zero health you crawl, bleed out and can revive yourself, a little slower each time.
@@ -117,6 +164,8 @@ A battle royale for you and 19 bots on Serena, an island with a town, a harbor, 
 | Map with the zone | Floor plans on the minimap |
 |---|---|
 | ![The full map with place names, the safe zone and the next zone](docs/screenshots/warzone-map.jpg) | ![The minimap showing the rooms of the upper floor while standing inside a building](docs/screenshots/warzone-floorplan.jpg) |
+
+![The inventory bottom right: an epic AR-77 in slot 1, a legendary Longbow .338 in slot 2 and a rare .44 Judge in slot 3, the AR-77 in hand](docs/screenshots/warzone-inventory.jpg)
 
 ### Gun Game
 
@@ -253,7 +302,7 @@ Aiming against an edge rests the weapon on it for less recoil, and at corners yo
 
 ### Maps
 
-Besides the island of Serena, eleven maps for Team Deathmatch, Free for All, Gun Game and [Wingman](#wingman):
+Besides the island of Serena and the two maps of [Search and Destroy](#search-and-destroy), Qanat and Lindenhof, eleven maps for Team Deathmatch, Free for All, Gun Game and [Wingman](#wingman):
 
 | Map | Size | Setting |
 |---|---|---|
@@ -295,7 +344,7 @@ Besides the island of Serena, eleven maps for Team Deathmatch, Free for All, Gun
 
 ### Modes and bots
 
-- **Team Deathmatch** and **Free for All**, with a score limit and a 10-minute time limit, **[Gun Game](#gun-game)**, where the knife decides it, and **[Wingman](#wingman)**, 2 against 2 for one flag.
+- **Team Deathmatch** and **Free for All**, with a score limit and a 10-minute time limit, **[Gun Game](#gun-game)**, where the knife decides it, **[Wingman](#wingman)**, 2 against 2 for one flag, and **[Search and Destroy](#search-and-destroy)**, six rounds for one bomb.
 - 1 to 8 bots on four difficulty levels: Recruit, Regular, Veteran and Elite.
 - [Bodies that fight as they fall](#bodies-that-fight-as-they-fall), a third-person death camera, a visible first-person body, a minimap, a kill feed and glass that breaks.
 
@@ -311,9 +360,9 @@ Low-resolution textures painted in code, in the spirit of late-'90s PC shooters,
 
 There are two downloads on the [releases page](https://github.com/ILIuIcIaI/Call-of-Duty-Black-Warfare-69/releases). Neither needs anything installed, Node.js included.
 
-**Windows version** (`Black-Warfare-69-0.7.0-Windows.zip`): extract it and double-click `Black Warfare 69.exe`. The game is a program of its own, with its own window, `F11` for full screen, **BEENDEN** in the menu to quit, and the multiplayer server built in. On laptops with two graphics chips it uses the stronger one. The download is about 140 MB because it brings its own browser engine and Node.js along ([Electron](https://www.electronjs.org/)). Windows may warn the first time about an app from an unknown publisher: click "More info", then "Run anyway".
+**Windows version** (`Black-Warfare-69-0.8.0-Windows.zip`): extract it and double-click `Black Warfare 69.exe`. The game is a program of its own, with its own window, `F11` for full screen, **BEENDEN** in the menu to quit, and the multiplayer server built in. On laptops with two graphics chips it uses the stronger one. The download is about 140 MB because it brings its own browser engine and Node.js along ([Electron](https://www.electronjs.org/)). Windows may warn the first time about an app from an unknown publisher: click "More info", then "Run anyway".
 
-**Browser version** (`Black-Warfare-69-0.7.0-Browser.zip`, about 1 MB): extract it and double-click `index.html`. The game runs straight from the disk in Chrome, Edge or Firefox, alone against bots, with no server and no internet connection. For multiplayer the browser needs the game's server: open the address that the lobby of a computer running the Windows version shows, or run `start.bat` in the folder (that one needs [Node.js](https://nodejs.org/)).
+**Browser version** (`Black-Warfare-69-0.8.0-Browser.zip`, about 1 MB): extract it and double-click `index.html`. The game runs straight from the disk in Chrome, Edge or Firefox, alone against bots, with no server and no internet connection. For multiplayer the browser needs the game's server: open the address that the lobby of a computer running the Windows version shows, or run `start.bat` in the folder (that one needs [Node.js](https://nodejs.org/)).
 
 Any browser needs WebGL 2. Chrome or Edge is recommended. On a very weak computer the game picks the Toaster level by itself; in a browser, hardware acceleration has to be on.
 
@@ -345,9 +394,9 @@ Play over your local network, with no account and no internet connection.
 
 1. Everybody starts the game, the Windows version or in a browser, and clicks **MULTIPLAYER**, then picks a name.
 2. The first player finds no room and opens one. Everybody after that lands in it automatically.
-3. Nobody runs the room. Everybody votes: the mode (Team Deathmatch, Free for All, Gun Game, Wingman or Warzone), the map, and whether bots fill the free slots. In Wingman bots fill up to 2 against 2, and without them two of you play 1 against 1. The lobby has a chat.
+3. Nobody runs the room. Everybody votes: the mode (Team Deathmatch, Free for All, Gun Game, Wingman, Search and Destroy or Warzone), the map, in Search and Destroy the team size, and whether bots fill the free slots. In Wingman bots fill up to 2 against 2, and without them two of you play 1 against 1. The lobby has a chat.
 
-If you die in Warzone you can watch the others or go back to the lobby. In Team Deathmatch, Free for All, Gun Game and Wingman you can join a running match at any time.
+If you die in Warzone you can watch the others or go back to the lobby. In every other mode you can join a running match at any time; in Search and Destroy you watch your team until the next round. With bots the match keeps its size: a bot makes room for whoever comes in, and one comes back when somebody leaves.
 
 Good to know:
 
@@ -378,25 +427,27 @@ Good to know:
 | Look around (while prone) | Turn 360°; looking behind you rolls you onto your back |
 | `Space` (while sliding) | Slide cancel: keeps your speed and refills the tactical sprint |
 | `R` | Reload |
-| `1` / `2` / `Q` / mouse wheel | Switch weapon |
+| `1` / `2` / `Q` / mouse wheel | Switch weapon (Warzone: `3` is the sidearm) |
 | `V` / `E` | Melee; finisher next to a hurt enemy |
 | Aim + `W` against an edge | Rest the weapon on it; lean out at corners |
 | `T` | Rest the weapon by hand, on or off |
-| `F` | Warzone: pick up, open a chest, get in and out of a vehicle. PoolDay: at a urinal, flush |
+| `F` | Search and Destroy: hold to plant or defuse the bomb; swap the gun in your hands for one on the floor. Warzone: pick up, open a chest, get in and out of a vehicle. PoolDay: at a urinal, flush |
+| `B` | Search and Destroy: open and close the shop (in your spawn, before the round and for 15 seconds after it starts) |
 | `G` | Warzone: put on an armor plate |
 | `M` | Warzone: full map |
 | `V` (in a vehicle) | Warzone: change the camera |
 | `I` | Inspect weapon |
 | `Tab` | Scoreboard |
-| `L` | Change loadout, also in the middle of a round (not in Gun Game) |
+| `L` | Change loadout, also in the middle of a round (not in Gun Game, Search and Destroy or Warzone) |
 | `Esc` | Pause |
 | `F11` | Windows version: full screen |
 
 ## For developers
 
 - `?dev=1&map=citadel&bots=5` skips the menu and starts a match straight away.
-- `?dev=1&map=poolday&bots=5&mode=gun` picks the mode as well; `map=backrooms` is the newest map.
+- `?dev=1&map=poolday&bots=5&mode=gun` picks the mode as well.
 - `?dev=1&br=1&bots=19` does the same for Warzone.
+- `?dev=1&mode=sd&map=qanat&size=5` starts Search and Destroy (maps `qanat` and `lindenhof`, sizes 1, 4, 5 and 6).
 - `&autopilot=1` lets an AI control the player for a hands-free playtest.
 
 ## Credits and license
